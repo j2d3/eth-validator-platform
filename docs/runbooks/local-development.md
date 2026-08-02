@@ -17,7 +17,14 @@ Start Docker with enough assigned resources for the intended profile:
 
 These are starting budgets, not capacity guarantees. Dashboards and qualification notes record observed CPU, memory, storage growth, IOPS, and sync duration per client pair.
 
-Loki and Alloy are part of the approved architecture but are not in the current platform-smoke manifests. They follow after the first metrics stack passes runtime verification, so the repository does not yet claim centralized logging as implemented.
+The `platform-smoke` profile includes a local-sized logging path. Alloy runs as a
+DaemonSet and tails Pod logs through the Kubernetes API, filtering discovery to
+the Pod's own node; it does not mount host log directories. Loki runs as one
+persistent single-binary replica with a 5 GiB claim and 24-hour Compactor
+retention. This is intentionally a laptop topology, not the proposed production
+shape: EKS qualification must evaluate object storage or a managed log backend,
+multi-AZ failure behavior, ingestion limits, stream-label cardinality, retention,
+and cost.
 
 The local P2P port mappings bind only to `127.0.0.1`. Clients can initiate outbound peer connections, but this initial configuration is not publicly reachable and therefore does not test inbound internet peering.
 
@@ -169,6 +176,8 @@ kubectl -n database exec web3signer-postgres-1 -- \
 kubectl -n signing rollout status deploy/web3signer --timeout=5m
 kubectl -n signing get deploy,pod,svc,externalsecret
 kubectl -n database get cluster,pod,pvc
+kubectl -n observability get helmrelease loki alloy
+kubectl -n observability get statefulset,daemonset,pod,pvc,servicemonitor
 ```
 
 The migration Job uses `restartPolicy: Never`, so a failed attempt remains as a
@@ -188,7 +197,35 @@ Retrieve its generated admin password without writing it to disk:
 kubectl -n observability get secret monitoring-grafana -o jsonpath='{.data.admin-password}' | base64 --decode
 ```
 
-The initial dashboards are **Ethereum Platform / Local Smoke** and **Ethereum Validator / Geth + Lighthouse**. The pair dashboard supports both one-validator selection and an `All` fleet view; it remains empty while the safe `stopped` profile is selected.
+The initial dashboards are **Ethereum Platform / Local Smoke**, **Ethereum
+Platform / Logs**, and **Ethereum Validator / Geth + Lighthouse**. The logging
+dashboard moves from namespace to Pod and container and includes a dedicated
+Web3Signer stream. The pair dashboard supports both one-validator selection and
+an `All` fleet view; it remains empty while the safe `stopped` profile is
+selected.
+
+Verify ingestion without exposing Loki outside the workstation:
+
+```bash
+kubectl -n observability port-forward svc/loki 3100:3100
+```
+
+In a second shell, query the last ten minutes of the signing namespace:
+
+```bash
+curl --get --silent --show-error \
+  --data-urlencode 'query={cluster="kind-eth-validator-local",namespace="signing"}' \
+  --data-urlencode "start=$(($(date +%s) - 600))000000000" \
+  --data-urlencode "end=$(date +%s)000000000" \
+  --data-urlencode 'limit=20' \
+  http://127.0.0.1:3100/loki/api/v1/query_range | jq .
+```
+
+The response must have `status: "success"` and include `namespace`, `pod`,
+`container`, `node`, `cluster`, `environment`, and `platform` labels. Validator
+pair streams additionally receive controlled customer, assignment, network, and
+client labels from Pod metadata. Do not emit secret values in application logs;
+central collection does not make unsafe logging acceptable.
 
 ## 8. Delete safely
 
@@ -206,6 +243,8 @@ flux logs --all-namespaces --level=error
 kubectl get events --all-namespaces --sort-by=.lastTimestamp
 kubectl -n signing logs deploy/web3signer
 kubectl -n database logs web3signer-postgres-1
+kubectl -n observability logs statefulset/loki
+kubectl -n observability logs daemonset/alloy
 ```
 
 If Flux cannot authenticate, confirm that the token belongs to `j2d3` and has repository-administration permission for deploy-key creation. If a chart source fails, inspect its `HelmRepository` and `HelmRelease` status before retrying; do not bypass Flux with a manual Helm installation.

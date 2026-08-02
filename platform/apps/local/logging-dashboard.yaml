@@ -1,0 +1,169 @@
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: ethereum-platform-logging-dashboard
+  namespace: observability
+  labels:
+    grafana_dashboard: "1"
+    app.kubernetes.io/part-of: ethereum-validator-platform
+data:
+  platform-logging.json: |-
+    {
+      "annotations": {"list": []},
+      "description": "Local fleet-to-pod log navigation backed by Alloy and Loki. Use the account and validator labels after a node pair is active.",
+      "editable": false,
+      "graphTooltip": 1,
+      "links": [],
+      "panels": [
+        {
+          "type": "text",
+          "title": "Logging contract",
+          "id": 1,
+          "options": {
+            "mode": "markdown",
+            "content": "Alloy collects Kubernetes Pod logs through the API, restricted to its own node. Loki retains 24 hours on a local 5 GiB PVC. Empty validator labels are expected while the safe `platform-smoke` profile is stopped."
+          },
+          "gridPos": {"h": 4, "w": 24, "x": 0, "y": 0}
+        },
+        {
+          "type": "stat",
+          "title": "Log lines / 5m",
+          "id": 2,
+          "datasource": {"type": "loki", "uid": "loki"},
+          "targets": [
+            {
+              "refId": "A",
+              "expr": "sum(count_over_time({cluster=~\"$cluster\",namespace=~\"$namespace\",pod=~\"$pod\",container=~\"$container\"}[5m]))",
+              "queryType": "instant"
+            }
+          ],
+          "fieldConfig": {"defaults": {"unit": "short", "min": 0}, "overrides": []},
+          "gridPos": {"h": 5, "w": 6, "x": 0, "y": 4}
+        },
+        {
+          "type": "timeseries",
+          "title": "Log volume by namespace",
+          "id": 3,
+          "datasource": {"type": "loki", "uid": "loki"},
+          "targets": [
+            {
+              "refId": "A",
+              "expr": "sum by (namespace) (count_over_time({cluster=~\"$cluster\",namespace=~\"$namespace\"}[5m]))",
+              "legendFormat": "{{namespace}}",
+              "queryType": "range"
+            }
+          ],
+          "fieldConfig": {"defaults": {"unit": "short", "min": 0}, "overrides": []},
+          "gridPos": {"h": 8, "w": 9, "x": 6, "y": 4}
+        },
+        {
+          "type": "timeseries",
+          "title": "Error-like lines by namespace",
+          "id": 4,
+          "datasource": {"type": "loki", "uid": "loki"},
+          "targets": [
+            {
+              "refId": "A",
+              "expr": "sum by (namespace) (count_over_time({cluster=~\"$cluster\",namespace=~\"$namespace\"} |~ \"(?i)(error|fatal|panic)\" [5m]))",
+              "legendFormat": "{{namespace}}",
+              "queryType": "range"
+            }
+          ],
+          "fieldConfig": {"defaults": {"unit": "short", "min": 0}, "overrides": []},
+          "gridPos": {"h": 8, "w": 9, "x": 15, "y": 4}
+        },
+        {
+          "type": "logs",
+          "title": "Selected platform logs",
+          "id": 5,
+          "datasource": {"type": "loki", "uid": "loki"},
+          "targets": [
+            {
+              "refId": "A",
+              "expr": "{cluster=~\"$cluster\",namespace=~\"$namespace\",pod=~\"$pod\",container=~\"$container\"} |~ \"(?i)$search\"",
+              "queryType": "range"
+            }
+          ],
+          "options": {"dedupStrategy": "none", "enableLogDetails": true, "prettifyLogMessage": false, "showCommonLabels": false, "showLabels": false, "showTime": true, "sortOrder": "Descending", "wrapLogMessage": true},
+          "gridPos": {"h": 12, "w": 24, "x": 0, "y": 12}
+        },
+        {
+          "type": "logs",
+          "title": "Web3Signer audit and rejection stream",
+          "id": 6,
+          "datasource": {"type": "loki", "uid": "loki"},
+          "targets": [
+            {
+              "refId": "A",
+              "expr": "{cluster=~\"$cluster\",namespace=\"signing\",app=\"web3signer\"}",
+              "queryType": "range"
+            }
+          ],
+          "options": {"dedupStrategy": "none", "enableLogDetails": true, "prettifyLogMessage": false, "showCommonLabels": false, "showLabels": true, "showTime": true, "sortOrder": "Descending", "wrapLogMessage": true},
+          "gridPos": {"h": 10, "w": 24, "x": 0, "y": 24}
+        }
+      ],
+      "refresh": "30s",
+      "schemaVersion": 41,
+      "tags": ["ethereum", "platform", "logs", "loki", "local"],
+      "templating": {
+        "list": [
+          {
+            "name": "cluster",
+            "label": "Cluster",
+            "type": "query",
+            "datasource": {"type": "loki", "uid": "loki"},
+            "query": "label_values(cluster)",
+            "includeAll": true,
+            "allValue": ".*",
+            "multi": true,
+            "refresh": 1
+          },
+          {
+            "name": "namespace",
+            "label": "Namespace",
+            "type": "query",
+            "datasource": {"type": "loki", "uid": "loki"},
+            "query": "label_values({cluster=~\"$cluster\"}, namespace)",
+            "includeAll": true,
+            "allValue": ".*",
+            "multi": true,
+            "refresh": 1
+          },
+          {
+            "name": "pod",
+            "label": "Pod",
+            "type": "query",
+            "datasource": {"type": "loki", "uid": "loki"},
+            "query": "label_values({cluster=~\"$cluster\",namespace=~\"$namespace\"}, pod)",
+            "includeAll": true,
+            "allValue": ".*",
+            "multi": true,
+            "refresh": 1
+          },
+          {
+            "name": "container",
+            "label": "Container",
+            "type": "query",
+            "datasource": {"type": "loki", "uid": "loki"},
+            "query": "label_values({cluster=~\"$cluster\",namespace=~\"$namespace\",pod=~\"$pod\"}, container)",
+            "includeAll": true,
+            "allValue": ".*",
+            "multi": true,
+            "refresh": 1
+          },
+          {
+            "name": "search",
+            "label": "Search regex",
+            "type": "textbox",
+            "query": ".",
+            "current": {"selected": false, "text": ".", "value": "."}
+          }
+        ]
+      },
+      "time": {"from": "now-1h", "to": "now"},
+      "timezone": "browser",
+      "title": "Ethereum Platform / Logs",
+      "uid": "eth-platform-logs",
+      "version": 1
+    }

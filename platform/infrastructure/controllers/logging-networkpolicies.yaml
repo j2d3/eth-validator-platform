@@ -1,0 +1,104 @@
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: loki
+  namespace: observability
+  labels:
+    app.kubernetes.io/part-of: ethereum-validator-platform
+spec:
+  podSelector:
+    matchLabels:
+      app.kubernetes.io/instance: loki
+      app.kubernetes.io/name: loki
+  policyTypes:
+    - Ingress
+    - Egress
+  ingress:
+    - from:
+        - podSelector: {}
+      ports:
+        - port: 3100
+          protocol: TCP
+        - port: 3500
+          protocol: TCP
+        - port: 7946
+          protocol: TCP
+        - port: 7946
+          protocol: UDP
+        - port: 9095
+          protocol: TCP
+  egress:
+    - to:
+        - namespaceSelector:
+            matchLabels:
+              kubernetes.io/metadata.name: kube-system
+          podSelector:
+            matchLabels:
+              k8s-app: kube-dns
+      ports:
+        - port: 53
+          protocol: TCP
+        - port: 53
+          protocol: UDP
+    - to:
+        - podSelector: {}
+      ports:
+        - port: 3100
+          protocol: TCP
+        - port: 7946
+          protocol: TCP
+        - port: 7946
+          protocol: UDP
+        - port: 9095
+          protocol: TCP
+---
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: alloy
+  namespace: observability
+  labels:
+    app.kubernetes.io/part-of: ethereum-validator-platform
+spec:
+  podSelector:
+    matchLabels:
+      app.kubernetes.io/instance: alloy
+      app.kubernetes.io/name: alloy
+  policyTypes:
+    - Ingress
+    - Egress
+  ingress:
+    - from:
+        - podSelector: {}
+      ports:
+        - port: 12345
+          protocol: TCP
+  egress:
+    - to:
+        - namespaceSelector:
+            matchLabels:
+              kubernetes.io/metadata.name: kube-system
+          podSelector:
+            matchLabels:
+              k8s-app: kube-dns
+      ports:
+        - port: 53
+          protocol: TCP
+        - port: 53
+          protocol: UDP
+    - to:
+        - podSelector:
+            matchLabels:
+              app.kubernetes.io/instance: loki
+              app.kubernetes.io/name: loki
+      ports:
+        - port: 3100
+          protocol: TCP
+    - ports:
+        # The Kubernetes API endpoint is node/cluster-specific under kind and EKS.
+        # Keep this lab exception port-bounded; production replaces it with the
+        # selected CNI's API-server entity or endpoint-aware policy primitive.
+        - port: 443
+          protocol: TCP
+        - port: 6443
+          protocol: TCP
