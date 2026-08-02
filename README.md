@@ -48,7 +48,7 @@ The two middle columns mean different things, and the difference is the point. *
 | Local PostgreSQL and shared Web3Signer | CloudNativePG, explicit versioned schema migration, and shared signer with an empty key store | Flyway applied migrations `00001`–`00012` with 12 successful history rows; Web3Signer 26.4.2 `1/1 Running`, connected to PostgreSQL, 0 keys loaded, observed at `b606121` | Slashing export/restore exercise |
 | Prometheus and Grafana | Initial stack and smoke dashboards | Prometheus, Grafana, Alertmanager, and node exporter verified Ready at `b606121` | Populate validator dashboard levels in Phase 3 |
 | Logging (Alloy/Loki) | Flux-managed Loki and Alloy on `main`; node-scoped Pod-log collection through the Kubernetes API with no host log mounts, 24-hour retention on a 5 GiB local claim, provisioned Grafana datasource and log dashboard | **Offline validation only.** Chart renders, container runtime contracts, policy-port contract tests, and server-side dry-run pass. Live ingestion, retention, and dashboard behavior have not yet been observed | Capture live Flux, Loki, Alloy, and Grafana evidence |
-| Real Geth/Lighthouse pair | Safe stopped and non-signing chart profiles | Render contracts verified; client sync qualification has not started | Begin pair sync qualification (Phase 3) |
+| Real Geth/Lighthouse pair | Catalog-generated Flux HelmRelease plus a manual GitHub Actions activate/stop PR form; active means EL + beacon node only and signing remains disabled | **Offline validation only.** Stopped/active chart contracts and catalog-projection drift tests pass; no Flux lifecycle transition or client sync has been observed | Enable the documented Actions PR setting, exercise stopped → active → stopped through Flux, and capture sync/runtime evidence (Phase 3) |
 | EKS/RDS/Secrets Manager | Architecture designed | None — no AWS resources have been created | Terraform roots in Phase 4 |
 
 Nothing in the repository authorizes validator signing by default. The local profile is `platform-smoke`, uses Hoodi configuration, and leaves validator clients stopped.
@@ -97,6 +97,8 @@ make local-status
 
 Run `make check` before opening a pull request. Flux bootstrap requires the current commit to be pushed to the private GitHub repository and a valid `j2d3` GitHub token. Local secret material is generated or read only from `secrets/local/`, which is excluded from Git.
 
+The operator-facing lifecycle form lives under **Actions → Request non-signing node-pair lifecycle**. It changes the assignment catalog and its generated Flux HelmRelease together, opens a PR, and has no AWS or Kubernetes credentials. The first slice can start or stop only Geth plus the Lighthouse beacon node; it cannot start a validator client. GitHub's repository-level “Allow GitHub Actions to create and approve pull requests” setting must be enabled before the form can open its first PR, and PR-triggered CI created with `GITHUB_TOKEN` may require a write collaborator to approve the run. Those are GitHub control-plane prerequisites, not application permissions.
+
 ## Documentation
 
 | Document | What it answers |
@@ -118,7 +120,7 @@ Run `make check` before opening a pull request. Flux bootstrap requires the curr
 | `docs/runbooks` | Operator procedures and safety checks |
 | `applications` | Schema-validated customer, profile, identity, and assignment catalog |
 | `schemas` | Desired-state JSON Schema contracts |
-| `tools` | Relational catalog and container-contract validation |
+| `tools` | Relational catalog validation, deterministic local Flux projection, lifecycle mutation, and container-contract validation |
 | `hack` | Pinned local-tool, cluster, secret-seeding, and merge commands |
 | `clusters/local` | Flux reconciliation entry point for local Kubernetes |
 | `platform/infrastructure/controllers` | Flux-managed platform operators |
@@ -134,7 +136,7 @@ This repository is built by a human operator working with two AI coding agents �
 
 - Work is claimed on the pinned coordination issue before it starts, with an explicit lease.
 - Every pull request is cross-reviewed by the *other* agent. No agent approves its own work.
-- Authors merge their own PRs through `./hack/merge-pr.sh`, which fails closed unless the paired agent approved the exact current head and CI is green.
+- Authors merge their own PRs through `./hack/merge-pr.sh`, which fails closed unless the paired agent approved the exact current head and CI is green. A lifecycle PR authored by `github-actions[bot]` is the narrow exception: both agents approve it, then either may run the wrapper's single-commit rebase path.
 - Disagreements are settled in the open on the pull request — through evidence, revision, and re-review against the exact head — not privately, and not by escalating as a reflex. Only an unresolved material design choice, a request for new authority, or a real expansion of scope or blast radius goes to the human. The disagreement itself is the point: two independent reviewers catch what one would rationalize away, which is what makes the arrangement worth its overhead.
 
 One known asymmetry: Claude Code operates under an isolated `5u6r054` collaborator account, but Codex still acts through the human's own `j2d3` account. GitHub's audit trail therefore cannot distinguish "the human as `j2d3`" from "Codex as `j2d3`" on review approvals. A dedicated Codex identity is the planned fix and is tracked as a priority follow-up in COLLABORATION.md.
@@ -150,7 +152,7 @@ Phases are defined in PRD §18; each has an explicit exit criterion.
 | 0 | Agree on the product | Complete |
 | 1 | Reproducible local GitOps foundation | Complete |
 | 2 | Local platform services — secrets, database, signer, observability, logging | In progress |
-| 3 | First vertical slice: one identity through a full safe lifecycle | Not started |
+| 3 | First vertical slice: one identity through a full safe lifecycle | Started — non-signing catalog/Flux lifecycle path declared; runtime cycle not yet evidenced |
 | 4 | Reproducible AWS foundation and EKS parity | Not started |
 | 5 | Dynamic client matrix across four EL and four CL implementations | Not started |
 | 6 | Customer Service control plane | Not started |

@@ -9,6 +9,7 @@ Humans and AI agents share this repository. This document is the stable referenc
 | the human (owner) | `j2d3` | any | Retains override to merge, pause, or reverse any action at any time |
 | Codex (OpenAI CLI) | `j2d3` (the human's session) | `codex/*` | Merges own PRs via `./hack/merge-pr.sh` after Claude approves |
 | Claude Code (Anthropic CLI) | `5u6r054` (collaborator, Write) | `claude/*` | Merges own PRs via `./hack/merge-pr.sh` after Codex approves |
+| Lifecycle workflow | `github-actions[bot]` | `automation/*` | Either agent may run the wrapper after **both** agents approve the exact head |
 
 ## Human accountability
 
@@ -30,7 +31,7 @@ Each GitHub primitive has exactly one job.
 ## Rules
 
 1. **The human retains override** on any merge, review, or repository action, at any time, without justification. The rules below are the *default* structure — the human's authority does not depend on them.
-2. **No self-approval; authors merge their own PRs via `./hack/merge-pr.sh`.** GitHub blocks self-approval structurally; the wrapper additionally requires an APPROVED review from the *paired* agent (`j2d3`-authored → requires `5u6r054`; `5u6r054`-authored → requires `j2d3`) on the exact current head commit, plus explicit CI-green verification.
+2. **No self-approval; authors merge their own PRs via `./hack/merge-pr.sh`.** GitHub blocks self-approval structurally; the wrapper additionally requires an APPROVED review from the *paired* agent (`j2d3`-authored → requires `5u6r054`; `5u6r054`-authored → requires `j2d3`) on the exact current head commit, plus explicit CI-green verification. The only author-merge exception is `github-actions[bot]`: its ephemeral token cannot run the local wrapper, so either agent may merge a one-commit lifecycle request after **both** agents approve its exact head.
 3. **Every PR names the PRD section, safety invariant, phase-exit criterion, or operational hygiene rule it satisfies.** If none applies, that itself is a question to raise on issue #6 before proceeding.
 4. **Disagreements are settled in the open, on the pull request** — through evidence, amendment, and exact-head re-review — not privately, and not by reflex escalation. Ordinary review disagreement is the normal working state of this repository and agents are expected to resolve it themselves and keep going. Escalate to the human only for an **unresolved material design choice**, a **request for new authority**, or a **real expansion of scope or blast radius**. The disagreement is the signal that makes two AIs valuable; escalating every instance of it wastes that signal. See "Disagreement template" below.
 5. **Meta-tooling changes** (CI, `.github/`, hooks, Terraform apply, secret handling, cluster-foundation manifests under `clusters/`) require **explicit notice to the human on issue #6 before opening the PR**. The normal wrapper-mediated author-merges-own flow otherwise applies; the human retains override for any PR.
@@ -73,23 +74,23 @@ git config --local user.email
 
 Expected: `5u6r054` and `156010594+5u6r054@users.noreply.github.com` when Claude commits; `j2d3` and `86860+j2d3@users.noreply.github.com` when Codex commits.
 
-**(c) Squash-merge commit author.** GitHub's squash-merge API uses the *PR author's profile primary email* by default — **not** the local git config, and **not** the merger's identity. This was the failure mode observed in the 2026-08-02 merge-attribution incident: local git config was noreply, but `gh pr merge` without `--author-email` accepted the profile default, requiring a history rewrite. The `hack/merge-pr.sh` wrapper (see next section) enforces `--author-email` unconditionally; the human's manual merges must include it explicitly.
+**(c) Merge commit author.** GitHub's squash-merge API uses the *PR author's profile primary email* by default — **not** the local git config, and **not** the merger's identity. This was the failure mode observed in the 2026-08-02 merge-attribution incident: local git config was noreply, but `gh pr merge` without `--author-email` accepted the profile default, requiring a history rewrite. The `hack/merge-pr.sh` wrapper (see next section) enforces `--author-email` for agent-authored squash merges. Its automation-PR path instead requires exactly one source commit, verifies the bot noreply author before merging, rebases that commit, and verifies the rewritten commit after merge.
 
 **Structural note on isolation.** Separate git worktrees do *not* isolate global `gh` auth state on macOS, and per-agent `GH_CONFIG_DIR` does not isolate Keychain-backed tokens. The full multi-agent isolation on one machine requires: (i) per-agent isolated clones, (ii) per-agent `GH_CONFIG_DIR` with `gh auth login --insecure-storage`, (iii) per-clone SSH host aliases (`github.com-<user>`) so `git push` uses the intended key regardless of `gh` state, (iv) `--author-email` on every squash merge. Convenience wrappers on any given laptop that combine these are helpful shortcuts, not normative — a new contributor on a different machine must be able to satisfy the portable rules above with plain `gh` and `git`.
 
 ## Merges
 
-The safe author-merge path is `./hack/merge-pr.sh <pr-number>`. It fails closed on every check:
+The safe merge path is `./hack/merge-pr.sh <pr-number>`. It fails closed on every check:
 
-- Authenticated `gh` login must equal the PR author (authors merge their own).
-- Only `j2d3` and `5u6r054` are recognized; unknown authors are rejected.
+- For agent-authored PRs, authenticated `gh` login must equal the PR author. For a `github-actions[bot]` lifecycle PR, the authenticated merger must be `j2d3` or `5u6r054`.
+- Only `j2d3`, `5u6r054`, and `github-actions[bot]` are recognized; unknown authors are rejected.
 - PR must be `OPEN`, non-draft, `MERGEABLE`.
-- An `APPROVED` review must exist from the *paired agent* (`j2d3`-authored → requires `5u6r054`; `5u6r054`-authored → requires `j2d3`) on the *exact current head commit* — a stale approval on a superseded commit or an approval from any other user does not count.
+- An `APPROVED` review must exist on the *exact current head commit*: the paired agent for an agent-authored PR, or both agents for an automation PR. A stale approval on a superseded commit does not count.
 - CI is checked explicitly via `/repos/O/R/commits/{sha}/check-runs`; every check must be `status=completed` with `conclusion in (success, neutral, skipped)`, and there must be at least one check-run.
-- Merge is `--squash --delete-branch --match-head-commit --author-email <noreply>`, using the author-specific noreply email from the wrapper's built-in mapping.
+- Agent merge is `--squash --delete-branch --match-head-commit --author-email <noreply>`, using the author-specific noreply email from the wrapper's built-in mapping. An automation request must contain exactly one bot-noreply-authored commit and is merged with `--rebase --delete-branch --match-head-commit` so that source attribution is preserved without profile-email selection.
 - Post-merge, the wrapper polls (bounded, up to 20s) for the resulting commit's metadata and fails loudly if the author email does not match the expected noreply.
 
-The wrapper applies uniformly to all PRs. Meta-tooling PRs additionally require an issue #6 notice before opening (per rule 5). The wrapper does not remove the human's ability to merge via any other mechanism — it exists to make the safe path the easy path, not to be the only path.
+Meta-tooling PRs additionally require an issue #6 notice before opening (per rule 5). The wrapper does not remove the human's ability to merge via any other mechanism — it exists to make the safe path the easy path, not to be the only path.
 
 One current limitation: the wrapper cannot complete a `j2d3`-authored squash merge, because the author-specific noreply address it passes is not yet registered on that account. It fails closed rather than merging with the wrong attribution. See "Known asymmetries" below and [issue #16](https://github.com/j2d3/eth-validator-platform/issues/16).
 

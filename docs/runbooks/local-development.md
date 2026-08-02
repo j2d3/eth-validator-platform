@@ -271,7 +271,70 @@ pair streams additionally receive controlled customer, assignment, network, and
 client labels from Pod metadata. Do not emit secret values in application logs;
 central collection does not make unsafe logging acceptable.
 
-## 8. Delete safely
+## 8. Request a non-signing node-pair lifecycle change
+
+The repository contains one generated `HelmRelease` for
+`assignment-synthetic-01`. Its source of truth is the assignment, identity,
+customer, and service-profile catalog under `applications/`; direct edits to
+`platform/apps/local/assignments/` fail `make check`.
+
+Before using the form for the first time, an owner must enable:
+
+**Repository Settings → Actions → General → Workflow permissions → Allow
+GitHub Actions to create and approve pull requests.**
+
+The current repository setting is disabled by default on a new personal
+repository. Enabling it permits the specifically reviewed workflow to create a
+branch and PR; branch protection, CI, CODEOWNERS, and the merge wrapper still
+prevent it from merging its own change. GitHub may place CI triggered by a PR
+created with `GITHUB_TOKEN` in an approval-required state. A write collaborator
+must approve that workflow run, or a later production adapter must use a
+short-lived GitHub App installation token. Do not solve this with a long-lived
+AWS or GitHub credential in the workflow.
+
+From the GitHub Actions tab, run **Request non-signing node-pair lifecycle**
+with:
+
+- assignment: `assignment-synthetic-01`;
+- action: `activate` or `stop`;
+- reason: an auditable explanation between 3 and 256 characters.
+
+The workflow updates the assignment and regenerates its Flux HelmRelease, runs
+the catalog/tests, and opens a PR. It has `contents: write` and
+`pull-requests: write` only—no AWS credential, kubeconfig, OIDC token, or
+cluster access. After CI and review, merge through `hack/merge-pr.sh`; Flux is
+the only actor that changes Kubernetes.
+
+For an activation request, verify the declared boundary before review:
+
+```bash
+python3 tools/render_local_assignments.py --check
+git diff origin/main -- \
+  applications/validators/assignments/assignment-synthetic-01.yaml \
+  platform/apps/local/assignments/assignment-synthetic-01.yaml
+```
+
+`lifecycleState: active` must be paired with `validator.enabled: false`. This
+starts Geth and the Lighthouse beacon node for sync practice; it does **not**
+start the Lighthouse validator client and cannot sign. The initial workflow
+refuses assignments whose catalog state already enables signing.
+
+After Flux reconciles an approved activation, observe rather than infer:
+
+```bash
+flux get helmreleases -n ethereum
+kubectl -n ethereum get helmrelease,statefulset,pod,pvc,externalsecret
+kubectl -n ethereum logs statefulset/assignment-synthetic-01 -c execution --tail=100
+kubectl -n ethereum logs statefulset/assignment-synthetic-01 -c consensus --tail=100
+```
+
+A successful first exercise is stopped → active → stopped through two reviewed
+PRs. On stop, Flux removes running compute and leaves the chain-data PVC
+declarations and identity record. Runtime sync/finality gates, Web3Signer key
+admission, validator duties, archive deletion, and funded identities are not
+authorized by this workflow.
+
+## 9. Delete safely
 
 ```bash
 make local-down
