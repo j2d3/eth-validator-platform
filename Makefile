@@ -45,6 +45,7 @@ helm-releases: ## Render pinned third-party Helm releases with declared values
 kustomize-build: ## Build the Flux entrypoint without contacting a cluster
 	kubectl kustomize platform/infrastructure/controllers > /dev/null
 	kubectl kustomize platform/infrastructure/configs/local > /dev/null
+	kubectl kustomize platform/apps/prerequisites/local > /dev/null
 	kubectl kustomize platform/apps/local > /dev/null
 
 local-preflight: ## Verify local Kubernetes and GitOps prerequisites

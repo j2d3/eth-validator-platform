@@ -1,10 +1,12 @@
 #!/usr/bin/env python3
-"""Verify runtime identity contracts for digest-pinned container images."""
+"""Verify runtime contracts for digest-pinned container images."""
 
 from __future__ import annotations
 
 import re
 import subprocess
+from dataclasses import dataclass
+from enum import Enum
 from pathlib import Path
 from typing import Any
 
@@ -13,8 +15,62 @@ import yaml
 
 REPOSITORY_ROOT = Path(__file__).resolve().parents[1]
 IMAGE_DIGEST_PATTERN = re.compile(r"@sha256:[0-9a-f]{64}$")
+
+
+class IdentityMode(Enum):
+    """How a Kubernetes workload establishes its numeric runtime identity."""
+
+    IMAGE_DEFAULT = "image-default"
+    KUBERNETES_OVERRIDE = "kubernetes-override"
+
+
+@dataclass(frozen=True)
+class ContainerContract:
+    """A container image and the Kubernetes security contract around it."""
+
+    manifest_path: Path
+    workload_kind: str
+    container_name: str
+    container_group: str = "containers"
+    identity_mode: IdentityMode = IdentityMode.IMAGE_DEFAULT
+    smoke_entrypoint: str | None = None
+    smoke_args: tuple[str, ...] = ()
+    smoke_tmpfs: tuple[str, ...] = ()
+
+
 CONTRACTS = (
-    (Path("platform/apps/base/web3signer/deployment.yaml"), "web3signer"),
+    ContainerContract(
+        manifest_path=Path("platform/apps/base/web3signer/deployment.yaml"),
+        workload_kind="Deployment",
+        container_name="web3signer",
+    ),
+    ContainerContract(
+        manifest_path=Path(
+            "platform/apps/prerequisites/local/web3signer-schema-job.yaml"
+        ),
+        workload_kind="Job",
+        container_name="copy-web3signer-migrations",
+        container_group="initContainers",
+        smoke_entrypoint="/bin/cp",
+        smoke_args=(
+            "-a",
+            "/opt/web3signer/migrations/postgresql/.",
+            "/work/migrations/",
+        ),
+        smoke_tmpfs=(
+            "/work/migrations:rw,noexec,nosuid,nodev,size=8m,uid=999,gid=999,mode=0770",
+        ),
+    ),
+    ContainerContract(
+        manifest_path=Path(
+            "platform/apps/prerequisites/local/web3signer-schema-job.yaml"
+        ),
+        workload_kind="Job",
+        container_name="flyway",
+        identity_mode=IdentityMode.KUBERNETES_OVERRIDE,
+        smoke_args=("-v",),
+        smoke_tmpfs=("/tmp:rw,noexec,nosuid,nodev,size=64m,uid=999,gid=999",),
+    ),
 )
 
 
@@ -38,17 +94,15 @@ def run(command: list[str]) -> str:
     return result.stdout.strip()
 
 
-def load_deployment(path: Path) -> dict[str, Any]:
+def load_workload(path: Path, kind: str) -> dict[str, Any]:
     with path.open(encoding="utf-8") as source:
         documents = tuple(yaml.safe_load_all(source))
-    deployments = [
-        document
-        for document in documents
-        if document and document.get("kind") == "Deployment"
+    workloads = [
+        document for document in documents if document and document.get("kind") == kind
     ]
-    if len(deployments) != 1:
-        raise ContractError(f"Expected exactly one Deployment in {path}")
-    return deployments[0]
+    if len(workloads) != 1:
+        raise ContractError(f"Expected exactly one {kind} in {path}")
+    return workloads[0]
 
 
 def required_non_root_id(value: Any, field: str, path: Path) -> int:
@@ -57,21 +111,12 @@ def required_non_root_id(value: Any, field: str, path: Path) -> int:
     return value
 
 
-def verify_contract(relative_path: Path, container_name: str) -> None:
-    path = REPOSITORY_ROOT / relative_path
-    deployment = load_deployment(path)
-    pod_spec = deployment["spec"]["template"]["spec"]
-    pod_security = pod_spec.get("securityContext", {})
-    containers = [
-        container
-        for container in pod_spec["containers"]
-        if container.get("name") == container_name
-    ]
-    if len(containers) != 1:
-        raise ContractError(f"{path}: expected exactly one container named {container_name}")
-
-    container = containers[0]
-    container_security = container.get("securityContext", {})
+def require_hardened_security_context(
+    path: Path,
+    container_name: str,
+    pod_security: dict[str, Any],
+    container_security: dict[str, Any],
+) -> tuple[int, int]:
     run_as_non_root = container_security.get(
         "runAsNonRoot", pod_security.get("runAsNonRoot")
     )
@@ -88,12 +133,74 @@ def verify_contract(relative_path: Path, container_name: str) -> None:
         "runAsGroup",
         path,
     )
+    if container_security.get("allowPrivilegeEscalation") is not False:
+        raise ContractError(
+            f"{path}: {container_name} must disable privilege escalation"
+        )
+    if container_security.get("readOnlyRootFilesystem") is not True:
+        raise ContractError(
+            f"{path}: {container_name} must use a read-only root filesystem"
+        )
+    dropped_capabilities = container_security.get("capabilities", {}).get("drop", [])
+    if "ALL" not in dropped_capabilities:
+        raise ContractError(f"{path}: {container_name} must drop all capabilities")
+    seccomp_profile = container_security.get(
+        "seccompProfile", pod_security.get("seccompProfile", {})
+    )
+    if seccomp_profile.get("type") != "RuntimeDefault":
+        raise ContractError(
+            f"{path}: {container_name} must use the RuntimeDefault seccomp profile"
+        )
+    return expected_uid, expected_gid
+
+
+def docker_security_options(expected_uid: int, expected_gid: int) -> list[str]:
+    return [
+        "--network=none",
+        "--read-only",
+        "--cap-drop=ALL",
+        "--security-opt=no-new-privileges",
+        f"--user={expected_uid}:{expected_gid}",
+    ]
+
+
+def verify_contract(contract: ContainerContract, pulled_images: set[str]) -> None:
+    path = REPOSITORY_ROOT / contract.manifest_path
+    workload = load_workload(path, contract.workload_kind)
+    pod_spec = workload["spec"]["template"]["spec"]
+    pod_security = pod_spec.get("securityContext", {})
+    containers = [
+        container
+        for container in pod_spec.get(contract.container_group, [])
+        if container.get("name") == contract.container_name
+    ]
+    if len(containers) != 1:
+        raise ContractError(
+            f"{path}: expected exactly one {contract.container_group} entry named "
+            f"{contract.container_name}"
+        )
+
+    container = containers[0]
+    expected_uid, expected_gid = require_hardened_security_context(
+        path,
+        contract.container_name,
+        pod_security,
+        container.get("securityContext", {}),
+    )
     image = container.get("image", "")
     if not IMAGE_DIGEST_PATTERN.search(image):
-        raise ContractError(f"{path}: {container_name} image must be pinned by sha256 digest")
+        raise ContractError(
+            f"{path}: {contract.container_name} image must be pinned by sha256 digest"
+        )
 
-    run(["docker", "pull", image])
-    probe = [
+    if image not in pulled_images:
+        run(["docker", "pull", image])
+        pulled_images.add(image)
+
+    identity_options: list[str] = []
+    if contract.identity_mode is IdentityMode.KUBERNETES_OVERRIDE:
+        identity_options = [f"--user={expected_uid}:{expected_gid}"]
+    identity_probe = [
         "docker",
         "run",
         "--rm",
@@ -102,27 +209,55 @@ def verify_contract(relative_path: Path, container_name: str) -> None:
         "--read-only",
         "--cap-drop=ALL",
         "--security-opt=no-new-privileges",
+        *identity_options,
         "--entrypoint=/usr/bin/id",
         image,
     ]
-    actual_uid = int(run([*probe, "-u"]))
-    actual_gid = int(run([*probe, "-g"]))
+    actual_uid = int(run([*identity_probe, "-u"]))
+    actual_gid = int(run([*identity_probe, "-g"]))
 
     if (actual_uid, actual_gid) != (expected_uid, expected_gid):
+        identity_description = (
+            "image runtime identity"
+            if contract.identity_mode is IdentityMode.IMAGE_DEFAULT
+            else "declared Kubernetes identity override"
+        )
         raise ContractError(
             f"{path}: declared UID/GID {expected_uid}:{expected_gid} does not match "
-            f"{image} runtime identity {actual_uid}:{actual_gid}"
+            f"{image} {identity_description} {actual_uid}:{actual_gid}"
         )
+
+    if contract.smoke_entrypoint or contract.smoke_args:
+        smoke_probe = [
+            "docker",
+            "run",
+            "--rm",
+            "--pull=never",
+            *docker_security_options(expected_uid, expected_gid),
+        ]
+        for tmpfs in contract.smoke_tmpfs:
+            smoke_probe.extend(("--tmpfs", tmpfs))
+        if contract.smoke_entrypoint:
+            smoke_probe.append(f"--entrypoint={contract.smoke_entrypoint}")
+        smoke_probe.extend((image, *contract.smoke_args))
+        run(smoke_probe)
+
+    identity_description = (
+        "native image identity"
+        if contract.identity_mode is IdentityMode.IMAGE_DEFAULT
+        else "Kubernetes identity override"
+    )
     print(
-        f"Verified {container_name}: {image} runs as "
-        f"UID/GID {actual_uid}:{actual_gid}."
+        f"Verified {contract.container_name}: {image} accepts hardened "
+        f"UID/GID {actual_uid}:{actual_gid} via {identity_description}."
     )
 
 
 def main() -> int:
     try:
-        for relative_path, container_name in CONTRACTS:
-            verify_contract(relative_path, container_name)
+        pulled_images: set[str] = set()
+        for contract in CONTRACTS:
+            verify_contract(contract, pulled_images)
     except (ContractError, KeyError, TypeError, ValueError) as error:
         print(f"Container contract validation failed: {error}")
         return 1
