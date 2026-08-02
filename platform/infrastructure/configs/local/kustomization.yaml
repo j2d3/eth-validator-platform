@@ -4,4 +4,5 @@ resources:
   - namespaces.yaml
   - local-secret-access.yaml
   - local-secret-stores.yaml
+  - web3signer-postgres-alias.yaml
   - web3signer-postgres.yaml

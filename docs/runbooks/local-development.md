@@ -29,6 +29,14 @@ remain `restricted`. A production hardening step is to move host-level collector
 into a dedicated privileged namespace so Grafana, Prometheus, and Alertmanager can
 return to restricted enforcement.
 
+CloudNativePG generates an application Secret whose `host` value is a short
+Service name intended for consumers in the database namespace. External Secrets
+copies that credential contract into the isolated signing namespace. The local
+infrastructure adapter therefore creates an `ExternalName` Service with the same
+short name in `signing`, resolving it to the writer Service in `database`. The
+secret remains unmodified; the later AWS adapter instead supplies the native RDS
+endpoint through Secrets Manager.
+
 ## 1. Install tools
 
 On this project workstation (macOS arm64), install pinned project-local copies of `kind`, Flux, and Terraform without changing the global Homebrew environment:
