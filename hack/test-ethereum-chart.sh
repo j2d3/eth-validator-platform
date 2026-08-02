@@ -24,6 +24,7 @@ if grep -Eq '^kind: (Deployment|StatefulSet|ExternalSecret)$' "${temporary_direc
   printf 'Stopped profile unexpectedly renders running compute or secret projection.\n' >&2
   exit 1
 fi
+grep -q 'platform.galaxy-lab/signing-enabled: "false"' "${temporary_directory}/stopped.yaml"
 
 grep -q '^kind: StatefulSet$' "${temporary_directory}/active.yaml"
 grep -q 'path: /debug/metrics/prometheus' "${temporary_directory}/active.yaml"
@@ -37,6 +38,7 @@ fi
 grep -q '^kind: StatefulSet$' "${temporary_directory}/signing.yaml"
 grep -q '^kind: Deployment$' "${temporary_directory}/signing.yaml"
 grep -q 'http://web3signer.signing.svc.cluster.local:9000' "${temporary_directory}/signing.yaml"
+grep -q 'platform.galaxy-lab/signing-enabled: "true"' "${temporary_directory}/signing.yaml"
 if grep -Eq 'validator-key|web3signer-db|platform.galaxy-lab/component: web3signer' "${temporary_directory}/signing.yaml"; then
   printf 'Pair chart must not mount signing keys, database credentials, or deploy Web3Signer.\n' >&2
   exit 1

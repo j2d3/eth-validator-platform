@@ -46,6 +46,20 @@
       },
       "allOf": [
         {
+          "if": {
+            "properties": {
+              "lifecycle": {
+                "const": "active"
+              }
+            }
+          },
+          "then": {
+            "required": [
+              "nodePairRef"
+            ]
+          }
+        },
+        {
           "if": {"properties": {"signingEnabled": {"const": true}}},
           "then": {
             "properties": {

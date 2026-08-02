@@ -27,8 +27,9 @@ validate: ## Initialize without a backend and validate each Terraform root
 		fi; \
 	done
 
-catalog: ## Validate desired-state schemas and relational safety rules
+catalog: ## Validate desired-state schemas, relations, and generated local projection
 	python3 tools/validate_catalog.py
+	python3 tools/render_local_assignments.py --check
 
 test: ## Run desired-state safety unit tests
 	python3 -m unittest discover -s tests -v
