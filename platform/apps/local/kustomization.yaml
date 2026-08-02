@@ -8,3 +8,7 @@ resources:
   - logging-dashboard.yaml
   - fleet-overview-dashboard.yaml
   - validator-detail-dashboard.yaml
+  - signer-slashing-dashboard.yaml
+
+patches:
+  - path: signer-telemetry-patch.yaml

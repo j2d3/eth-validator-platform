@@ -14,3 +14,13 @@ spec:
     - port: metrics
       interval: 30s
       path: /metrics
+      # Environment-independent half of the telemetry contract. cluster and
+      # environment are environment-specific and are added by an overlay patch,
+      # so this base stays portable across local and EKS.
+      relabelings:
+        - action: replace
+          replacement: ethereum-validator
+          targetLabel: platform
+        - action: replace
+          replacement: signer
+          targetLabel: component
