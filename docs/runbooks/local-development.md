@@ -21,6 +21,14 @@ Loki and Alloy are part of the approved architecture but are not in the current 
 
 The local P2P port mappings bind only to `127.0.0.1`. Clients can initiate outbound peer connections, but this initial configuration is not publicly reachable and therefore does not test inbound internet peering.
 
+The `observability` namespace is a deliberate Pod Security exception. Prometheus
+node-exporter needs host namespaces, host paths, and host port `9100`, so that
+namespace enforces the `privileged` profile while continuing to audit and warn
+against `restricted`. Application, signing, database, and secret namespaces
+remain `restricted`. A production hardening step is to move host-level collectors
+into a dedicated privileged namespace so Grafana, Prometheus, and Alertmanager can
+return to restricted enforcement.
+
 ## 1. Install tools
 
 On this project workstation (macOS arm64), install pinned project-local copies of `kind`, Flux, and Terraform without changing the global Homebrew environment:
