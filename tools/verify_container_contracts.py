@@ -39,6 +39,22 @@ class ContainerContract:
     smoke_tmpfs: tuple[str, ...] = ()
 
 
+@dataclass(frozen=True)
+class HelmImageContract:
+    """A digest and security context declared in HelmRelease values."""
+
+    manifest_path: Path
+    container_name: str
+    image_repository: str
+    digest_path: tuple[str, ...]
+    pod_security_path: tuple[str, ...]
+    container_security_path: tuple[str, ...]
+    identity_mode: IdentityMode = IdentityMode.IMAGE_DEFAULT
+    identity_probe_entrypoint: str | None = "/usr/bin/id"
+    smoke_args: tuple[str, ...] = ()
+    smoke_tmpfs: tuple[str, ...] = ()
+
+
 CONTRACTS = (
     ContainerContract(
         manifest_path=Path("platform/apps/base/web3signer/deployment.yaml"),
@@ -72,6 +88,79 @@ CONTRACTS = (
 )
 
 
+HELM_IMAGE_CONTRACTS = (
+    HelmImageContract(
+        manifest_path=Path(
+            "platform/infrastructure/controllers/logging-loki.yaml"
+        ),
+        container_name="loki",
+        image_repository="docker.io/grafana/loki",
+        digest_path=("spec", "values", "loki", "image", "digest"),
+        pod_security_path=(
+            "spec",
+            "values",
+            "loki",
+            "podSecurityContext",
+        ),
+        container_security_path=(
+            "spec",
+            "values",
+            "loki",
+            "containerSecurityContext",
+        ),
+        identity_mode=IdentityMode.KUBERNETES_OVERRIDE,
+        identity_probe_entrypoint=None,
+        smoke_args=("-version",),
+    ),
+    HelmImageContract(
+        manifest_path=Path(
+            "platform/infrastructure/controllers/logging-loki.yaml"
+        ),
+        container_name="loki-canary",
+        image_repository="docker.io/grafana/loki-canary",
+        digest_path=("spec", "values", "lokiCanary", "image", "digest"),
+        pod_security_path=(
+            "spec",
+            "values",
+            "loki",
+            "podSecurityContext",
+        ),
+        container_security_path=(
+            "spec",
+            "values",
+            "loki",
+            "containerSecurityContext",
+        ),
+        identity_mode=IdentityMode.KUBERNETES_OVERRIDE,
+        identity_probe_entrypoint=None,
+        smoke_args=("-version",),
+    ),
+    HelmImageContract(
+        manifest_path=Path(
+            "platform/infrastructure/controllers/logging-alloy.yaml"
+        ),
+        container_name="alloy",
+        image_repository="docker.io/grafana/alloy",
+        digest_path=("spec", "values", "image", "digest"),
+        pod_security_path=(
+            "spec",
+            "values",
+            "global",
+            "podSecurityContext",
+        ),
+        container_security_path=(
+            "spec",
+            "values",
+            "alloy",
+            "securityContext",
+        ),
+        identity_mode=IdentityMode.KUBERNETES_OVERRIDE,
+        smoke_args=("--version",),
+        smoke_tmpfs=("/tmp:rw,noexec,nosuid,nodev,size=16m,uid=473,gid=473",),
+    ),
+)
+
+
 class ContractError(RuntimeError):
     """Raised when a declared container contract is incomplete or incorrect."""
 
@@ -101,6 +190,13 @@ def load_workload(path: Path, kind: str) -> dict[str, Any]:
     if len(workloads) != 1:
         raise ContractError(f"Expected exactly one {kind} in {path}")
     return workloads[0]
+
+
+def nested_value(document: dict[str, Any], path: tuple[str, ...]) -> Any:
+    value: Any = document
+    for key in path:
+        value = value[key]
+    return value
 
 
 def required_non_root_id(value: Any, field: str, path: Path) -> int:
@@ -256,11 +352,90 @@ def verify_contract(contract: ContainerContract, pulled_images: set[str]) -> Non
     )
 
 
+def verify_helm_image_contract(
+    contract: HelmImageContract, pulled_images: set[str]
+) -> None:
+    path = REPOSITORY_ROOT / contract.manifest_path
+    with path.open(encoding="utf-8") as source:
+        release = yaml.safe_load(source)
+
+    pod_security = nested_value(release, contract.pod_security_path)
+    container_security = nested_value(release, contract.container_security_path)
+    expected_uid, expected_gid = require_hardened_security_context(
+        path,
+        contract.container_name,
+        pod_security,
+        container_security,
+    )
+    digest = nested_value(release, contract.digest_path)
+    image = f"{contract.image_repository}@{digest}"
+    if not IMAGE_DIGEST_PATTERN.search(image):
+        raise ContractError(
+            f"{path}: {contract.container_name} image must be pinned by sha256 digest"
+        )
+
+    if image not in pulled_images:
+        run(["docker", "pull", image])
+        pulled_images.add(image)
+
+    actual_uid = expected_uid
+    actual_gid = expected_gid
+    if contract.identity_probe_entrypoint:
+        identity_options: list[str] = []
+        if contract.identity_mode is IdentityMode.KUBERNETES_OVERRIDE:
+            identity_options = [f"--user={expected_uid}:{expected_gid}"]
+        identity_probe = [
+            "docker",
+            "run",
+            "--rm",
+            "--pull=never",
+            "--network=none",
+            "--read-only",
+            "--cap-drop=ALL",
+            "--security-opt=no-new-privileges",
+            *identity_options,
+            f"--entrypoint={contract.identity_probe_entrypoint}",
+            image,
+        ]
+        actual_uid = int(run([*identity_probe, "-u"]))
+        actual_gid = int(run([*identity_probe, "-g"]))
+        if (actual_uid, actual_gid) != (expected_uid, expected_gid):
+            raise ContractError(
+                f"{path}: declared UID/GID {expected_uid}:{expected_gid} does not "
+                f"match {image} runtime identity {actual_uid}:{actual_gid}"
+            )
+
+    if contract.smoke_args:
+        smoke_probe = [
+            "docker",
+            "run",
+            "--rm",
+            "--pull=never",
+            *docker_security_options(expected_uid, expected_gid),
+        ]
+        for tmpfs in contract.smoke_tmpfs:
+            smoke_probe.extend(("--tmpfs", tmpfs))
+        smoke_probe.extend((image, *contract.smoke_args))
+        run(smoke_probe)
+
+    identity_description = (
+        "native image identity"
+        if contract.identity_mode is IdentityMode.IMAGE_DEFAULT
+        else "Kubernetes identity override"
+    )
+    print(
+        f"Verified {contract.container_name}: {image} accepts hardened "
+        f"UID/GID {actual_uid}:{actual_gid} via {identity_description}."
+    )
+
+
 def main() -> int:
     try:
         pulled_images: set[str] = set()
         for contract in CONTRACTS:
             verify_contract(contract, pulled_images)
+        for contract in HELM_IMAGE_CONTRACTS:
+            verify_helm_image_contract(contract, pulled_images)
     except (ContractError, KeyError, TypeError, ValueError) as error:
         print(f"Container contract validation failed: {error}")
         return 1

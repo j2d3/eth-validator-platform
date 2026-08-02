@@ -6,3 +6,6 @@ resources:
   - external-secrets.yaml
   - cloudnative-pg.yaml
   - monitoring.yaml
+  - logging-loki.yaml
+  - logging-alloy.yaml
+  - logging-networkpolicies.yaml

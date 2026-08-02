@@ -5,3 +5,4 @@ resources:
   - profile.yaml
   - platform-dashboard.yaml
   - geth-lighthouse-dashboard.yaml
+  - logging-dashboard.yaml

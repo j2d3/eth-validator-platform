@@ -46,3 +46,9 @@ render \
 render \
   "${REPOSITORY_ROOT}/platform/infrastructure/controllers/monitoring.yaml" \
   "https://prometheus-community.github.io/helm-charts"
+render \
+  "${REPOSITORY_ROOT}/platform/infrastructure/controllers/logging-loki.yaml" \
+  "https://grafana.github.io/helm-charts"
+render \
+  "${REPOSITORY_ROOT}/platform/infrastructure/controllers/logging-alloy.yaml" \
+  "https://grafana.github.io/helm-charts"
