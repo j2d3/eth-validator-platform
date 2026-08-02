@@ -43,11 +43,14 @@ helm-template: ## Render and lint the selectable Ethereum client chart
 helm-releases: ## Render pinned third-party Helm releases with declared values
 	./hack/validate-helm-releases.sh
 
-kustomize-build: ## Build the Flux entrypoint without contacting a cluster
+kustomize-build: ## Build every Kustomize layer, reconciled or not, without contacting a cluster
 	kubectl kustomize platform/infrastructure/controllers > /dev/null
 	kubectl kustomize platform/infrastructure/configs/local > /dev/null
 	kubectl kustomize platform/apps/prerequisites/local > /dev/null
 	kubectl kustomize platform/apps/local > /dev/null
+	# Declared but not yet registered with a Flux Kustomization; built here so
+	# the EKS storage adapter cannot rot while it waits for clusters/dev.
+	kubectl kustomize platform/infrastructure/configs/dev > /dev/null
 
 verify-scripts: ## Syntax-check bash scripts under hack/
 	@for script in hack/*.sh; do bash -n "$$script" || exit 1; done

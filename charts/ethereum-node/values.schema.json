@@ -8,6 +8,8 @@
     "consensusClient",
     "identity",
     "telemetry",
+    "storageClassName",
+    "storage",
     "validator",
     "web3signer"
   ],
@@ -77,6 +79,35 @@
             "staging",
             "production"
           ]
+        }
+      }
+    },
+    "storageClassName": {
+      "type": "string",
+      "description": "Named explicitly per environment. An empty value is rejected because Kubernetes reads it as 'bind to a pre-provisioned volume, ignore every StorageClass', which on EKS would silently bypass the encrypted gp3 adapter.",
+      "pattern": "^[a-z0-9]([-a-z0-9.]*[a-z0-9])?$"
+    },
+    "storage": {
+      "type": "object",
+      "additionalProperties": false,
+      "description": "Chain-data claim sizes. Binary suffixes only, so environment profiles stay directly comparable. Expansion can grow these; nothing shrinks them.",
+      "required": [
+        "execution",
+        "consensus",
+        "validator"
+      ],
+      "properties": {
+        "execution": {
+          "type": "string",
+          "pattern": "^[1-9][0-9]*(Mi|Gi|Ti)$"
+        },
+        "consensus": {
+          "type": "string",
+          "pattern": "^[1-9][0-9]*(Mi|Gi|Ti)$"
+        },
+        "validator": {
+          "type": "string",
+          "pattern": "^[1-9][0-9]*(Mi|Gi|Ti)$"
         }
       }
     },

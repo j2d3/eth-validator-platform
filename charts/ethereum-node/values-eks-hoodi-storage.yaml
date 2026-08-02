@@ -1,0 +1,18 @@
+# Hoodi storage profile for the EKS development environment.
+#
+# Storage only. Lifecycle state, identity, and telemetry come from the
+# catalog-generated HelmRelease; this file exists so that an EKS release cannot
+# inherit the chart's local `standard` default or the EKS-created legacy `gp2`
+# class by omission. The intended wiring is a Flux HelmRelease that lists it in
+# `spec.chart.spec.valuesFiles` alongside `values.yaml`.
+#
+# The sizes are a pre-runtime hypothesis chosen before the first Hoodi sync, not
+# production guidance and not a measurement. They are expandable and deliberately
+# larger than the local kind defaults, because `allowVolumeExpansion` grows a
+# volume but nothing shrinks one. The reasoning, the cost arithmetic, and what
+# will revise them are in platform/infrastructure/configs/dev/README.md.
+storageClassName: ebs-gp3-encrypted
+storage:
+  execution: 200Gi
+  consensus: 50Gi
+  validator: 5Gi

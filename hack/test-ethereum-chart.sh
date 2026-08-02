@@ -20,6 +20,17 @@ helm template ethereum-node "${CHART}" --namespace ethereum \
   --set validator.feeRecipient=0x2222222222222222222222222222222222222222 \
   >"${temporary_directory}/signing.yaml"
 
+helm template ethereum-node "${CHART}" --namespace ethereum \
+  --values "${CHART}/values-eks-hoodi-storage.yaml" \
+  --set lifecycleState=active \
+  --set telemetry.cluster=eks-eth-validator-dev \
+  --set telemetry.environment=dev \
+  --set validator.enabled=true \
+  --set validator.slashingProtectionConfirmed=true \
+  --set validator.publicKey=0x111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111 \
+  --set validator.feeRecipient=0x2222222222222222222222222222222222222222 \
+  >"${temporary_directory}/eks-storage.yaml"
+
 if grep -Eq '^kind: (Deployment|StatefulSet|ExternalSecret)$' "${temporary_directory}/stopped.yaml"; then
   printf 'Stopped profile unexpectedly renders running compute or secret projection.\n' >&2
   exit 1
@@ -44,6 +55,27 @@ if grep -Eq 'validator-key|web3signer-db|platform.galaxy-lab/component: web3sign
   exit 1
 fi
 
+# Every claim in the EKS profile must name the encrypted gp3 class explicitly.
+# Inheriting `standard` would leave the claim permanently unbound on EKS;
+# inheriting the EKS-created legacy `gp2` class would be the cost regression
+# the class exists to avoid.
+if grep -Eq '^ *storageClassName: (standard|gp2)$' "${temporary_directory}/eks-storage.yaml"; then
+  printf 'EKS storage profile inherited the local standard class or the legacy gp2 class.\n' >&2
+  exit 1
+fi
+eks_class_references="$(grep -c '^ *storageClassName: ebs-gp3-encrypted$' "${temporary_directory}/eks-storage.yaml" || true)"
+if [[ "${eks_class_references}" -ne 3 ]]; then
+  printf 'Expected the execution, consensus, and validator claims to name the EKS gp3 class; found %s.\n' \
+    "${eks_class_references}" >&2
+  exit 1
+fi
+for expected_size in 200Gi 50Gi 5Gi; do
+  grep -q "storage: ${expected_size}$" "${temporary_directory}/eks-storage.yaml"
+done
+# The EKS profile stays opt-in: the chart's own default remains the local class,
+# so no local render silently references an EBS-only class.
+grep -q '^ *storageClassName: standard$' "${temporary_directory}/stopped.yaml"
+
 if helm template ethereum-node "${CHART}" --namespace ethereum \
   --set lifecycleState=active \
   --set validator.enabled=true \
@@ -54,4 +86,4 @@ if helm template ethereum-node "${CHART}" --namespace ethereum \
   exit 1
 fi
 
-printf 'Validated stopped, active non-signing, signing, and unsafe chart profiles.\n'
+printf 'Validated stopped, active non-signing, signing, EKS storage, and unsafe chart profiles.\n'
