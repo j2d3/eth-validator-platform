@@ -23,6 +23,17 @@ output "external_secrets_role_arn" {
   value       = aws_iam_role.external_secrets.arn
 }
 
+output "ethereum_node_groups_by_az" {
+  description = "Zonal Ethereum managed-node-group names and hard capacity bounds. Query EKS for live desired size; the pinned module intentionally ignores that field after creation."
+  value = {
+    for az in local.azs : az => {
+      name          = split(":", module.eks.eks_managed_node_groups["ethereum-${az}"].node_group_id)[1]
+      capacity_type = var.ethereum_capacity_type
+      max_size      = var.ethereum_max_size_per_az
+    }
+  }
+}
+
 output "configure_kubectl" {
   description = "Command for an authenticated operator."
   value       = "aws eks update-kubeconfig --region ${var.aws_region} --name ${module.eks.cluster_name}"

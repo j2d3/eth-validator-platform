@@ -49,7 +49,7 @@ The two middle columns mean different things, and the difference is the point. *
 | Prometheus and Grafana | Initial stack and smoke dashboards | Prometheus, Grafana, Alertmanager, and node exporter verified Ready at `b606121` | Populate validator dashboard levels in Phase 3 |
 | Logging (Alloy/Loki) | Flux-managed Loki and Alloy on `main`; node-scoped Pod-log collection through the Kubernetes API with no host log mounts, 24-hour retention on a 5 GiB local claim, provisioned Grafana datasource and log dashboard | **Offline validation only.** Chart renders, container runtime contracts, policy-port contract tests, and server-side dry-run pass. Live ingestion, retention, and dashboard behavior have not yet been observed | Capture live Flux, Loki, Alloy, and Grafana evidence |
 | Real Geth/Lighthouse pair | Catalog-generated Flux HelmRelease plus a manual GitHub Actions activate/stop PR form; active means EL + beacon node only and signing remains disabled | **Offline validation only.** Stopped/active chart contracts and catalog-projection drift tests pass; no Flux lifecycle transition or client sync has been observed | Enable the documented Actions PR setting, exercise stopped → active → stopped through Flux, and capture sync/runtime evidence (Phase 3) |
-| AWS foundation and EKS adapters | Terraform bootstrap and development roots declare an encrypted remote-state bucket, VPC, one EKS cluster, separated system/Ethereum node groups, EBS CSI and External Secrets Pod Identity, and an empty Engine JWT secret container. RDS, an application EBS StorageClass, the AWS External Secrets store, and the EKS Flux overlay are not implemented yet | **None.** No AWS resource has been created or qualified from this repository | Complete the remaining Phase 4 adapters, review a saved plan, then apply the one lab cluster from a trusted local workstation |
+| AWS foundation and EKS adapters | Terraform bootstrap and development roots declare an encrypted remote-state bucket, VPC, one EKS cluster, an on-demand system tier, zonal zero-minimum Ethereum groups with an explicit Spot experiment, EBS CSI and External Secrets Pod Identity, and an empty Engine JWT secret container. The application EBS StorageClass, RDS, AWS External Secrets store, and EKS Flux overlay are not implemented yet | On 2026-08-02 a trusted-local saved plan created 90 resources in `us-west-2`; the post-apply plan had zero drift. Three Kubernetes 1.35 nodes were Ready, and VPC CNI, CoreDNS, kube-proxy, EBS CSI, and Pod Identity pods were fully Running with zero restarts. That observed baseline used two on-demand system nodes and one on-demand Ethereum node; the zonal/Spot revision remains unapplied until review | Review the zonal/Spot replacement plan, then complete the remaining Phase 4 adapters before any client or signing workload lands |
 
 Nothing in the repository authorizes validator signing by default. The local profile is `platform-smoke`, uses Hoodi configuration, and leaves validator clients stopped.
 
@@ -96,9 +96,10 @@ The initial AWS operating model intentionally separates three writers:
 | GitHub Actions | CI validation and reviewed catalog/application change requests | AWS plan/apply/destroy and direct Kubernetes mutation |
 | Flux in EKS | Continuous reconciliation of controllers, platform services, client pairs, policies, and dashboards from merged Git | VPC, EKS, RDS, IAM, or other account-level AWS infrastructure |
 
-The Terraform code is currently a **declared skeleton**, not runtime evidence.
-Its exact implemented/missing inventory and the manual plan/apply boundary are
-documented in [the development environment root](terraform/environments/dev/README.md).
+The Terraform foundation now has a first runtime qualification, but it is not a
+Phase 4-complete application environment. Its exact declared, observed, and
+still-missing inventory—and the trusted-local plan/apply boundary—are documented
+in [the development environment root](terraform/environments/dev/README.md).
 
 ## Start locally
 
@@ -171,7 +172,7 @@ Phases are defined in PRD §18; each has an explicit exit criterion.
 | 1 | Reproducible local GitOps foundation | Complete |
 | 2 | Local platform services — secrets, database, signer, observability, logging | In progress |
 | 3 | First vertical slice: one identity through a full safe lifecycle | Started — non-signing catalog/Flux lifecycle path declared; runtime cycle not yet evidenced |
-| 4 | Reproducible AWS foundation and EKS parity | Skeleton declared — not applied or qualified |
+| 4 | Reproducible AWS foundation and EKS parity | In progress — foundation applied and cluster/add-ons qualified; application adapters incomplete |
 | 5 | Dynamic client matrix across four EL and four CL implementations | Not started |
 | 6 | Customer Service control plane | Not started |
 | 7 | Archive and recovery, including fail-closed exercises | Not started |

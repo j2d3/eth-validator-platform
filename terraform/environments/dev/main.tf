@@ -114,75 +114,84 @@ module "eks" {
   subnet_ids               = module.vpc.private_subnets
   control_plane_subnet_ids = module.vpc.intra_subnets
 
-  eks_managed_node_groups = {
-    system = {
-      ami_type       = "AL2023_x86_64_STANDARD"
-      capacity_type  = "ON_DEMAND"
-      instance_types = var.system_instance_types
+  eks_managed_node_groups = merge(
+    {
+      system = {
+        ami_type       = "AL2023_x86_64_STANDARD"
+        capacity_type  = "ON_DEMAND"
+        instance_types = var.system_instance_types
 
-      min_size     = 2
-      max_size     = 4
-      desired_size = 2
+        min_size     = 2
+        max_size     = 4
+        desired_size = 2
 
-      labels = {
-        workload = "system"
+        labels = {
+          workload = "system"
+        }
+
+        update_config = {
+          max_unavailable_percentage = 25
+        }
+
+        block_device_mappings = {
+          xvda = {
+            device_name = "/dev/xvda"
+            ebs = {
+              encrypted             = true
+              delete_on_termination = true
+              volume_size           = var.system_root_volume_size_gib
+              volume_type           = "gp3"
+            }
+          }
+        }
       }
+    },
+    {
+      # EBS volumes are zonal. One zero-minimum group per AZ ensures a later
+      # autoscaler can launch capacity where an existing PVC is bound. Until
+      # that controller is qualified, exactly one operator-selected AZ receives
+      # the lab's bounded desired capacity.
+      for index, az in local.azs : "ethereum-${az}" => {
+        ami_type       = "AL2023_x86_64_STANDARD"
+        capacity_type  = var.ethereum_capacity_type
+        instance_types = var.ethereum_instance_types
+        subnet_ids     = [module.vpc.private_subnets[index]]
 
-      update_config = {
-        max_unavailable_percentage = 25
-      }
+        min_size     = 0
+        max_size     = var.ethereum_max_size_per_az
+        desired_size = index == var.ethereum_initial_active_az_index ? var.ethereum_initial_desired_size : 0
 
-      block_device_mappings = {
-        xvda = {
-          device_name = "/dev/xvda"
-          ebs = {
-            encrypted             = true
-            delete_on_termination = true
-            volume_size           = 80
-            volume_type           = "gp3"
+        labels = {
+          workload                                = "ethereum"
+          "platform.galaxy-lab/availability-zone" = az
+        }
+
+        taints = {
+          dedicated = {
+            key    = "dedicated"
+            value  = "ethereum"
+            effect = "NO_SCHEDULE"
+          }
+        }
+
+        update_config = {
+          max_unavailable = 1
+        }
+
+        block_device_mappings = {
+          xvda = {
+            device_name = "/dev/xvda"
+            ebs = {
+              encrypted             = true
+              delete_on_termination = true
+              volume_size           = var.ethereum_root_volume_size_gib
+              volume_type           = "gp3"
+            }
           }
         }
       }
     }
-
-    ethereum = {
-      ami_type       = "AL2023_x86_64_STANDARD"
-      capacity_type  = "ON_DEMAND"
-      instance_types = var.ethereum_instance_types
-
-      min_size     = 1
-      max_size     = 3
-      desired_size = 1
-
-      labels = {
-        workload = "ethereum"
-      }
-
-      taints = {
-        dedicated = {
-          key    = "dedicated"
-          value  = "ethereum"
-          effect = "NO_SCHEDULE"
-        }
-      }
-
-      update_config = {
-        max_unavailable = 1
-      }
-
-      block_device_mappings = {
-        xvda = {
-          device_name = "/dev/xvda"
-          ebs = {
-            encrypted             = true
-            delete_on_termination = true
-            volume_size           = 100
-            volume_type           = "gp3"
-          }
-        }
-      }
-    }
-  }
+  )
 
   tags = local.tags
 }

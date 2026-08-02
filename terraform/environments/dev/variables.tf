@@ -51,10 +51,88 @@ variable "system_instance_types" {
   default     = ["m7i.large", "m6i.large"]
 }
 
+variable "system_root_volume_size_gib" {
+  description = "Disposable encrypted gp3 root volume size for each system node. Platform state belongs in managed services or PVCs, not the node root."
+  type        = number
+  default     = 40
+
+  validation {
+    condition     = var.system_root_volume_size_gib >= 20
+    error_message = "System node roots must be at least 20 GiB."
+  }
+}
+
 variable "ethereum_instance_types" {
-  description = "On-demand, memory-optimized instance types for EL/CL nodes."
+  description = "Diversified x86_64 memory-optimized instance types with equivalent 8-vCPU/64-GiB scheduling capacity for EL/CL nodes."
   type        = list(string)
-  default     = ["r7i.2xlarge", "r6i.2xlarge"]
+  default = [
+    "r8i.2xlarge",
+    "r8a.2xlarge",
+    "r7i.2xlarge",
+    "r7a.2xlarge",
+    "r6i.2xlarge",
+    "r6a.2xlarge",
+  ]
+
+  validation {
+    condition     = length(var.ethereum_instance_types) >= 3 && length(distinct(var.ethereum_instance_types)) == length(var.ethereum_instance_types)
+    error_message = "Supply at least three distinct, scheduling-equivalent Ethereum instance types so Spot is not tied to one capacity pool."
+  }
+}
+
+variable "ethereum_capacity_type" {
+  description = "EKS capacity type for zonal Ethereum groups. ON_DEMAND remains the default until the explicit Spot interruption exercise is qualified."
+  type        = string
+  default     = "ON_DEMAND"
+
+  validation {
+    condition     = contains(["ON_DEMAND", "SPOT"], var.ethereum_capacity_type)
+    error_message = "ethereum_capacity_type must be ON_DEMAND or SPOT."
+  }
+}
+
+variable "ethereum_initial_active_az_index" {
+  description = "Index into the three configured AZs whose Ethereum group receives capacity when it is first created. Existing managed-node-group desired size is operated through the EKS API, not Terraform."
+  type        = number
+  default     = 0
+
+  validation {
+    condition     = var.ethereum_initial_active_az_index >= 0 && var.ethereum_initial_active_az_index < 3 && floor(var.ethereum_initial_active_az_index) == var.ethereum_initial_active_az_index
+    error_message = "ethereum_initial_active_az_index must be one of 0, 1, or 2."
+  }
+}
+
+variable "ethereum_initial_desired_size" {
+  description = "Desired nodes in the selected Ethereum AZ at managed-node-group creation only. The pinned EKS module intentionally ignores later desired-size changes."
+  type        = number
+  default     = 1
+
+  validation {
+    condition     = contains([0, 1], var.ethereum_initial_desired_size)
+    error_message = "The lab permits zero or one initial Ethereum node; broaden this bound only with a reviewed cost/capacity change."
+  }
+}
+
+variable "ethereum_max_size_per_az" {
+  description = "Hard cost bound for each zonal Ethereum group. Zero-minimum groups in non-selected AZs remain available for a later autoscaler qualification."
+  type        = number
+  default     = 1
+
+  validation {
+    condition     = var.ethereum_max_size_per_az >= 1 && var.ethereum_max_size_per_az <= 2 && floor(var.ethereum_max_size_per_az) == var.ethereum_max_size_per_az
+    error_message = "ethereum_max_size_per_az must be one or two."
+  }
+}
+
+variable "ethereum_root_volume_size_gib" {
+  description = "Disposable encrypted gp3 root volume size for each Ethereum node. Chain databases use separate EBS CSI PVCs."
+  type        = number
+  default     = 30
+
+  validation {
+    condition     = var.ethereum_root_volume_size_gib >= 20
+    error_message = "Ethereum node roots must be at least 20 GiB."
+  }
 }
 
 variable "access_entries" {
