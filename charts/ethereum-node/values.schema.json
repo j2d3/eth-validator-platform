@@ -1,37 +1,115 @@
 {
   "$schema": "https://json-schema.org/draft/2020-12/schema",
   "type": "object",
-  "required": ["lifecycleState", "network", "executionClient", "consensusClient", "identity", "validator", "web3signer"],
+  "required": [
+    "lifecycleState",
+    "network",
+    "executionClient",
+    "consensusClient",
+    "identity",
+    "telemetry",
+    "validator",
+    "web3signer"
+  ],
   "properties": {
-    "lifecycleState": {"type": "string", "enum": ["active", "stopped", "archived"]},
-    "network": {"type": "string", "enum": ["sepolia", "hoodi"]},
-    "executionClient": {"const": "geth"},
-    "consensusClient": {"const": "lighthouse"},
+    "lifecycleState": {
+      "type": "string",
+      "enum": [
+        "active",
+        "stopped",
+        "archived"
+      ]
+    },
+    "network": {
+      "type": "string",
+      "enum": [
+        "sepolia",
+        "hoodi"
+      ]
+    },
+    "executionClient": {
+      "const": "geth"
+    },
+    "consensusClient": {
+      "const": "lighthouse"
+    },
     "identity": {
       "type": "object",
       "additionalProperties": false,
-      "required": ["customerId", "validatorId", "assignmentId"],
+      "required": [
+        "customerId",
+        "validatorId",
+        "assignmentId"
+      ],
       "properties": {
-        "customerId": {"type": "string", "pattern": "^[a-z][a-z0-9-]{2,62}$"},
-        "validatorId": {"type": "string", "pattern": "^[a-z][a-z0-9-]{2,62}$"},
-        "assignmentId": {"type": "string", "pattern": "^[a-z][a-z0-9-]{2,62}$"}
+        "customerId": {
+          "type": "string",
+          "pattern": "^[a-z][a-z0-9-]{2,62}$"
+        },
+        "validatorId": {
+          "type": "string",
+          "pattern": "^[a-z][a-z0-9-]{2,62}$"
+        },
+        "assignmentId": {
+          "type": "string",
+          "pattern": "^[a-z][a-z0-9-]{2,62}$"
+        }
+      }
+    },
+    "telemetry": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "cluster",
+        "environment"
+      ],
+      "description": "Environment identity attached to every scraped series and retained through every recording rule. Must be set per environment; not derivable from Prometheus externalLabels, which do not apply to locally queried series.",
+      "properties": {
+        "cluster": {
+          "type": "string",
+          "pattern": "^[a-z][a-z0-9-]{2,62}$"
+        },
+        "environment": {
+          "type": "string",
+          "enum": [
+            "local",
+            "dev",
+            "staging",
+            "production"
+          ]
+        }
       }
     },
     "validator": {
       "type": "object",
-      "required": ["enabled"],
+      "required": [
+        "enabled"
+      ],
       "properties": {
-        "enabled": {"type": "boolean"},
-        "publicKey": {"type": "string"},
-        "feeRecipient": {"type": "string"},
-        "slashingProtectionConfirmed": {"type": "boolean"}
+        "enabled": {
+          "type": "boolean"
+        },
+        "publicKey": {
+          "type": "string"
+        },
+        "feeRecipient": {
+          "type": "string"
+        },
+        "slashingProtectionConfirmed": {
+          "type": "boolean"
+        }
       }
     },
     "web3signer": {
       "type": "object",
-      "required": ["endpoint"],
+      "required": [
+        "endpoint"
+      ],
       "properties": {
-        "endpoint": {"type": "string", "pattern": "^https?://"}
+        "endpoint": {
+          "type": "string",
+          "pattern": "^https?://"
+        }
       }
     }
   }

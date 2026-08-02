@@ -137,22 +137,36 @@ class DashboardContractTests(unittest.TestCase):
                     "navigation dashboards must declare the same variables in the same order",
                 )
 
-    def test_variables_not_backed_by_metric_labels_are_documented(self) -> None:
-        """`cluster` and `lifecycle` are not Prometheus labels; they must not pose as query variables."""
+    def test_every_navigation_variable_is_a_real_query(self) -> None:
+        """No placeholder variables.
+
+        `cluster` and `lifecycle` used to be a constant and a log-only custom
+        list because neither existed as a Prometheus label. The pair chart now
+        sets `cluster`, `environment` and `lifecycle_state` in its scrape
+        relabel contract, so every variable on a metric dashboard must be a
+        genuine query against a real label.
+        """
         for uid in NAVIGATION_UIDS:
-            variables = {v["name"]: v for v in self.by_uid[uid]["templating"]["list"]}
-            for name in ("cluster", "lifecycle"):
-                with self.subTest(dashboard=uid, variable=name):
-                    variable = variables[name]
-                    self.assertNotEqual(
+            for variable in self.by_uid[uid]["templating"]["list"]:
+                with self.subTest(dashboard=uid, variable=variable["name"]):
+                    self.assertEqual(
                         variable["type"],
                         "query",
-                        f"{name} has no Prometheus label and must not be a query variable",
+                        f"{variable['name']} must be backed by a real label query",
                     )
-                    self.assertTrue(
-                        variable.get("description"),
-                        f"{name} must document why it is not a metric filter",
-                    )
+                    self.assertEqual(variable["datasource"]["uid"], "prometheus")
+
+    def test_navigation_panels_filter_on_cluster_and_lifecycle(self) -> None:
+        """Declaring the labels is not enough; the panels must select on them."""
+        for uid in NAVIGATION_UIDS:
+            for panel in self.by_uid[uid]["panels"]:
+                for target in panel.get("targets", []):
+                    expression = target.get("expr", "")
+                    if "validator_platform_" not in expression:
+                        continue
+                    with self.subTest(dashboard=uid, panel=panel["title"]):
+                        self.assertIn('cluster=~"$cluster"', expression)
+                        self.assertIn('lifecycle_state=~"$lifecycle"', expression)
 
     def test_navigation_links_reach_the_related_dashboards(self) -> None:
         for uid, expected_targets in REQUIRED_LINK_TARGETS.items():
@@ -214,8 +228,14 @@ class DashboardContractTests(unittest.TestCase):
                     f"{p.get('title', '')} {p['options']['content']}" for p in text_panels
                 ).lower()
                 self.assertIn("not collected", combined)
-                # The absence must be attributed, not just asserted.
-                self.assertIn("not a prometheus label", combined)
+                # The absence must be attributed, not merely asserted.
+                self.assertTrue(
+                    any(
+                        reason in combined
+                        for reason in ("no verified normalization", "out of scope", "by contract")
+                    ),
+                    "each absent signal must carry a stated reason",
+                )
 
     @staticmethod
     def _expressions(dashboard: dict) -> list[str]:

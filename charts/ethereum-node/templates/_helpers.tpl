@@ -33,6 +33,19 @@ app.kubernetes.io/name: {{ include "ethereum-node.name" . }}
 app.kubernetes.io/instance: {{ .Release.Name }}
 {{- end -}}
 
+{{/*
+The scrape-time telemetry contract. Every label here is attached to every
+series the pair exposes, and every recording rule retains all of them through
+its aggregation, so a normalized series can always be traced back to one
+cluster, environment, lifecycle state and identity. cluster/environment are
+deliberately set here rather than through Prometheus externalLabels: external
+labels are applied on remote-write and federation, not to locally queried
+series, so they cannot be selected on in a local dashboard query.
+*/}}
+{{- define "ethereum-node.telemetryLabels" -}}
+cluster, environment, lifecycle_state, network, customer_id, validator_id, assignment_id, execution_client, consensus_client
+{{- end -}}
+
 {{- define "ethereum-node.metricRelabelings" -}}
 - action: replace
   replacement: ethereum-validator
@@ -40,6 +53,15 @@ app.kubernetes.io/instance: {{ .Release.Name }}
 - action: replace
   replacement: {{ .component }}
   targetLabel: component
+- action: replace
+  replacement: {{ required "telemetry.cluster must be set for every environment" .root.Values.telemetry.cluster }}
+  targetLabel: cluster
+- action: replace
+  replacement: {{ required "telemetry.environment must be set for every environment" .root.Values.telemetry.environment }}
+  targetLabel: environment
+- action: replace
+  replacement: {{ .root.Values.lifecycleState }}
+  targetLabel: lifecycle_state
 - action: replace
   replacement: {{ .root.Values.network }}
   targetLabel: network
