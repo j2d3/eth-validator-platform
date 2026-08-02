@@ -118,8 +118,22 @@ infrastructure-controllers
 infrastructure-configs
           |
           v
+ signer-prerequisites
+          |
+          v
         apps
 ```
+
+The signer-prerequisites layer runs the versioned Web3Signer PostgreSQL schema
+Job in the `database` namespace. The Job copies the migrations shipped in the
+digest-pinned Web3Signer image and applies them with a separately digest-pinned
+Flyway image. Flux does not admit the Web3Signer application layer until this
+Job completes successfully. Flyway records each applied migration in
+`flyway_schema_history`, so deleting and reconciling the Job is a safe no-op
+after all 12 migrations succeed. The Job carries Flux's force annotation because
+Kubernetes Job pod templates are immutable; a reviewed template correction can
+therefore replace and rerun the Job instead of wedging reconciliation. The Job
+has no automatic TTL, which prevents Flux from recreating it continuously.
 
 After bootstrap, pull the Flux-generated commit into the workstation before making another change:
 
@@ -146,6 +160,12 @@ Do not copy a funded validator keystore into the optional directory until the sl
 
 ```bash
 make local-status
+kubectl -n database get job web3signer-schema-v12
+kubectl -n database logs job/web3signer-schema-v12 -c flyway
+kubectl -n database exec web3signer-postgres-1 -- \
+  psql -U postgres -d web3signer -c \
+  'SELECT installed_rank, version, description, success FROM flyway_schema_history ORDER BY installed_rank;'
+kubectl -n signing rollout status deploy/web3signer --timeout=5m
 kubectl -n signing get deploy,pod,svc,externalsecret
 kubectl -n database get cluster,pod,pvc
 ```
