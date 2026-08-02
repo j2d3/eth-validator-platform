@@ -4,7 +4,7 @@ LOCAL_BIN := $(CURDIR)/.local/bin
 TF_PLUGIN_CACHE_DIR := $(CURDIR)/.local/terraform-plugin-cache
 export PATH := $(LOCAL_BIN):$(PATH)
 
-.PHONY: help tools format fmt validate catalog test helm-template helm-releases kustomize-build local-preflight local-up local-bootstrap local-seed local-status local-down check
+.PHONY: help tools format fmt validate catalog test container-contracts helm-template helm-releases kustomize-build local-preflight local-up local-bootstrap local-seed local-status local-down check
 
 help: ## Show available targets
 	@awk 'BEGIN {FS = ":.*## "; printf "Usage: make <target>\n\n"} /^[a-zA-Z_-]+:.*## / {printf "  %-18s %s\n", $$1, $$2}' $(MAKEFILE_LIST)
@@ -32,6 +32,9 @@ catalog: ## Validate desired-state schemas and relational safety rules
 
 test: ## Run desired-state safety unit tests
 	python3 -m unittest discover -s tests -v
+
+container-contracts: ## Verify pinned images match declared Kubernetes runtime identities
+	python3 tools/verify_container_contracts.py
 
 helm-template: ## Render and lint the selectable Ethereum client chart
 	./hack/test-ethereum-chart.sh
