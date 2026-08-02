@@ -95,6 +95,7 @@ def relational_errors(documents: list[tuple[Path, dict[str, Any]]]) -> list[str]
             public_keys[normalized] = name
 
     live_assignments: dict[str, list[str]] = defaultdict(list)
+    live_node_pairs: dict[str, list[str]] = defaultdict(list)
     for name, assignment in by_kind["ValidatorAssignment"].items():
         spec = assignment["spec"]
         validator_name = spec["validatorRef"]
@@ -107,6 +108,9 @@ def relational_errors(documents: list[tuple[Path, dict[str, Any]]]) -> list[str]
             errors.append(f"ValidatorAssignment/{name}: unknown serviceProfileRef {profile_name!r}")
         if spec["lifecycle"] in LIVE_ASSIGNMENT_STATES:
             live_assignments[validator_name].append(name)
+            node_pair = spec.get("nodePairRef")
+            if node_pair:
+                live_node_pairs[node_pair].append(name)
         if spec["signingEnabled"]:
             if identity and identity["spec"]["synthetic"]:
                 errors.append(f"ValidatorAssignment/{name}: synthetic identity may not sign")
@@ -123,6 +127,12 @@ def relational_errors(documents: list[tuple[Path, dict[str, Any]]]) -> list[str]
         if len(assignment_names) > 1:
             errors.append(
                 f"ValidatorIdentity/{validator_name}: multiple live assignments: {', '.join(sorted(assignment_names))}"
+            )
+
+    for node_pair, assignment_names in live_node_pairs.items():
+        if len(assignment_names) > 1:
+            errors.append(
+                f"NodePair/{node_pair}: multiple live assignments: {', '.join(sorted(assignment_names))}"
             )
 
     for customer_name, customer in by_kind["Customer"].items():

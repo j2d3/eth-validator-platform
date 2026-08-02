@@ -4,6 +4,7 @@ metadata:
   name: {{ include "ethereum-node.fullname" . }}-record
   labels:
     {{- include "ethereum-node.labels" . | nindent 4 }}
+    platform.galaxy-lab/signing-enabled: {{ .Values.validator.enabled | quote }}
 data:
   lifecycleState: {{ .Values.lifecycleState | quote }}
   network: {{ .Values.network | quote }}
