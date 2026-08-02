@@ -100,8 +100,8 @@ disruption.
 
 A second consequence is local and immediate: a claim under this class provisions
 **nothing** until a Pod consumes it. A pair that has never been activated has
-three `Pending` claims and zero EBS cost. That is the expected state, not a
-fault — the local `kind` cluster already shows the same behavior.
+`Pending` claims and zero EBS cost. That is the expected state, not a fault —
+the local `kind` cluster already shows the same behavior.
 
 ### `stopped` retains the claims; `Delete` releases the volume with them
 
@@ -163,16 +163,22 @@ local default for that reason.
 Storage cost is linear in provisioned size, not in used size — an empty 200Gi
 volume bills as 200Gi.
 
+The validator claim only renders when a validator client is enabled, and every
+projection in this repository keeps signing disabled, so the number that applies
+today is the two-claim one.
+
 ```
-200Gi + 50Gi + 5Gi = 255 GiB provisioned per active pair
-255 GiB x $0.08 per GiB-month  ~= $20 per pair per month
+200Gi + 50Gi        = 250 GiB   non-signing pair (execution + consensus)
+        + 5Gi       = 255 GiB   once a validator client is enabled
+
+250 GiB x $0.08 per GiB-month  ~= $20 per pair per month
 ```
 
 The `$0.08` is the commonly-quoted `us-west-2` gp3 list rate and is an **input to
 this arithmetic, not a fact this repository has verified** — no AWS pricing API
 has been called from here. Confirm it against the AWS pricing page for the
 target region before quoting the total anywhere it matters. Two things about it
-are structural rather than rate-dependent: the same 255 GiB on `gp2` would cost
+are structural rather than rate-dependent: the same volumes on `gp2` would cost
 about 20% more for worse baseline behavior, and gp3's 3,000 IOPS / 125 MiB/s
 baseline is included at that rate, so the class asks for neither `iops` nor
 `throughput`. Provisioning either is billed on top and belongs behind measured
