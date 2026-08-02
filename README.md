@@ -6,15 +6,15 @@ The approved product and architecture contract is [docs/prd/001-dynamic-validato
 
 ## Current implementation status
 
-| Capability | Status |
-|---|---|
-| Product and architecture specification | Approved and committed as the repository baseline |
-| Local `kind` cluster contract | Implemented; runtime verification pending disk capacity, Docker, and GitHub re-authentication |
-| Flux reconciliation layers | Implemented for controllers → local infrastructure adapters → apps |
-| Local PostgreSQL and shared Web3Signer | Initial platform-smoke manifests implemented |
-| Prometheus and Grafana | Initial stack and smoke dashboard implemented |
-| Real Geth/Lighthouse pair | Safe, shared-signer chart slice implemented; runtime sync qualification is next |
-| EKS/RDS/Secrets Manager | Designed; no AWS resources have been created |
+| Capability | Declared implementation | Runtime evidence |
+|---|---|---|
+| Product and architecture specification | Approved repository baseline | Specification and validation contracts committed |
+| Local `kind` cluster | Digest-pinned local cluster contract | Cluster creation and teardown guard verified |
+| Flux reconciliation | Controllers → infrastructure configs → signer prerequisites → apps | Controllers, configs, and apps verified; new signer prerequisite is API-server validated and awaits merge-time reconciliation |
+| Local PostgreSQL and shared Web3Signer | CloudNativePG, explicit versioned schema migration, and shared signer with an empty key store | Database readiness and signer-to-database connectivity verified; schema migration and signer readiness are the next runtime gate |
+| Prometheus and Grafana | Initial stack and smoke dashboards | Prometheus, Grafana, Alertmanager, and node exporter verified Ready |
+| Real Geth/Lighthouse pair | Safe stopped and non-signing chart profiles | Render contracts verified; client sync qualification has not started |
+| EKS/RDS/Secrets Manager | Architecture designed | No AWS resources have been created |
 
 Nothing in the repository authorizes validator signing by default. The local profile is `platform-smoke`, uses Hoodi configuration, and leaves validator clients stopped.
 
