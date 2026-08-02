@@ -29,7 +29,7 @@ variable "kubernetes_version" {
 }
 
 variable "cluster_public_access_cidrs" {
-  description = "CIDRs permitted to reach the public EKS API endpoint. GitHub Actions supplies its current /32 during apply."
+  description = "CIDRs permitted to reach the public EKS API endpoint. Supply a trusted operator /32 during the local plan/apply, or use private connectivity."
   type        = list(string)
   default     = ["127.0.0.1/32"]
 

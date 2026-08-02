@@ -49,7 +49,7 @@ The two middle columns mean different things, and the difference is the point. *
 | Prometheus and Grafana | Initial stack and smoke dashboards | Prometheus, Grafana, Alertmanager, and node exporter verified Ready at `b606121` | Populate validator dashboard levels in Phase 3 |
 | Logging (Alloy/Loki) | Flux-managed Loki and Alloy on `main`; node-scoped Pod-log collection through the Kubernetes API with no host log mounts, 24-hour retention on a 5 GiB local claim, provisioned Grafana datasource and log dashboard | **Offline validation only.** Chart renders, container runtime contracts, policy-port contract tests, and server-side dry-run pass. Live ingestion, retention, and dashboard behavior have not yet been observed | Capture live Flux, Loki, Alloy, and Grafana evidence |
 | Real Geth/Lighthouse pair | Catalog-generated Flux HelmRelease plus a manual GitHub Actions activate/stop PR form; active means EL + beacon node only and signing remains disabled | **Offline validation only.** Stopped/active chart contracts and catalog-projection drift tests pass; no Flux lifecycle transition or client sync has been observed | Enable the documented Actions PR setting, exercise stopped → active → stopped through Flux, and capture sync/runtime evidence (Phase 3) |
-| EKS/RDS/Secrets Manager | Architecture designed | None — no AWS resources have been created | Terraform roots in Phase 4 |
+| AWS foundation and EKS adapters | Terraform bootstrap and development roots declare an encrypted remote-state bucket, VPC, one EKS cluster, separated system/Ethereum node groups, EBS CSI and External Secrets Pod Identity, and an empty Engine JWT secret container. RDS, an application EBS StorageClass, the AWS External Secrets store, and the EKS Flux overlay are not implemented yet | **None.** No AWS resource has been created or qualified from this repository | Complete the remaining Phase 4 adapters, review a saved plan, then apply the one lab cluster from a trusted local workstation |
 
 Nothing in the repository authorizes validator signing by default. The local profile is `platform-smoke`, uses Hoodi configuration, and leaves validator clients stopped.
 
@@ -81,6 +81,24 @@ flowchart TD
 The shared Web3Signer tier is a deliberate Phase 2 simplification: one signer backed by one durable slashing-protection database, which is what makes invariant 2 ("one durable slashing authority") cheap to enforce while the fleet is small. PRD §15.1 covers what has to be split, sharded, or made cell-local before this shape carries an institutional fleet.
 
 Local infrastructure adapters are deliberately not described as AWS emulators. `kind`, local-path volumes, CloudNativePG, and the External Secrets Kubernetes provider prove the Kubernetes and application contracts. EBS, RDS, IAM/KMS, NLB behavior, Availability Zones, and Karpenter require the later EKS qualification.
+
+## AWS operating boundary
+
+Amazon EKS is the only cloud Kubernetes target for this project. The local
+`kind` cluster is a development adapter, not a different production target;
+there is no GKE or Google Cloud Terraform root in this repository.
+
+The initial AWS operating model intentionally separates three writers:
+
+| Writer | Owns | Does not own |
+|---|---|---|
+| Terraform, run from a trusted local workstation | Infrequent AWS foundation changes: VPC, one EKS cluster, node capacity, IAM/Pod Identity, EBS prerequisites, RDS, KMS/encryption policy, and secret containers | Helm releases, validator assignments, dashboards, or day-to-day application lifecycle |
+| GitHub Actions | CI validation and reviewed catalog/application change requests | AWS plan/apply/destroy and direct Kubernetes mutation |
+| Flux in EKS | Continuous reconciliation of controllers, platform services, client pairs, policies, and dashboards from merged Git | VPC, EKS, RDS, IAM, or other account-level AWS infrastructure |
+
+The Terraform code is currently a **declared skeleton**, not runtime evidence.
+Its exact implemented/missing inventory and the manual plan/apply boundary are
+documented in [the development environment root](terraform/environments/dev/README.md).
 
 ## Start locally
 
@@ -128,7 +146,7 @@ The operator-facing lifecycle form lives under **Actions → Request non-signing
 | `platform/apps/base` | Environment-independent application manifests |
 | `platform/apps/local` | Local profile and dashboard composition |
 | `charts/ethereum-node` | First Geth/Lighthouse vertical slice under runtime qualification |
-| `terraform` | AWS bootstrap and later EKS environment roots |
+| `terraform` | Locally applied AWS bootstrap and single-EKS-environment roots; never application desired state |
 
 ## How work happens here
 
@@ -153,7 +171,7 @@ Phases are defined in PRD §18; each has an explicit exit criterion.
 | 1 | Reproducible local GitOps foundation | Complete |
 | 2 | Local platform services — secrets, database, signer, observability, logging | In progress |
 | 3 | First vertical slice: one identity through a full safe lifecycle | Started — non-signing catalog/Flux lifecycle path declared; runtime cycle not yet evidenced |
-| 4 | Reproducible AWS foundation and EKS parity | Not started |
+| 4 | Reproducible AWS foundation and EKS parity | Skeleton declared — not applied or qualified |
 | 5 | Dynamic client matrix across four EL and four CL implementations | Not started |
 | 6 | Customer Service control plane | Not started |
 | 7 | Archive and recovery, including fail-closed exercises | Not started |
