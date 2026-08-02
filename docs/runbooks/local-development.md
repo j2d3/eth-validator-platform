@@ -278,6 +278,14 @@ The repository contains one generated `HelmRelease` for
 customer, and service-profile catalog under `applications/`; direct edits to
 `platform/apps/local/assignments/` fail `make check`.
 
+While the assignment is stopped, its execution and consensus PVCs remain
+`Pending` under the local `WaitForFirstConsumer` StorageClass because no client
+Pod exists to bind them. That is the expected safe state. The generated release
+disables Helm resource waiting for stopped installs and upgrades so unrelated
+Git revisions still reconcile; active installs and upgrades retain normal
+Helm waiting. Do not create a dummy consumer or apply the chart manually to
+make a stopped PVC bind.
+
 Before using the form for the first time, an owner must enable:
 
 **Repository Settings → Actions → General → Workflow permissions → Allow

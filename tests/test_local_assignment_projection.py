@@ -34,6 +34,7 @@ class LocalAssignmentProjectionTests(unittest.TestCase):
         self.assertEqual(values["lifecycleState"], "stopped")
         self.assertEqual(values["fullnameOverride"], "pair-validator-synthetic-01")
         self.assertTrue(release["spec"]["install"]["disableWait"])
+        self.assertTrue(release["spec"]["upgrade"]["disableWait"])
         self.assertFalse(values["validator"]["enabled"])
         self.assertFalse(values["validator"]["slashingProtectionConfirmed"])
         self.assertNotIn("publicKey", values["validator"])
@@ -60,6 +61,7 @@ class LocalAssignmentProjectionTests(unittest.TestCase):
         self.assertEqual(values["lifecycleState"], "active")
         self.assertEqual(values["fullnameOverride"], "pair-validator-synthetic-01")
         self.assertFalse(release["spec"]["install"]["disableWait"])
+        self.assertFalse(release["spec"]["upgrade"]["disableWait"])
         self.assertEqual(values["executionClient"], "geth")
         self.assertEqual(values["consensusClient"], "lighthouse")
         self.assertFalse(values["validator"]["enabled"])
@@ -68,6 +70,12 @@ class LocalAssignmentProjectionTests(unittest.TestCase):
         for lifecycle in ("activating", "failed-safe", "stopping", "switching", "archiving"):
             with self.subTest(lifecycle=lifecycle):
                 self.assertEqual(render_local_assignments.chart_lifecycle(lifecycle), "stopped")
+
+                catalog = copy.deepcopy(self.catalog)
+                catalog["ValidatorAssignment"][self.assignment_name]["spec"]["lifecycle"] = lifecycle
+                release = self.release(catalog)
+                self.assertTrue(release["spec"]["install"]["disableWait"])
+                self.assertTrue(release["spec"]["upgrade"]["disableWait"])
 
     def test_projection_refuses_signing_catalog_state(self) -> None:
         catalog = copy.deepcopy(self.catalog)
