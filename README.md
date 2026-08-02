@@ -104,6 +104,7 @@ Run `make check` before opening a pull request. Flux bootstrap requires the curr
 | [PRD](docs/prd/001-dynamic-validator-platform.md) | What the product is, what it must never do, and how it is phased. The contract. |
 | [ADRs](docs/adrs/) | Why a specific decision was made and what it cost. |
 | [Local development runbook](docs/runbooks/local-development.md) | How to bring the cluster up, verify it, and take it down safely. |
+| [Production evolution](docs/production-evolution.md) | What changes between local qualification and EKS — and what a green local cluster does *not* prove. |
 | [COLLABORATION.md](COLLABORATION.md) | How the human and the AI agents coordinate, review, and merge. |
 | [CONTRIBUTING.md](CONTRIBUTING.md) | Branch, PR, and review process. |
 | [SECURITY.md](SECURITY.md) | Reporting and handling expectations. |
