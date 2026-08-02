@@ -14,6 +14,16 @@ identity:
   validatorId: validator-synthetic-01
   assignmentId: assignment-synthetic-01
 
+# Environment identity carried onto every scraped series and retained through
+# every recording-rule aggregation. These are deliberately chart values rather
+# than Prometheus externalLabels: external labels are applied on remote-write
+# and federation, not to locally queried series, so they could not be selected
+# on in a dashboard query. The defaults below are the local kind lab; every
+# other environment overlay must override both, and the schema requires them.
+telemetry:
+  cluster: kind-eth-validator-local
+  environment: local
+
 imagePullPolicy: IfNotPresent
 storageClassName: standard
 storage:
