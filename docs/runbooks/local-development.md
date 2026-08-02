@@ -161,6 +161,7 @@ Do not copy a funded validator keystore into the optional directory until the sl
 ```bash
 make local-status
 kubectl -n database get job web3signer-schema-v12
+kubectl -n database logs job/web3signer-schema-v12 -c copy-web3signer-migrations
 kubectl -n database logs job/web3signer-schema-v12 -c flyway
 kubectl -n database exec web3signer-postgres-1 -- \
   psql -U postgres -d web3signer -c \
@@ -169,6 +170,11 @@ kubectl -n signing rollout status deploy/web3signer --timeout=5m
 kubectl -n signing get deploy,pod,svc,externalsecret
 kubectl -n database get cluster,pod,pvc
 ```
+
+The migration Job uses `restartPolicy: Never`, so a failed attempt remains as a
+separate Pod with inspectable init-container and Flyway logs. Diagnose the copy
+step before the database step: Flyway cannot start until the pinned Web3Signer
+migrations have been copied successfully.
 
 Open Grafana through a local-only port-forward:
 

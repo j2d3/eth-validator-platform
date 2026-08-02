@@ -35,6 +35,7 @@ class ContainerContract:
     identity_mode: IdentityMode = IdentityMode.IMAGE_DEFAULT
     smoke_entrypoint: str | None = None
     smoke_args: tuple[str, ...] = ()
+    smoke_use_declared_args: bool = False
     smoke_tmpfs: tuple[str, ...] = ()
 
 
@@ -52,13 +53,10 @@ CONTRACTS = (
         container_name="copy-web3signer-migrations",
         container_group="initContainers",
         smoke_entrypoint="/bin/cp",
-        smoke_args=(
-            "-a",
-            "/opt/web3signer/migrations/postgresql/.",
-            "/work/migrations/",
-        ),
+        smoke_use_declared_args=True,
         smoke_tmpfs=(
-            "/work/migrations:rw,noexec,nosuid,nodev,size=8m,uid=999,gid=999,mode=0770",
+            # Match Kubelet's root-owned, fsGroup-writable emptyDir mount point.
+            "/work/migrations:rw,noexec,nosuid,nodev,size=8m,uid=0,gid=999,mode=3777",
         ),
     ),
     ContainerContract(
@@ -227,7 +225,12 @@ def verify_contract(contract: ContainerContract, pulled_images: set[str]) -> Non
             f"{image} {identity_description} {actual_uid}:{actual_gid}"
         )
 
-    if contract.smoke_entrypoint or contract.smoke_args:
+    smoke_args = (
+        tuple(container.get("args", ()))
+        if contract.smoke_use_declared_args
+        else contract.smoke_args
+    )
+    if contract.smoke_entrypoint or smoke_args:
         smoke_probe = [
             "docker",
             "run",
@@ -239,7 +242,7 @@ def verify_contract(contract: ContainerContract, pulled_images: set[str]) -> Non
             smoke_probe.extend(("--tmpfs", tmpfs))
         if contract.smoke_entrypoint:
             smoke_probe.append(f"--entrypoint={contract.smoke_entrypoint}")
-        smoke_probe.extend((image, *contract.smoke_args))
+        smoke_probe.extend((image, *smoke_args))
         run(smoke_probe)
 
     identity_description = (
