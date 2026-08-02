@@ -6,3 +6,5 @@ resources:
   - platform-dashboard.yaml
   - geth-lighthouse-dashboard.yaml
   - logging-dashboard.yaml
+  - fleet-overview-dashboard.yaml
+  - validator-detail-dashboard.yaml

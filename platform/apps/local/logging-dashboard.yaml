@@ -10,155 +10,39 @@ data:
   platform-logging.json: |-
     {
       "annotations": {"list": []},
-      "description": "Local fleet-to-pod log navigation backed by Alloy and Loki. Use the account and validator labels after a node pair is active.",
+      "description": "Local fleet-to-pod log navigation backed by Alloy and Loki. Consumes the same identity variables as the fleet and validator dashboards, so context carries across navigation.",
       "editable": false,
       "graphTooltip": 1,
-      "links": [],
+      "links": [
+        {"type": "link", "title": "Fleet overview", "url": "/d/eth-fleet-overview", "icon": "external link", "tooltip": "Fleet and client-diversity overview", "targetBlank": false, "asDropdown": false, "includeVars": true, "keepTime": true},
+        {"type": "link", "title": "Validator detail", "url": "/d/eth-validator-detail", "icon": "external link", "tooltip": "Per-validator pair and resource detail", "targetBlank": false, "asDropdown": false, "includeVars": true, "keepTime": true},
+        {"type": "link", "title": "Pair detail (Geth + Lighthouse)", "url": "/d/eth-validator-geth-lighthouse", "icon": "external link", "tooltip": "Normalized pair health for the qualified client pair", "targetBlank": false, "asDropdown": false, "includeVars": true, "keepTime": true}
+      ],
       "panels": [
-        {
-          "type": "text",
-          "title": "Logging contract",
-          "id": 1,
-          "options": {
-            "mode": "markdown",
-            "content": "Alloy collects Kubernetes Pod logs through the API, restricted to its own node. Loki retains 24 hours on a local 5 GiB PVC. Empty validator labels are expected while the safe `platform-smoke` profile is stopped."
-          },
-          "gridPos": {"h": 4, "w": 24, "x": 0, "y": 0}
-        },
-        {
-          "type": "stat",
-          "title": "Log lines / 5m",
-          "id": 2,
-          "datasource": {"type": "loki", "uid": "loki"},
-          "targets": [
-            {
-              "refId": "A",
-              "expr": "sum(count_over_time({cluster=~\"$cluster\",namespace=~\"$namespace\",pod=~\"$pod\",container=~\"$container\"}[5m]))",
-              "queryType": "instant"
-            }
-          ],
-          "fieldConfig": {"defaults": {"unit": "short", "min": 0}, "overrides": []},
-          "gridPos": {"h": 5, "w": 6, "x": 0, "y": 4}
-        },
-        {
-          "type": "timeseries",
-          "title": "Log volume by namespace",
-          "id": 3,
-          "datasource": {"type": "loki", "uid": "loki"},
-          "targets": [
-            {
-              "refId": "A",
-              "expr": "sum by (namespace) (count_over_time({cluster=~\"$cluster\",namespace=~\"$namespace\"}[5m]))",
-              "legendFormat": "{{namespace}}",
-              "queryType": "range"
-            }
-          ],
-          "fieldConfig": {"defaults": {"unit": "short", "min": 0}, "overrides": []},
-          "gridPos": {"h": 8, "w": 9, "x": 6, "y": 4}
-        },
-        {
-          "type": "timeseries",
-          "title": "Error-like lines by namespace",
-          "id": 4,
-          "datasource": {"type": "loki", "uid": "loki"},
-          "targets": [
-            {
-              "refId": "A",
-              "expr": "sum by (namespace) (count_over_time({cluster=~\"$cluster\",namespace=~\"$namespace\"} |~ \"(?i)(error|fatal|panic)\" [5m]))",
-              "legendFormat": "{{namespace}}",
-              "queryType": "range"
-            }
-          ],
-          "fieldConfig": {"defaults": {"unit": "short", "min": 0}, "overrides": []},
-          "gridPos": {"h": 8, "w": 9, "x": 15, "y": 4}
-        },
-        {
-          "type": "logs",
-          "title": "Selected platform logs",
-          "id": 5,
-          "datasource": {"type": "loki", "uid": "loki"},
-          "targets": [
-            {
-              "refId": "A",
-              "expr": "{cluster=~\"$cluster\",namespace=~\"$namespace\",pod=~\"$pod\",container=~\"$container\"} |~ \"(?i)$search\"",
-              "queryType": "range"
-            }
-          ],
-          "options": {"dedupStrategy": "none", "enableLogDetails": true, "prettifyLogMessage": false, "showCommonLabels": false, "showLabels": false, "showTime": true, "sortOrder": "Descending", "wrapLogMessage": true},
-          "gridPos": {"h": 12, "w": 24, "x": 0, "y": 12}
-        },
-        {
-          "type": "logs",
-          "title": "Web3Signer audit and rejection stream",
-          "id": 6,
-          "datasource": {"type": "loki", "uid": "loki"},
-          "targets": [
-            {
-              "refId": "A",
-              "expr": "{cluster=~\"$cluster\",namespace=\"signing\",app=\"web3signer\"}",
-              "queryType": "range"
-            }
-          ],
-          "options": {"dedupStrategy": "none", "enableLogDetails": true, "prettifyLogMessage": false, "showCommonLabels": false, "showLabels": true, "showTime": true, "sortOrder": "Descending", "wrapLogMessage": true},
-          "gridPos": {"h": 10, "w": 24, "x": 0, "y": 24}
-        }
+        {"type": "text", "title": "Logging contract", "id": 1, "options": {"mode": "markdown", "content": "Alloy collects Kubernetes Pod logs through the API, restricted to its own node, and promotes identity labels onto a stream when the source Pod carries them — so validator pair Pods gain them and platform components do not. Loki retains 24 hours on a local 5 GiB PVC.\n\n**Identity filtering works here.** `network`, `customer_id`, `validator_id`, `assignment_id`, `execution_client`, `consensus_client` and `lifecycle` are real Loki stream labels that Alloy promotes from validator Pod metadata, so arriving from the fleet or validator dashboards preserves and applies that context. The dashboard `lifecycle` variable maps to the Loki `lifecycle_state` label.\n\nStreams that legitimately lack an identity label — platform components such as Loki, Alloy, Grafana and Web3Signer — still match, because a `.*` selector matches an absent label. Empty validator labels are therefore expected while the safe `platform-smoke` profile leaves the pair stopped.\n\nThese identity dimensions exist on **logs** but not yet on **metrics**: `cluster` and `lifecycle` are not Prometheus labels today, which is why the metric dashboards carry them as a constant and a log-only filter respectively."}, "gridPos": {"h": 6, "w": 24, "x": 0, "y": 0}},
+        {"type": "stat", "title": "Log lines / 5m", "id": 2, "datasource": {"type": "loki", "uid": "loki"}, "targets": [{"refId": "A", "expr": "sum(count_over_time({cluster=~\"$cluster\",namespace=~\"$namespace\",pod=~\"$pod\",container=~\"$container\",network=~\"$network\",customer_id=~\"$customer_id\",validator_id=~\"$validator_id\",assignment_id=~\"$assignment_id\",execution_client=~\"$execution_client\",consensus_client=~\"$consensus_client\",lifecycle_state=~\"$lifecycle\"}[5m]))", "queryType": "instant"}], "fieldConfig": {"defaults": {"unit": "short", "min": 0, "noValue": "not collected"}, "overrides": []}, "gridPos": {"h": 5, "w": 6, "x": 0, "y": 6}},
+        {"type": "timeseries", "title": "Log volume by namespace", "id": 3, "datasource": {"type": "loki", "uid": "loki"}, "targets": [{"refId": "A", "expr": "sum by (namespace) (count_over_time({cluster=~\"$cluster\",namespace=~\"$namespace\",network=~\"$network\",customer_id=~\"$customer_id\",validator_id=~\"$validator_id\",assignment_id=~\"$assignment_id\",execution_client=~\"$execution_client\",consensus_client=~\"$consensus_client\",lifecycle_state=~\"$lifecycle\"}[5m]))", "legendFormat": "{{namespace}}", "queryType": "range"}], "fieldConfig": {"defaults": {"unit": "short", "min": 0, "noValue": "not collected"}, "overrides": []}, "gridPos": {"h": 8, "w": 9, "x": 6, "y": 6}},
+        {"type": "timeseries", "title": "Error-like lines by namespace", "id": 4, "datasource": {"type": "loki", "uid": "loki"}, "targets": [{"refId": "A", "expr": "sum by (namespace) (count_over_time({cluster=~\"$cluster\",namespace=~\"$namespace\",network=~\"$network\",customer_id=~\"$customer_id\",validator_id=~\"$validator_id\",assignment_id=~\"$assignment_id\",execution_client=~\"$execution_client\",consensus_client=~\"$consensus_client\",lifecycle_state=~\"$lifecycle\"} |~ \"(?i)(error|fatal|panic)\" [5m]))", "legendFormat": "{{namespace}}", "queryType": "range"}], "fieldConfig": {"defaults": {"unit": "short", "min": 0, "noValue": "not collected"}, "overrides": []}, "gridPos": {"h": 8, "w": 9, "x": 15, "y": 6}},
+        {"type": "logs", "title": "Selected platform logs", "id": 5, "datasource": {"type": "loki", "uid": "loki"}, "targets": [{"refId": "A", "expr": "{cluster=~\"$cluster\",namespace=~\"$namespace\",pod=~\"$pod\",container=~\"$container\",network=~\"$network\",customer_id=~\"$customer_id\",validator_id=~\"$validator_id\",assignment_id=~\"$assignment_id\",execution_client=~\"$execution_client\",consensus_client=~\"$consensus_client\",lifecycle_state=~\"$lifecycle\"} |~ \"(?i)$search\"", "queryType": "range"}], "options": {"dedupStrategy": "none", "enableLogDetails": true, "prettifyLogMessage": false, "showCommonLabels": false, "showLabels": false, "showTime": true, "sortOrder": "Descending", "wrapLogMessage": true}, "gridPos": {"h": 12, "w": 24, "x": 0, "y": 14}},
+        {"type": "logs", "title": "Web3Signer audit and rejection stream", "id": 6, "datasource": {"type": "loki", "uid": "loki"}, "targets": [{"refId": "A", "expr": "{cluster=~\"$cluster\",namespace=\"signing\",app=\"web3signer\"}", "queryType": "range"}], "options": {"dedupStrategy": "none", "enableLogDetails": true, "prettifyLogMessage": false, "showCommonLabels": false, "showLabels": true, "showTime": true, "sortOrder": "Descending", "wrapLogMessage": true}, "gridPos": {"h": 10, "w": 24, "x": 0, "y": 26}}
       ],
       "refresh": "30s",
       "schemaVersion": 41,
       "tags": ["ethereum", "platform", "logs", "loki", "local"],
       "templating": {
         "list": [
-          {
-            "name": "cluster",
-            "label": "Cluster",
-            "type": "query",
-            "datasource": {"type": "loki", "uid": "loki"},
-            "query": "label_values(cluster)",
-            "includeAll": true,
-            "allValue": ".*",
-            "multi": true,
-            "refresh": 1
-          },
-          {
-            "name": "namespace",
-            "label": "Namespace",
-            "type": "query",
-            "datasource": {"type": "loki", "uid": "loki"},
-            "query": "label_values({cluster=~\"$cluster\"}, namespace)",
-            "includeAll": true,
-            "allValue": ".*",
-            "multi": true,
-            "refresh": 1
-          },
-          {
-            "name": "pod",
-            "label": "Pod",
-            "type": "query",
-            "datasource": {"type": "loki", "uid": "loki"},
-            "query": "label_values({cluster=~\"$cluster\",namespace=~\"$namespace\"}, pod)",
-            "includeAll": true,
-            "allValue": ".*",
-            "multi": true,
-            "refresh": 1
-          },
-          {
-            "name": "container",
-            "label": "Container",
-            "type": "query",
-            "datasource": {"type": "loki", "uid": "loki"},
-            "query": "label_values({cluster=~\"$cluster\",namespace=~\"$namespace\",pod=~\"$pod\"}, container)",
-            "includeAll": true,
-            "allValue": ".*",
-            "multi": true,
-            "refresh": 1
-          },
-          {
-            "name": "search",
-            "label": "Search regex",
-            "type": "textbox",
-            "query": ".",
-            "current": {"selected": false, "text": ".", "value": "."}
-          }
+          {"name": "cluster", "label": "Cluster", "type": "query", "datasource": {"type": "loki", "uid": "loki"}, "query": "label_values(cluster)", "includeAll": true, "allValue": ".*", "multi": true, "refresh": 1},
+          {"name": "network", "label": "Network", "type": "query", "datasource": {"type": "loki", "uid": "loki"}, "query": "label_values(network)", "includeAll": true, "allValue": ".*", "multi": true, "refresh": 1},
+          {"name": "customer_id", "label": "Customer", "type": "query", "datasource": {"type": "loki", "uid": "loki"}, "query": "label_values(customer_id)", "includeAll": true, "allValue": ".*", "multi": true, "refresh": 1},
+          {"name": "validator_id", "label": "Validator", "type": "query", "datasource": {"type": "loki", "uid": "loki"}, "query": "label_values(validator_id)", "includeAll": true, "allValue": ".*", "multi": true, "refresh": 1},
+          {"name": "assignment_id", "label": "Assignment", "type": "query", "datasource": {"type": "loki", "uid": "loki"}, "query": "label_values(assignment_id)", "includeAll": true, "allValue": ".*", "multi": true, "refresh": 1},
+          {"name": "execution_client", "label": "Execution client", "type": "query", "datasource": {"type": "loki", "uid": "loki"}, "query": "label_values(execution_client)", "includeAll": true, "allValue": ".*", "multi": true, "refresh": 1},
+          {"name": "consensus_client", "label": "Consensus client", "type": "query", "datasource": {"type": "loki", "uid": "loki"}, "query": "label_values(consensus_client)", "includeAll": true, "allValue": ".*", "multi": true, "refresh": 1},
+          {"name": "lifecycle", "label": "Lifecycle", "type": "query", "description": "Maps to the Loki lifecycle_state label emitted by Alloy.", "datasource": {"type": "loki", "uid": "loki"}, "query": "label_values(lifecycle_state)", "includeAll": true, "allValue": ".*", "multi": true, "refresh": 1},
+          {"name": "namespace", "label": "Namespace", "type": "query", "datasource": {"type": "loki", "uid": "loki"}, "query": "label_values({cluster=~\"$cluster\"}, namespace)", "includeAll": true, "allValue": ".*", "multi": true, "refresh": 1},
+          {"name": "pod", "label": "Pod", "type": "query", "datasource": {"type": "loki", "uid": "loki"}, "query": "label_values({cluster=~\"$cluster\",namespace=~\"$namespace\"}, pod)", "includeAll": true, "allValue": ".*", "multi": true, "refresh": 1},
+          {"name": "container", "label": "Container", "type": "query", "datasource": {"type": "loki", "uid": "loki"}, "query": "label_values({cluster=~\"$cluster\",namespace=~\"$namespace\",pod=~\"$pod\"}, container)", "includeAll": true, "allValue": ".*", "multi": true, "refresh": 1},
+          {"name": "search", "label": "Search regex", "type": "textbox", "query": ".", "current": {"selected": false, "text": ".", "value": "."}}
         ]
       },
       "time": {"from": "now-1h", "to": "now"},
