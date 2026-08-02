@@ -197,12 +197,56 @@ Retrieve its generated admin password without writing it to disk:
 kubectl -n observability get secret monitoring-grafana -o jsonpath='{.data.admin-password}' | base64 --decode
 ```
 
-The initial dashboards are **Ethereum Platform / Local Smoke**, **Ethereum
-Platform / Logs**, and **Ethereum Validator / Geth + Lighthouse**. The logging
-dashboard moves from namespace to Pod and container and includes a dedicated
-Web3Signer stream. The pair dashboard supports both one-validator selection and
-an `All` fleet view; it remains empty while the safe `stopped` profile is
-selected.
+The provisioned dashboards are **Ethereum Platform / Local Smoke**, **Ethereum
+Platform / Logs**, **Ethereum Platform / Fleet**, **Ethereum Platform /
+Validator detail**, **Ethereum Platform / Signer and slashing protection**, and
+**Ethereum Validator / Geth + Lighthouse**. The logging dashboard moves from
+namespace to Pod and container and includes a dedicated Web3Signer stream. The
+pair dashboard supports both one-validator selection and an `All` fleet view;
+it remains empty while the safe `stopped` profile is selected.
+
+### Reading the signer dashboard
+
+**Keys loaded must be zero.** The platform is fail-closed: Web3Signer runs with
+an empty key store and cannot sign. A non-zero value on this lab is a finding,
+not progress.
+
+**The two slashing counters are safety signals, not throughput.**
+`eth2_slashingprotection_permitted_signings_total` counts checks that reported
+safe-to-sign; `eth2_slashingprotection_prevented_signings_total` counts signings
+refused because they would have violated a slashing condition. Any increase in
+the *prevented* counter deserves investigation, even though it represents the
+protection working as designed.
+
+**Web3Signer cannot tell you about its database connection.** Running the pinned
+`consensys/web3signer:26.4.2` image and scraping its `/metrics` endpoint with
+`--slashing-protection-enabled` both false and true — the second against a
+PostgreSQL with the twelve shipped migrations applied — produces the *same 48
+metric families*. There is no connection-pool, JDBC, or datasource metric; the
+only `pool` families are `jvm_buffer_pool_*`, `jvm_memory_pool_*` and
+`http_vertx_worker_pool_*`. Signer-to-database health is therefore observed
+through three other paths, and the dashboard says so rather than implying a
+signal it does not have:
+
+- process liveness (`validator_platform_signer_up`),
+- the CloudNativePG panels on the same dashboard, which observe the database
+  itself,
+- the Web3Signer log stream on the logging dashboard.
+
+To reproduce that finding without a cluster:
+
+```bash
+docker run --rm -p 127.0.0.1:19001:9001 \
+  consensys/web3signer:26.4.2 \
+  --metrics-enabled=true --metrics-host=0.0.0.0 --metrics-port=9001 \
+  eth2 --network=hoodi --slashing-protection-enabled=false
+curl -s http://127.0.0.1:19001/metrics | grep '^# TYPE' | wc -l
+```
+
+Database metric names come from the pinned `cloudnative-pg` chart's
+`cnpg-default-monitoring` query set. The `cnpg_collector_*` series are
+deliberately unused: they originate in the operator binary rather than a pinned
+chart artifact, so they could not be verified offline.
 
 Verify ingestion without exposing Loki outside the workstation:
 

@@ -1,0 +1,40 @@
+apiVersion: monitoring.coreos.com/v1
+kind: PrometheusRule
+metadata:
+  name: web3signer
+  namespace: signing
+  labels:
+    app.kubernetes.io/name: web3signer
+    app.kubernetes.io/part-of: ethereum-validator-platform
+spec:
+  groups:
+    # Normalizes the shared signer tier into the validator_platform_* namespace,
+    # matching the pair chart's contract. Every source metric below was read from
+    # the pinned consensys/web3signer:26.4.2 image's own /metrics endpoint; none
+    # is inferred. Web3Signer exposes these as unlabelled scalars, so the
+    # aggregation exists to attach and retain the environment labels applied by
+    # the PodMonitor relabel contract rather than to combine series.
+    - name: web3signer.normalization
+      interval: 30s
+      rules:
+        - record: validator_platform_signer_up
+          expr: max by (cluster, environment) (up{platform="ethereum-validator",component="signer"})
+
+        # "Number of keys loaded (combining SECP256k1 and BLS12-381". Zero is the
+        # correct and required value while the platform is fail-closed.
+        - record: validator_platform_signer_keys_loaded
+          expr: max by (cluster, environment) (signing_signers_loaded_count{platform="ethereum-validator",component="signer"})
+
+        # "The number of slashing checks which have reported 'safe to sign'."
+        - record: validator_platform_signer_slashing_permitted_total
+          expr: max by (cluster, environment) (eth2_slashingprotection_permitted_signings_total{platform="ethereum-validator",component="signer"})
+
+        # "The number of prevented signings due to violation of slashing
+        # conditions." Any increase is a safety event, not a performance metric.
+        - record: validator_platform_signer_slashing_prevented_total
+          expr: max by (cluster, environment) (eth2_slashingprotection_prevented_signings_total{platform="ethereum-validator",component="signer"})
+
+        # "Number of signing operations requested, for keys which are not
+        # available" — a request for an identity this signer does not hold.
+        - record: validator_platform_signer_missing_identifier_total
+          expr: max by (cluster, environment) (signing_bls_missing_identifier_count_total{platform="ethereum-validator",component="signer"})
