@@ -43,6 +43,18 @@ The installer verifies upstream SHA-256 checksums and writes only to the Git-ign
 make local-preflight
 ```
 
+Verify that each digest-pinned third-party image still matches the numeric runtime
+identity declared in its Kubernetes security context:
+
+```bash
+make container-contracts
+```
+
+This online check pulls the exact image digest and runs only its identity utility
+with no network, mounts, Linux capabilities, or writable root filesystem. It
+prevents an image upgrade from silently invalidating `runAsNonRoot` or changing
+the expected UID/GID. The regular `make check` target remains offline.
+
 ## 2. Repair and select GitHub authentication
 
 Flux must pull the private `j2d3/eth-validator-platform` repository. Authenticate the GitHub CLI as `j2d3`, then verify without printing a token:
