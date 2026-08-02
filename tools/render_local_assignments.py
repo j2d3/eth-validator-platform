@@ -175,15 +175,20 @@ def build_release(
                     "reconcileStrategy": "Revision",
                 }
             },
-            # A first install in stopped state intentionally has no Pod to bind
-            # WaitForFirstConsumer PVCs. Waiting would deadlock the HelmRelease.
-            # An active first install still waits; stopped -> active is an
-            # upgrade and uses the normal (waiting) upgrade action below.
+            # A stopped release intentionally has no Pod to bind its
+            # WaitForFirstConsumer PVCs. Waiting during either install or a
+            # later Git-revision upgrade would deadlock the HelmRelease on
+            # those deliberately Pending claims. Active installs/upgrades keep
+            # Helm's normal wait behavior so workload readiness remains part
+            # of the release result.
             "install": {
                 "disableWait": runtime_lifecycle != "active",
                 "remediation": {"retries": 3},
             },
-            "upgrade": {"remediation": {"retries": 3}},
+            "upgrade": {
+                "disableWait": runtime_lifecycle != "active",
+                "remediation": {"retries": 3},
+            },
             "values": {
                 "fullnameOverride": node_pair_name,
                 "lifecycleState": runtime_lifecycle,
