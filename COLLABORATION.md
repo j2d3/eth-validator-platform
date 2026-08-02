@@ -32,7 +32,7 @@ Each GitHub primitive has exactly one job.
 1. **The human retains override** on any merge, review, or repository action, at any time, without justification. The rules below are the *default* structure — the human's authority does not depend on them.
 2. **No self-approval; authors merge their own PRs via `./hack/merge-pr.sh`.** GitHub blocks self-approval structurally; the wrapper additionally requires an APPROVED review from the *paired* agent (`j2d3`-authored → requires `5u6r054`; `5u6r054`-authored → requires `j2d3`) on the exact current head commit, plus explicit CI-green verification.
 3. **Every PR names the PRD section, safety invariant, phase-exit criterion, or operational hygiene rule it satisfies.** If none applies, that itself is a question to raise on issue #6 before proceeding.
-4. **Disagreements between agents surface to the human** rather than being resolved privately. The disagreement is the signal that makes two AIs valuable. See "Disagreement template" below.
+4. **Disagreements are settled in the open, on the pull request** — through evidence, amendment, and exact-head re-review — not privately, and not by reflex escalation. Ordinary review disagreement is the normal working state of this repository and agents are expected to resolve it themselves and keep going. Escalate to the human only for an **unresolved material design choice**, a **request for new authority**, or a **real expansion of scope or blast radius**. The disagreement is the signal that makes two AIs valuable; escalating every instance of it wastes that signal. See "Disagreement template" below.
 5. **Meta-tooling changes** (CI, `.github/`, hooks, Terraform apply, secret handling, cluster-foundation manifests under `clusters/`) require **explicit notice to the human on issue #6 before opening the PR**. The normal wrapper-mediated author-merges-own flow otherwise applies; the human retains override for any PR.
 6. **Fail-closed for signing.** Nothing in local scripts, CI, or GitHub automation may weaken the safety invariants in PRD §5.
 7. **No secrets** — no credentials, keys, mnemonic material, keystore passwords, customer data, or secret values in issue #6, PR bodies, comments, commit messages, or logs.
@@ -91,6 +91,8 @@ The safe author-merge path is `./hack/merge-pr.sh <pr-number>`. It fails closed 
 
 The wrapper applies uniformly to all PRs. Meta-tooling PRs additionally require an issue #6 notice before opening (per rule 5). The wrapper does not remove the human's ability to merge via any other mechanism — it exists to make the safe path the easy path, not to be the only path.
 
+One current limitation: the wrapper cannot complete a `j2d3`-authored squash merge, because the author-specific noreply address it passes is not yet registered on that account. It fails closed rather than merging with the wrong attribution. See "Known asymmetries" below and [issue #16](https://github.com/j2d3/eth-validator-platform/issues/16).
+
 ## Templates
 
 The current claim, handoff, blocker, review, and disagreement templates live in **pinned issue [#6](https://github.com/j2d3/eth-validator-platform/issues/6)**. Copy the relevant template when commenting there. Templates evolve; the issue is authoritative.
@@ -113,8 +115,8 @@ PR descriptions authored primarily by an AI agent should identify the agent in t
 
 ## Escalation
 
-- **Disagreement on a technical decision between agents** — tag `@j2d3` in the PR thread using the disagreement template. Do not converge privately.
-- **Uncertainty about safety** — pause the specific mutation, deployment, signing path, or merge that the uncertainty affects. Read-only diagnosis, tests, documentation, safe independent work, and a draft PR for review remain allowed. Post the uncertainty to issue #6 and wait for human input on the affected path.
+- **Disagreement on a technical decision between agents** — resolve it in the PR thread: state the position with evidence, amend, and re-review against the exact head. Work it out rather than escalating, and do not converge privately or off-thread. Escalate to the human with the disagreement template only when it is genuinely unresolved *and* turns on a material design choice, new authority, or a real expansion of scope or blast radius.
+- **Uncertainty about safety** — pause the specific mutation, deployment, signing path, or merge the uncertainty affects, and only that one. Then resolve it: read-only diagnosis, tests, documentation, safe independent work, and a draft PR for review all remain allowed and are the expected way to settle the question. If evidence resolves it within the existing contract, proceed through ordinary PR review and record what resolved it. Post to issue #6 and wait for the human only when the uncertainty stays unresolved, or when resolving it would require new authority or a material expansion of scope or blast radius.
 - **Broken shared tooling** (CI, hooks, auth, upstream repo state) — post to issue #6 and stop the operation that depends on that tooling. Unrelated workstreams may continue.
 
 ## Known asymmetries and priority follow-ups
@@ -123,7 +125,9 @@ PR descriptions authored primarily by an AI agent should identify the agent in t
 
 **Historical PR refs on GitHub retain pre-rewrite objects.** The 2026-08-02 history rewrites cleansed normal branches, but GitHub caches PR heads for a period. Complete server-side purge of the two previously-exposed personal profile addresses requires a GitHub Support ticket to dereference the affected `refs/pull/*` refs. Priority: medium; tracked outside this document.
 
-**Branch protection is a doc rule until enforced.** The rules encoded here rely on the human enabling branch protection on `main` (require 1+ approving review, require code owner review, require CI to pass, require linear history). Without branch protection, the rules degrade to discipline. Priority: high; the enabling `gh api` command is documented in the v2 bundle PR body.
+**Branch protection is enabled.** `main` requires the three CI checks (`Desired-state catalog`, `Terraform and Kubernetes manifests`, `Container runtime contracts`), CODEOWNERS approval, stale-review dismissal on new pushes, and linear history; force-pushes and deletions are disabled. The rules in this document are therefore structurally enforced rather than a matter of discipline. Stale-review dismissal is why every handoff cites an *exact head*: amending a PR discards the prior approval by design, and the wrapper independently re-checks that the paired approval matches the current head.
+
+**The merge wrapper cannot currently complete a `j2d3`-authored squash merge.** `hack/merge-pr.sh` passes `--author-email` unconditionally so that GitHub's squash-merge cannot fall back to an account's profile address. That control works for `5u6r054`-authored PRs and was exercised end-to-end. For `j2d3`-authored PRs the corresponding noreply address is not yet registered on the account, so GitHub rejects it and the wrapper fails closed rather than merging with the wrong attribution. This is an account-settings fix, not a code change, and it is tracked in [issue #16](https://github.com/j2d3/eth-validator-platform/issues/16). **Until #16 is resolved, the approved squash path for `j2d3`-authored PRs is unavailable, and there is no manual substitute** — GitHub rejects both noreply forms through the merge API, and omitting the registered identity leaks profile metadata, which is the outcome the control exists to prevent. If delivery cannot wait for #16, the work may be transparently restaged as a `5u6r054`-authored pull request and cross-reviewed under the normal rules. Priority: high.
 
 ## What this document does not do
 

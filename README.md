@@ -2,36 +2,83 @@
 
 A spec-built, GitOps-operated Ethereum validator platform for learning and demonstrating institutional staking-platform practices. The platform is designed to run completely on local Kubernetes before its AWS adapters are provisioned on EKS.
 
-The approved product and architecture contract is [docs/prd/001-dynamic-validator-platform.md](docs/prd/001-dynamic-validator-platform.md).
+| | |
+|---|---|
+| **Status** | Phase 2 — local platform services |
+| **Network** | Hoodi testnet configuration |
+| **Local profile** | `platform-smoke` (validator clients stopped) |
+| **Signing** | Disabled — Web3Signer runs with an empty key store |
+| **Reconciliation** | Flux, from a private GitHub repository |
+| **Cloud resources** | None created |
+
+The canonical product and architecture contract is [docs/prd/001-dynamic-validator-platform.md](docs/prd/001-dynamic-validator-platform.md). Where this README and the PRD disagree, the PRD is current and this file is stale.
+
+## Why this exists
+
+Running one validator is a weekend project. Running a fleet of them on behalf of customers is a key-custody problem wearing an infrastructure costume — the hard parts are signing-key handling, slashing protection, and proving that a machine which *looks* healthy is actually authorized to sign.
+
+The scope of that custody is worth stating precisely, because it is narrower than it sounds. This platform holds encrypted **signing** keystores. It never holds withdrawal credentials, which stay in offline operator custody and are never imported (PRD §10.2). It therefore cannot move customer funds — but it can get a customer slashed. The controls here are custody-grade because the consequences are, not because the platform is a fund custodian.
+
+This repository builds that platform the way a regulated operator would have to: the product contract is written and agreed before the code, every safety property is an explicit invariant rather than an emergent behavior, and the system is designed to fail closed when anything about identity, storage, or readiness is uncertain. It runs locally first so the Kubernetes and application contracts can be proven without an AWS bill or a funded key.
+
+It is a lab, not a production service, and the documentation is written to keep that distinction honest.
+
+## Design principles
+
+Distilled from the seventeen safety invariants in PRD §5. These are product requirements — a change that violates one is rejected, not negotiated.
+
+- **Fail closed.** If identity uniqueness, signer health, slashing storage, network identity, clock health, or sync readiness is uncertain, signing stays disabled.
+- **Readiness is not authorization.** Kubernetes calling a pod `Ready` must never by itself imply permission to sign. Signing is the *final* gate, behind its own explicit conditions.
+- **One key, one active assignment.** A validator identity is never admitted to more than one active client instance, and client switching breaks the old assignment before making the new one. This is exclusivity of *assignment*, not of storage — the shared signer tier deliberately holds many identities in one place.
+- **Slashing history outlives workloads.** Stop, archive, client switch, Helm uninstall, and node replacement must not remove slashing-protection records.
+- **Git holds policy, not secrets.** Public keys, stable IDs, and policy live in Git. Keystores, passwords, seed phrases, and withdrawal mnemonics do not — and withdrawal material stays out of Kubernetes, Terraform, and cloud backups entirely.
+- **No silent key generation.** A recreated pod, volume, node, or cluster retrieves the existing identity or fails. It never quietly mints a replacement.
+- **Every destructive transition is explicit.** Archive and deletion require stronger confirmation than stop, and removing a customer never implicitly deletes keys, slashing history, or an active on-chain validator.
+- **Merge is the deployment authorization.** CI validates desired state; Flux reconciles it. Nobody applies application manifests from a workstation.
 
 ## Current implementation status
 
-| Capability | Declared implementation | Runtime evidence |
-|---|---|---|
-| Product and architecture specification | Approved repository baseline | Specification and validation contracts committed |
-| Local `kind` cluster | Digest-pinned local cluster contract | Cluster creation and teardown guard verified |
-| Flux reconciliation | Controllers → infrastructure configs → signer prerequisites → apps | Controllers, configs, and apps verified; new signer prerequisite is API-server validated and awaits merge-time reconciliation |
-| Local PostgreSQL and shared Web3Signer | CloudNativePG, explicit versioned schema migration, and shared signer with an empty key store | Database readiness and signer-to-database connectivity verified; schema migration and signer readiness are the next runtime gate |
-| Prometheus and Grafana | Initial stack and smoke dashboards | Prometheus, Grafana, Alertmanager, and node exporter verified Ready |
-| Real Geth/Lighthouse pair | Safe stopped and non-signing chart profiles | Render contracts verified; client sync qualification has not started |
-| EKS/RDS/Secrets Manager | Architecture designed | No AWS resources have been created |
+The two middle columns mean different things, and the difference is the point. **Declared implementation** is what the repository asserts: manifests on `main`, backed by CI, schema validation, chart renders, container runtime contracts, and server-side dry-run. **Runtime evidence** is what was actually observed running on a live cluster, cited at the commit where it was observed. Offline validation is not evidence that something works — only that it is well-formed and self-consistent.
+
+| Capability | Declared implementation | Runtime evidence | Next |
+|---|---|---|---|
+| Product and architecture specification | Canonical repository baseline | *Not applicable* — specification and validation contracts are committed artifacts, not runtime state | Fold ADRs in as open questions close |
+| Local `kind` cluster | Digest-pinned local cluster contract | Cluster creation and teardown guard verified | Unchanged until EKS parity work |
+| Flux reconciliation | Controllers → infrastructure configs → signer prerequisites → apps | All five Kustomizations Ready — the four defined in `clusters/local` plus `flux-system` — observed at `b606121`, which predates the logging release | Re-verify once the logging release reconciles |
+| Local PostgreSQL and shared Web3Signer | CloudNativePG, explicit versioned schema migration, and shared signer with an empty key store | Flyway applied migrations `00001`–`00012` with 12 successful history rows; Web3Signer 26.4.2 `1/1 Running`, connected to PostgreSQL, 0 keys loaded, observed at `b606121` | Slashing export/restore exercise |
+| Prometheus and Grafana | Initial stack and smoke dashboards | Prometheus, Grafana, Alertmanager, and node exporter verified Ready at `b606121` | Populate validator dashboard levels in Phase 3 |
+| Logging (Alloy/Loki) | Flux-managed Loki and Alloy on `main`; node-scoped Pod-log collection through the Kubernetes API with no host log mounts, 24-hour retention on a 5 GiB local claim, provisioned Grafana datasource and log dashboard | **Offline validation only.** Chart renders, container runtime contracts, policy-port contract tests, and server-side dry-run pass. Live ingestion, retention, and dashboard behavior have not yet been observed | Capture live Flux, Loki, Alloy, and Grafana evidence |
+| Real Geth/Lighthouse pair | Safe stopped and non-signing chart profiles | Render contracts verified; client sync qualification has not started | Begin pair sync qualification (Phase 3) |
+| EKS/RDS/Secrets Manager | Architecture designed | None — no AWS resources have been created | Terraform roots in Phase 4 |
 
 Nothing in the repository authorizes validator signing by default. The local profile is `platform-smoke`, uses Hoodi configuration, and leaves validator clients stopped.
 
 ## Local architecture
 
-```text
-private GitHub repository
-          |
-          v
-        Flux
-          |
-          +--> External Secrets --> restricted local source Secrets
-          +--> CloudNativePG -----> local Web3Signer slashing database
-          +--> Web3Signer --------> private signing API; no keys loaded by default
-          +--> Prometheus/Grafana -> platform and later validator dashboards
-          +--> Ethereum pair -----> stopped in platform-smoke profile
+```mermaid
+flowchart TD
+    repo["Private GitHub repository<br/>desired state"] --> flux["Flux<br/>reconciliation"]
+
+    flux --> es["External Secrets"]
+    flux --> pg["CloudNativePG"]
+    flux --> signer["Web3Signer"]
+    flux --> obs["Prometheus / Grafana"]
+    flux --> log["Alloy / Loki"]
+    flux --> pair["Geth + Lighthouse pair"]
+
+    es --> secrets["Restricted local<br/>source Secrets"]
+    pg --> db[("Slashing-protection<br/>PostgreSQL")]
+    signer --> db
+    signer --> api["Private signing API<br/>no keys loaded"]
+    log --> lstore[("Pod logs<br/>24h / 5 GiB local")]
+    log --> obs
+    pair -. "stopped in platform-smoke" .-> api
+
+    classDef off stroke-dasharray: 4 4;
+    class pair,api off;
 ```
+
+The shared Web3Signer tier is a deliberate Phase 2 simplification: one signer backed by one durable slashing-protection database, which is what makes invariant 2 ("one durable slashing authority") cheap to enforce while the fleet is small. PRD §15.1 covers what has to be split, sharded, or made cell-local before this shape carries an institutional fleet.
 
 Local infrastructure adapters are deliberately not described as AWS emulators. `kind`, local-path volumes, CloudNativePG, and the External Secrets Kubernetes provider prove the Kubernetes and application contracts. EBS, RDS, IAM/KMS, NLB behavior, Availability Zones, and Karpenter require the later EKS qualification.
 
@@ -48,19 +95,30 @@ make local-seed
 make local-status
 ```
 
-Flux bootstrap requires the current commit to be pushed to the private GitHub repository and a valid `j2d3` GitHub token. Local secret material is generated or read only from `secrets/local/`, which is excluded from Git.
+Run `make check` before opening a pull request. Flux bootstrap requires the current commit to be pushed to the private GitHub repository and a valid `j2d3` GitHub token. Local secret material is generated or read only from `secrets/local/`, which is excluded from Git.
+
+## Documentation
+
+| Document | What it answers |
+|---|---|
+| [PRD](docs/prd/001-dynamic-validator-platform.md) | What the product is, what it must never do, and how it is phased. The contract. |
+| [ADRs](docs/adrs/) | Why a specific decision was made and what it cost. |
+| [Local development runbook](docs/runbooks/local-development.md) | How to bring the cluster up, verify it, and take it down safely. |
+| [COLLABORATION.md](COLLABORATION.md) | How the human and the AI agents coordinate, review, and merge. |
+| [CONTRIBUTING.md](CONTRIBUTING.md) | Branch, PR, and review process. |
+| [SECURITY.md](SECURITY.md) | Reporting and handling expectations. |
 
 ## Repository map
 
 | Path | Purpose |
 |---|---|
-| `docs/prd` | Approved product and architecture specification |
+| `docs/prd` | Canonical product and architecture specification |
 | `docs/adrs` | Durable decisions and their tradeoffs |
 | `docs/runbooks` | Operator procedures and safety checks |
 | `applications` | Schema-validated customer, profile, identity, and assignment catalog |
 | `schemas` | Desired-state JSON Schema contracts |
-| `tools` | Relational catalog validation |
-| `hack` | Pinned local-tool, cluster, and secret-seeding commands |
+| `tools` | Relational catalog and container-contract validation |
+| `hack` | Pinned local-tool, cluster, secret-seeding, and merge commands |
 | `clusters/local` | Flux reconciliation entry point for local Kubernetes |
 | `platform/infrastructure/controllers` | Flux-managed platform operators |
 | `platform/infrastructure/configs/local` | Local StorageClass, secret, and database adapters |
@@ -68,6 +126,37 @@ Flux bootstrap requires the current commit to be pushed to the private GitHub re
 | `platform/apps/local` | Local profile and dashboard composition |
 | `charts/ethereum-node` | First Geth/Lighthouse vertical slice under runtime qualification |
 | `terraform` | AWS bootstrap and later EKS environment roots |
+
+## How work happens here
+
+This repository is built by a human operator working with two AI coding agents — Claude Code and OpenAI Codex — coordinating in the open through GitHub. The full model is in [COLLABORATION.md](COLLABORATION.md); the short version:
+
+- Work is claimed on the pinned coordination issue before it starts, with an explicit lease.
+- Every pull request is cross-reviewed by the *other* agent. No agent approves its own work.
+- Authors merge their own PRs through `./hack/merge-pr.sh`, which fails closed unless the paired agent approved the exact current head and CI is green.
+- Disagreements are settled in the open on the pull request — through evidence, revision, and re-review against the exact head — not privately, and not by escalating as a reflex. Only an unresolved material design choice, a request for new authority, or a real expansion of scope or blast radius goes to the human. The disagreement itself is the point: two independent reviewers catch what one would rationalize away, which is what makes the arrangement worth its overhead.
+
+One known asymmetry: Claude Code operates under an isolated `5u6r054` collaborator account, but Codex still acts through the human's own `j2d3` account. GitHub's audit trail therefore cannot distinguish "the human as `j2d3`" from "Codex as `j2d3`" on review approvals. A dedicated Codex identity is the planned fix and is tracked as a priority follow-up in COLLABORATION.md.
+
+The human owns both accounts, retains override on every action, and is accountable for what the agents do as them.
+
+## Roadmap
+
+Phases are defined in PRD §18; each has an explicit exit criterion.
+
+| Phase | Focus | State |
+|---|---|---|
+| 0 | Agree on the product | Complete |
+| 1 | Reproducible local GitOps foundation | Complete |
+| 2 | Local platform services — secrets, database, signer, observability, logging | In progress |
+| 3 | First vertical slice: one identity through a full safe lifecycle | Not started |
+| 4 | Reproducible AWS foundation and EKS parity | Not started |
+| 5 | Dynamic client matrix across four EL and four CL implementations | Not started |
+| 6 | Customer Service control plane | Not started |
+| 7 | Archive and recovery, including fail-closed exercises | Not started |
+| 8 | Scale and production design exercise | Not started |
+
+Phase 2 exits when the local signer, database, GitOps, and observability safety services are all healthy — before any validator node exists.
 
 ## Safety boundary
 
