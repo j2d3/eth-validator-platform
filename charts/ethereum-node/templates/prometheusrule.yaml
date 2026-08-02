@@ -1,0 +1,29 @@
+{{- if and (eq .Values.lifecycleState "active") .Values.monitoring.enabled }}
+apiVersion: monitoring.coreos.com/v1
+kind: PrometheusRule
+metadata:
+  name: {{ include "ethereum-node.fullname" . }}
+  labels:
+    {{- include "ethereum-node.labels" . | nindent 4 }}
+spec:
+  groups:
+    - name: ethereum-pair.normalization
+      interval: 30s
+      rules:
+        - record: validator_platform_pair_target_up
+          expr: max by (network, customer_id, validator_id, assignment_id, execution_client, consensus_client, component) (up{platform="ethereum-validator"})
+        - record: validator_platform_execution_peers
+          expr: max by (network, customer_id, validator_id, assignment_id, execution_client, consensus_client) (p2p_peers{platform="ethereum-validator",component="execution"})
+        - record: validator_platform_consensus_peers
+          expr: max by (network, customer_id, validator_id, assignment_id, execution_client, consensus_client) (libp2p_peers{platform="ethereum-validator",component="consensus"})
+        - record: validator_platform_consensus_slot_lag
+          expr: clamp_min(max by (network, customer_id, validator_id, assignment_id, execution_client, consensus_client) (slotclock_present_slot{platform="ethereum-validator",component="consensus"}) - max by (network, customer_id, validator_id, assignment_id, execution_client, consensus_client) (beacon_head_state_slot{platform="ethereum-validator",component="consensus"}), 0)
+        - record: validator_platform_consensus_finality_lag_epochs
+          expr: clamp_min(max by (network, customer_id, validator_id, assignment_id, execution_client, consensus_client) (slotclock_present_epoch{platform="ethereum-validator",component="consensus"}) - max by (network, customer_id, validator_id, assignment_id, execution_client, consensus_client) (beacon_head_state_finalized_epoch{platform="ethereum-validator",component="consensus"}), 0)
+        - record: validator_platform_validator_enabled
+          expr: max by (network, customer_id, validator_id, assignment_id, execution_client, consensus_client) (validator_enabled_count{platform="ethereum-validator",component="validator"})
+        - record: validator_platform_process_cpu_cores
+          expr: sum by (network, customer_id, validator_id, assignment_id, execution_client, consensus_client, component) (rate(process_cpu_seconds_total{platform="ethereum-validator"}[5m]))
+        - record: validator_platform_process_resident_memory_bytes
+          expr: sum by (network, customer_id, validator_id, assignment_id, execution_client, consensus_client, component) (process_resident_memory_bytes{platform="ethereum-validator"})
+{{- end }}

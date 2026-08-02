@@ -1,0 +1,113 @@
+from __future__ import annotations
+
+import copy
+import unittest
+from pathlib import Path
+
+from tools import validate_catalog
+
+
+class CatalogValidationTests(unittest.TestCase):
+    def setUp(self) -> None:
+        self.documents = validate_catalog.load_yaml_documents()
+        self.validators = validate_catalog.load_validators()
+
+    def document(self, kind: str) -> tuple[Path, dict]:
+        for path, document in self.documents:
+            if document["kind"] == kind:
+                return path, copy.deepcopy(document)
+        self.fail(f"missing test fixture kind {kind}")
+
+    def test_repository_catalog_is_valid(self) -> None:
+        self.assertEqual(validate_catalog.schema_errors(self.documents, self.validators), [])
+        self.assertEqual(validate_catalog.relational_errors(self.documents), [])
+
+    def test_signing_requires_every_schema_gate(self) -> None:
+        path, assignment = self.document("ValidatorAssignment")
+        assignment["spec"]["lifecycle"] = "active"
+        assignment["spec"]["signingEnabled"] = True
+
+        errors = validate_catalog.schema_errors([(path, assignment)], self.validators)
+
+        self.assertTrue(any("nodePairRef" in error for error in errors))
+        self.assertTrue(any("slashingProtectionConfirmed" in error for error in errors))
+        self.assertTrue(any("doppelgangerProtectionConfirmed" in error for error in errors))
+
+    def test_synthetic_identity_cannot_enable_validator_duties(self) -> None:
+        documents = copy.deepcopy(self.documents)
+        for _, assignment in documents:
+            if assignment["kind"] == "ValidatorAssignment":
+                assignment["spec"]["lifecycle"] = "active"
+                assignment["spec"]["signingEnabled"] = True
+                assignment["spec"]["nodePairRef"] = "pair-synthetic-01"
+                assignment["spec"]["safety"] = {
+                    "slashingProtectionConfirmed": True,
+                    "doppelgangerProtectionConfirmed": True,
+                }
+
+        errors = validate_catalog.relational_errors(documents)
+
+        self.assertIn("ValidatorAssignment/assignment-synthetic-01: synthetic identity may not sign", errors)
+
+    def test_stopping_assignment_still_owns_exclusivity(self) -> None:
+        documents = copy.deepcopy(self.documents)
+        assignment_path, assignment = self.document("ValidatorAssignment")
+        for _, document in documents:
+            if document["kind"] == "ValidatorAssignment":
+                document["spec"]["lifecycle"] = "stopping"
+        second = copy.deepcopy(assignment)
+        second["metadata"]["name"] = "assignment-synthetic-02"
+        second["spec"]["lifecycle"] = "activating"
+        documents.append((assignment_path, second))
+
+        errors = validate_catalog.relational_errors(documents)
+
+        self.assertTrue(any("multiple live assignments" in error for error in errors))
+
+    def test_customer_id_is_unique(self) -> None:
+        documents = copy.deepcopy(self.documents)
+        customer_path, customer = self.document("Customer")
+        customer["metadata"]["name"] = "customer-synthetic-copy"
+        documents.append((customer_path, customer))
+
+        errors = validate_catalog.relational_errors(documents)
+
+        self.assertTrue(any("customerId duplicates" in error for error in errors))
+
+    def test_signing_requires_active_customer(self) -> None:
+        documents = copy.deepcopy(self.documents)
+        for _, document in documents:
+            if document["kind"] == "Customer":
+                document["spec"]["lifecycle"] = "suspended"
+            elif document["kind"] == "ValidatorIdentity":
+                document["spec"].update(
+                    {
+                        "lifecycle": "registered",
+                        "synthetic": False,
+                        "publicKey": "0x" + "11" * 48,
+                        "signingSecretRef": "local-secret://validator-keystore",
+                    }
+                )
+            elif document["kind"] == "ValidatorAssignment":
+                document["spec"].update(
+                    {
+                        "lifecycle": "active",
+                        "signingEnabled": True,
+                        "nodePairRef": "pair-validator-01",
+                        "safety": {
+                            "slashingProtectionConfirmed": True,
+                            "doppelgangerProtectionConfirmed": True,
+                        },
+                    }
+                )
+
+        errors = validate_catalog.relational_errors(documents)
+
+        self.assertIn(
+            "ValidatorAssignment/assignment-synthetic-01: signing requires an active customer",
+            errors,
+        )
+
+
+if __name__ == "__main__":
+    unittest.main()

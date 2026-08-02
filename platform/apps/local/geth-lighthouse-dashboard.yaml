@@ -1,0 +1,44 @@
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: geth-lighthouse-pair-dashboard
+  namespace: observability
+  labels:
+    grafana_dashboard: "1"
+    app.kubernetes.io/part-of: ethereum-validator-platform
+data:
+  geth-lighthouse-pair.json: |-
+    {
+      "annotations": {"list": []},
+      "description": "Per-validator and grouped qualification view for the Geth + Lighthouse adapter. Select All for the cell view.",
+      "editable": false,
+      "graphTooltip": 1,
+      "links": [],
+      "panels": [
+        {"type":"text","title":"Qualification state","id":1,"options":{"mode":"markdown","content":"This dashboard uses normalized platform recording rules. The default `stopped` profile intentionally produces no pair data. Empty client-specific panels are treated as an adapter/test failure once the pair is active."},"gridPos":{"h":4,"w":24,"x":0,"y":0}},
+        {"type":"stat","title":"Pair target health","id":2,"datasource":{"type":"prometheus","uid":"prometheus"},"targets":[{"refId":"A","expr":"validator_platform_pair_target_up{network=~\"$network\",validator_id=~\"$validator_id\",assignment_id=~\"$assignment_id\"}","legendFormat":"{{validator_id}} / {{component}}"}],"fieldConfig":{"defaults":{"mappings":[{"type":"value","options":{"0":{"text":"DOWN","color":"red"},"1":{"text":"UP","color":"green"}}}],"thresholds":{"mode":"absolute","steps":[{"color":"red","value":null},{"color":"green","value":1}]}},"overrides":[]},"options":{"colorMode":"background","graphMode":"none","reduceOptions":{"calcs":["lastNotNull"],"values":false}},"gridPos":{"h":6,"w":6,"x":0,"y":4}},
+        {"type":"stat","title":"Consensus slot lag","id":3,"datasource":{"type":"prometheus","uid":"prometheus"},"targets":[{"refId":"A","expr":"validator_platform_consensus_slot_lag{network=~\"$network\",validator_id=~\"$validator_id\",assignment_id=~\"$assignment_id\"}","legendFormat":"{{validator_id}}"}],"fieldConfig":{"defaults":{"unit":"short","thresholds":{"mode":"absolute","steps":[{"color":"green","value":null},{"color":"orange","value":1},{"color":"red","value":3}]}},"overrides":[]},"gridPos":{"h":6,"w":6,"x":6,"y":4}},
+        {"type":"stat","title":"Finality lag (epochs)","id":4,"datasource":{"type":"prometheus","uid":"prometheus"},"targets":[{"refId":"A","expr":"validator_platform_consensus_finality_lag_epochs{network=~\"$network\",validator_id=~\"$validator_id\",assignment_id=~\"$assignment_id\"}","legendFormat":"{{validator_id}}"}],"fieldConfig":{"defaults":{"unit":"short","thresholds":{"mode":"absolute","steps":[{"color":"green","value":null},{"color":"orange","value":2},{"color":"red","value":4}]}},"overrides":[]},"gridPos":{"h":6,"w":6,"x":12,"y":4}},
+        {"type":"stat","title":"Web3Signer target","id":5,"datasource":{"type":"prometheus","uid":"prometheus"},"targets":[{"refId":"A","expr":"max(up{namespace=\"signing\",pod=~\"web3signer.*\"})"}],"fieldConfig":{"defaults":{"mappings":[{"type":"value","options":{"0":{"text":"DOWN","color":"red"},"1":{"text":"UP","color":"green"}}}],"thresholds":{"mode":"absolute","steps":[{"color":"red","value":null},{"color":"green","value":1}]}},"overrides":[]},"gridPos":{"h":6,"w":6,"x":18,"y":4}},
+        {"type":"timeseries","title":"Execution and consensus peers","id":6,"datasource":{"type":"prometheus","uid":"prometheus"},"targets":[{"refId":"A","expr":"validator_platform_execution_peers{network=~\"$network\",validator_id=~\"$validator_id\",assignment_id=~\"$assignment_id\"}","legendFormat":"{{validator_id}} / geth"},{"refId":"B","expr":"validator_platform_consensus_peers{network=~\"$network\",validator_id=~\"$validator_id\",assignment_id=~\"$assignment_id\"}","legendFormat":"{{validator_id}} / lighthouse"}],"fieldConfig":{"defaults":{"unit":"short","min":0},"overrides":[]},"gridPos":{"h":8,"w":12,"x":0,"y":10}},
+        {"type":"timeseries","title":"Previous-epoch consensus participation","id":7,"datasource":{"type":"prometheus","uid":"prometheus"},"targets":[{"refId":"A","expr":"beacon_participation_prev_epoch_attester{platform=\"ethereum-validator\",network=~\"$network\",validator_id=~\"$validator_id\",assignment_id=~\"$assignment_id\"}","legendFormat":"{{validator_id}} / attester"},{"refId":"B","expr":"beacon_participation_prev_epoch_target_attester{platform=\"ethereum-validator\",network=~\"$network\",validator_id=~\"$validator_id\",assignment_id=~\"$assignment_id\"}","legendFormat":"{{validator_id}} / target"},{"refId":"C","expr":"beacon_participation_prev_epoch_head_attester{platform=\"ethereum-validator\",network=~\"$network\",validator_id=~\"$validator_id\",assignment_id=~\"$assignment_id\"}","legendFormat":"{{validator_id}} / head"}],"fieldConfig":{"defaults":{"unit":"percentunit","min":0,"max":1},"overrides":[]},"gridPos":{"h":8,"w":12,"x":12,"y":10}},
+        {"type":"timeseries","title":"Client process CPU","id":8,"datasource":{"type":"prometheus","uid":"prometheus"},"targets":[{"refId":"A","expr":"validator_platform_process_cpu_cores{network=~\"$network\",validator_id=~\"$validator_id\",assignment_id=~\"$assignment_id\"}","legendFormat":"{{validator_id}} / {{component}}"}],"fieldConfig":{"defaults":{"unit":"cores","min":0},"overrides":[]},"gridPos":{"h":8,"w":12,"x":0,"y":18}},
+        {"type":"timeseries","title":"Client resident memory","id":9,"datasource":{"type":"prometheus","uid":"prometheus"},"targets":[{"refId":"A","expr":"validator_platform_process_resident_memory_bytes{network=~\"$network\",validator_id=~\"$validator_id\",assignment_id=~\"$assignment_id\"}","legendFormat":"{{validator_id}} / {{component}}"}],"fieldConfig":{"defaults":{"unit":"bytes","min":0},"overrides":[]},"gridPos":{"h":8,"w":12,"x":12,"y":18}},
+        {"type":"timeseries","title":"Persistent volume usage","id":10,"datasource":{"type":"prometheus","uid":"prometheus"},"targets":[{"refId":"A","expr":"kubelet_volume_stats_used_bytes{namespace=\"ethereum\",persistentvolumeclaim=~\".*$assignment_id.*\"}","legendFormat":"{{persistentvolumeclaim}} used"},{"refId":"B","expr":"kubelet_volume_stats_capacity_bytes{namespace=\"ethereum\",persistentvolumeclaim=~\".*$assignment_id.*\"}","legendFormat":"{{persistentvolumeclaim}} capacity"}],"fieldConfig":{"defaults":{"unit":"bytes","min":0},"overrides":[]},"gridPos":{"h":8,"w":12,"x":0,"y":26}},
+        {"type":"timeseries","title":"Container restarts","id":11,"datasource":{"type":"prometheus","uid":"prometheus"},"targets":[{"refId":"A","expr":"increase(kube_pod_container_status_restarts_total{namespace=\"ethereum\",pod=~\".*$assignment_id.*\"}[$__rate_interval])","legendFormat":"{{pod}} / {{container}}"}],"fieldConfig":{"defaults":{"unit":"short","min":0},"overrides":[]},"gridPos":{"h":8,"w":12,"x":12,"y":26}},
+        {"type":"table","title":"Fleet identity and client matrix","id":12,"datasource":{"type":"prometheus","uid":"prometheus"},"targets":[{"refId":"A","expr":"validator_platform_pair_target_up{network=~\"$network\",validator_id=~\"$validator_id\",assignment_id=~\"$assignment_id\"}","format":"table","instant":true}],"transformations":[{"id":"labelsToFields","options":{}}],"gridPos":{"h":9,"w":24,"x":0,"y":34}}
+      ],
+      "refresh": "30s",
+      "schemaVersion": 41,
+      "tags": ["ethereum", "validator", "geth", "lighthouse", "local"],
+      "templating": {"list": [
+        {"name":"network","label":"Network","type":"query","datasource":{"type":"prometheus","uid":"prometheus"},"query":{"query":"label_values(validator_platform_pair_target_up, network)","refId":"network"},"includeAll":true,"allValue":".*","multi":true,"refresh":1},
+        {"name":"validator_id","label":"Validator","type":"query","datasource":{"type":"prometheus","uid":"prometheus"},"query":{"query":"label_values(validator_platform_pair_target_up{network=~\"$network\"}, validator_id)","refId":"validator"},"includeAll":true,"allValue":".*","multi":true,"refresh":1},
+        {"name":"assignment_id","label":"Assignment","type":"query","datasource":{"type":"prometheus","uid":"prometheus"},"query":{"query":"label_values(validator_platform_pair_target_up{network=~\"$network\",validator_id=~\"$validator_id\"}, assignment_id)","refId":"assignment"},"includeAll":true,"allValue":".*","multi":true,"refresh":1}
+      ]},
+      "time": {"from": "now-6h", "to": "now"},
+      "timezone": "browser",
+      "title": "Ethereum Validator / Geth + Lighthouse",
+      "uid": "eth-validator-geth-lighthouse",
+      "version": 1
+    }

@@ -1,0 +1,110 @@
+nameOverride: ""
+fullnameOverride: ""
+
+# Safe by default: stopped retains lifecycle metadata and PVC declarations, but starts no clients.
+# The first qualified vertical slice is deliberately Geth + Lighthouse. Other pair adapters land
+# only after their flags, ports, probes, signer integration, and metrics have dedicated tests.
+lifecycleState: stopped
+network: hoodi
+executionClient: geth
+consensusClient: lighthouse
+
+identity:
+  customerId: customer-synthetic-lab
+  validatorId: validator-synthetic-01
+  assignmentId: assignment-synthetic-01
+
+imagePullPolicy: IfNotPresent
+storageClassName: standard
+storage:
+  execution: 20Gi
+  consensus: 10Gi
+  validator: 5Gi
+
+engineJwt:
+  secretStoreName: local-platform-secrets
+  remoteSecretKey: engine-jwt
+  remoteSecretProperty: jwt.hex
+
+validator:
+  enabled: false
+  publicKey: ""
+  feeRecipient: ""
+  graffiti: galaxy-platform-lab
+  # Required acknowledgment before the chart starts signing components.
+  slashingProtectionConfirmed: false
+
+web3signer:
+  # The pair never mounts validator key material. Its validator client calls this shared service.
+  endpoint: http://web3signer.signing.svc.cluster.local:9000
+
+validatorClient:
+  image: sigp/lighthouse:v8.2.1@sha256:9538f53d8e11766e3cb5de1889b292074f8e518e0dabe6df13d9054d504d1d62
+  initImage: busybox:1.37.0@sha256:9db7b59979c38555a39def84a31fb98b5296952f9e3afd4f6f11f05b07adfab0
+  resources:
+    requests:
+      cpu: 250m
+      memory: 512Mi
+    limits:
+      cpu: "1"
+      memory: 1Gi
+
+executionClients:
+  geth:
+    image: ethereum/client-go:v1.17.5@sha256:523d3ba26623a619e912019068dc2784f02934070ac46bdae4d5b9df0d917814
+    args:
+      - "--{{ .Values.network }}"
+      - --datadir=/data
+      - --http
+      - --http.addr=0.0.0.0
+      - --http.api=eth,net,web3
+      - --authrpc.addr=0.0.0.0
+      - --authrpc.port=8551
+      - --authrpc.vhosts=*
+      - --authrpc.jwtsecret=/jwt/jwt.hex
+      - --metrics
+      - --metrics.addr=0.0.0.0
+      - --metrics.port=6060
+consensusClients:
+  lighthouse:
+    image: sigp/lighthouse:v8.2.1@sha256:9538f53d8e11766e3cb5de1889b292074f8e518e0dabe6df13d9054d504d1d62
+    args:
+      - bn
+      - "--network={{ .Values.network }}"
+      - --datadir=/data
+      - --execution-endpoint=http://127.0.0.1:8551
+      - --execution-jwt=/jwt/jwt.hex
+      - --http
+      - --http-address=0.0.0.0
+      - --http-port=5052
+      - --metrics
+      - --metrics-address=0.0.0.0
+      - --metrics-port=8008
+
+resources:
+  execution:
+    requests:
+      cpu: "2"
+      memory: 8Gi
+    limits:
+      cpu: "6"
+      memory: 24Gi
+  consensus:
+    requests:
+      cpu: "2"
+      memory: 6Gi
+    limits:
+      cpu: "4"
+      memory: 16Gi
+
+nodeSelector:
+  workload: ethereum
+
+tolerations:
+  - key: dedicated
+    operator: Equal
+    value: ethereum
+    effect: NoSchedule
+
+monitoring:
+  enabled: true

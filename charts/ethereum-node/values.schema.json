@@ -1,0 +1,38 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "type": "object",
+  "required": ["lifecycleState", "network", "executionClient", "consensusClient", "identity", "validator", "web3signer"],
+  "properties": {
+    "lifecycleState": {"type": "string", "enum": ["active", "stopped", "archived"]},
+    "network": {"type": "string", "enum": ["sepolia", "hoodi"]},
+    "executionClient": {"const": "geth"},
+    "consensusClient": {"const": "lighthouse"},
+    "identity": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["customerId", "validatorId", "assignmentId"],
+      "properties": {
+        "customerId": {"type": "string", "pattern": "^[a-z][a-z0-9-]{2,62}$"},
+        "validatorId": {"type": "string", "pattern": "^[a-z][a-z0-9-]{2,62}$"},
+        "assignmentId": {"type": "string", "pattern": "^[a-z][a-z0-9-]{2,62}$"}
+      }
+    },
+    "validator": {
+      "type": "object",
+      "required": ["enabled"],
+      "properties": {
+        "enabled": {"type": "boolean"},
+        "publicKey": {"type": "string"},
+        "feeRecipient": {"type": "string"},
+        "slashingProtectionConfirmed": {"type": "boolean"}
+      }
+    },
+    "web3signer": {
+      "type": "object",
+      "required": ["endpoint"],
+      "properties": {
+        "endpoint": {"type": "string", "pattern": "^https?://"}
+      }
+    }
+  }
+}

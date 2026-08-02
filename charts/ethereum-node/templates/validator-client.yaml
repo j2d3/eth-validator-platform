@@ -1,0 +1,93 @@
+{{- if and (eq .Values.lifecycleState "active") .Values.validator.enabled }}
+{{- if not .Values.validator.slashingProtectionConfirmed -}}
+{{- fail "validator.slashingProtectionConfirmed must be true before validator duties can start" -}}
+{{- end -}}
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: {{ include "ethereum-node.fullname" . }}-validator-config
+  labels:
+    {{- include "ethereum-node.labels" . | nindent 4 }}
+data:
+  validator_definitions.yml: |
+    ---
+    - enabled: true
+      voting_public_key: {{ required "validator.publicKey is required when validator.enabled=true" .Values.validator.publicKey | quote }}
+      type: web3signer
+      url: {{ .Values.web3signer.endpoint | quote }}
+      suggested_fee_recipient: {{ required "validator.feeRecipient is required when validator.enabled=true" .Values.validator.feeRecipient | quote }}
+      graffiti: {{ .Values.validator.graffiti | quote }}
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: {{ include "ethereum-node.fullname" . }}-validator
+  labels:
+    {{- include "ethereum-node.labels" . | nindent 4 }}
+spec:
+  replicas: 1
+  strategy:
+    type: Recreate
+  selector:
+    matchLabels:
+      {{- include "ethereum-node.selectorLabels" . | nindent 6 }}
+      platform.galaxy-lab/component: validator
+  template:
+    metadata:
+      labels:
+        {{- include "ethereum-node.selectorLabels" . | nindent 8 }}
+        {{- include "ethereum-node.identityLabels" . | nindent 8 }}
+        platform.galaxy-lab/component: validator
+    spec:
+      automountServiceAccountToken: false
+      terminationGracePeriodSeconds: 60
+      securityContext:
+        seccompProfile: {type: RuntimeDefault}
+        fsGroup: 1000
+      nodeSelector:
+        {{- toYaml .Values.nodeSelector | nindent 8 }}
+      tolerations:
+        {{- toYaml .Values.tolerations | nindent 8 }}
+      initContainers:
+        - name: configure-validator
+          image: {{ .Values.validatorClient.initImage }}
+          command: [sh, -ec]
+          args: ["cp /config/validator_definitions.yml /validator-data/validator_definitions.yml"]
+          securityContext:
+            allowPrivilegeEscalation: false
+            capabilities: {drop: [ALL]}
+          volumeMounts:
+            - {name: validator-config, mountPath: /config, readOnly: true}
+            - {name: validator-data, mountPath: /validator-data}
+      containers:
+        - name: validator
+          image: {{ .Values.validatorClient.image }}
+          imagePullPolicy: {{ .Values.imagePullPolicy }}
+          args:
+            - vc
+            - --network={{ .Values.network }}
+            - --beacon-nodes=http://{{ include "ethereum-node.fullname" . }}:5052
+            - --validators-dir=/validator-data
+            - --suggested-fee-recipient={{ .Values.validator.feeRecipient }}
+            - --enable-doppelganger-protection
+            - --disable-slashing-protection-web3signer
+            - --metrics
+            - --metrics-address=0.0.0.0
+            - --metrics-port=5064
+          ports:
+            - {name: metrics, containerPort: 5064}
+          resources:
+            {{- toYaml .Values.validatorClient.resources | nindent 12 }}
+          securityContext:
+            allowPrivilegeEscalation: false
+            capabilities: {drop: [ALL]}
+          volumeMounts:
+            - {name: validator-data, mountPath: /validator-data}
+      volumes:
+        - name: validator-config
+          configMap:
+            name: {{ include "ethereum-node.fullname" . }}-validator-config
+        - name: validator-data
+          persistentVolumeClaim:
+            claimName: {{ include "ethereum-node.fullname" . }}-validator
+{{- end }}

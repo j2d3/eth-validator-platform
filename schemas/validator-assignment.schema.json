@@ -1,0 +1,66 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://platform.galaxy-lab/schemas/validator-assignment.schema.json",
+  "title": "ValidatorAssignment",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["apiVersion", "kind", "metadata", "spec"],
+  "properties": {
+    "apiVersion": {"const": "platform.galaxy-lab/v1alpha1"},
+    "kind": {"const": "ValidatorAssignment"},
+    "metadata": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["name"],
+      "properties": {
+        "name": {"type": "string", "pattern": "^[a-z][a-z0-9-]{2,62}$"}
+      }
+    },
+    "spec": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["validatorRef", "lifecycle", "serviceProfileRef", "signerRef", "signingEnabled", "safety"],
+      "properties": {
+        "validatorRef": {"type": "string", "pattern": "^[a-z][a-z0-9-]{2,62}$"},
+        "lifecycle": {"enum": ["activating", "active", "failed-safe", "stopping", "stopped", "archiving", "archived", "switching"]},
+        "serviceProfileRef": {"type": "string", "pattern": "^[a-z][a-z0-9-]{2,62}$"},
+        "nodePairRef": {"type": "string", "pattern": "^[a-z][a-z0-9-]{2,62}$"},
+        "signerRef": {"const": "shared-web3signer"},
+        "signingEnabled": {"type": "boolean"},
+        "safety": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["slashingProtectionConfirmed", "doppelgangerProtectionConfirmed"],
+          "properties": {
+            "slashingProtectionConfirmed": {"type": "boolean"},
+            "doppelgangerProtectionConfirmed": {"type": "boolean"}
+          }
+        },
+        "maintenance": {
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {
+            "reason": {"type": "string", "minLength": 3, "maxLength": 256}
+          }
+        }
+      },
+      "allOf": [
+        {
+          "if": {"properties": {"signingEnabled": {"const": true}}},
+          "then": {
+            "properties": {
+              "lifecycle": {"const": "active"},
+              "safety": {
+                "properties": {
+                  "slashingProtectionConfirmed": {"const": true},
+                  "doppelgangerProtectionConfirmed": {"const": true}
+                }
+              }
+            },
+            "required": ["nodePairRef"]
+          }
+        }
+      ]
+    }
+  }
+}

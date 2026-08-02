@@ -1,0 +1,102 @@
+{{- if eq .Values.lifecycleState "active" }}
+{{- $execution := index .Values.executionClients .Values.executionClient -}}
+{{- $consensus := index .Values.consensusClients .Values.consensusClient -}}
+apiVersion: apps/v1
+kind: StatefulSet
+metadata:
+  name: {{ include "ethereum-node.fullname" . }}
+  labels:
+    {{- include "ethereum-node.labels" . | nindent 4 }}
+spec:
+  serviceName: {{ include "ethereum-node.fullname" . }}
+  replicas: 1
+  podManagementPolicy: Parallel
+  updateStrategy:
+    type: OnDelete
+  selector:
+    matchLabels:
+      {{- include "ethereum-node.selectorLabels" . | nindent 6 }}
+      platform.galaxy-lab/component: node
+  template:
+    metadata:
+      labels:
+        {{- include "ethereum-node.selectorLabels" . | nindent 8 }}
+        {{- include "ethereum-node.identityLabels" . | nindent 8 }}
+        platform.galaxy-lab/component: node
+      annotations:
+        prometheus.io/scrape: "true"
+    spec:
+      automountServiceAccountToken: false
+      terminationGracePeriodSeconds: 300
+      securityContext:
+        seccompProfile:
+          type: RuntimeDefault
+        fsGroup: 1000
+      nodeSelector:
+        {{- toYaml .Values.nodeSelector | nindent 8 }}
+      tolerations:
+        {{- toYaml .Values.tolerations | nindent 8 }}
+      containers:
+        - name: execution
+          image: {{ $execution.image }}
+          imagePullPolicy: {{ .Values.imagePullPolicy }}
+          args:
+            {{- range $execution.args }}
+            - {{ tpl . $ | quote }}
+            {{- end }}
+          ports:
+            - {name: el-rpc, containerPort: 8545, protocol: TCP}
+            - {name: el-engine, containerPort: 8551, protocol: TCP}
+            - {name: el-p2p-tcp, containerPort: 30303, protocol: TCP}
+            - {name: el-p2p-udp, containerPort: 30303, protocol: UDP}
+            - {name: el-metrics, containerPort: 6060, protocol: TCP}
+          readinessProbe:
+            tcpSocket: {port: el-rpc}
+            initialDelaySeconds: 30
+            periodSeconds: 15
+            failureThreshold: 20
+          resources:
+            {{- toYaml .Values.resources.execution | nindent 12 }}
+          securityContext:
+            allowPrivilegeEscalation: false
+            capabilities: {drop: [ALL]}
+          volumeMounts:
+            - {name: execution-data, mountPath: /data}
+            - {name: engine-jwt, mountPath: /jwt, readOnly: true}
+        - name: consensus
+          image: {{ $consensus.image }}
+          imagePullPolicy: {{ .Values.imagePullPolicy }}
+          args:
+            {{- range $consensus.args }}
+            - {{ tpl . $ | quote }}
+            {{- end }}
+          ports:
+            - {name: cl-api, containerPort: 5052, protocol: TCP}
+            - {name: cl-p2p-tcp, containerPort: 9000, protocol: TCP}
+            - {name: cl-p2p-udp, containerPort: 9000, protocol: UDP}
+            - {name: cl-quic, containerPort: 9001, protocol: UDP}
+            - {name: cl-metrics, containerPort: 8008, protocol: TCP}
+          readinessProbe:
+            tcpSocket: {port: cl-api}
+            initialDelaySeconds: 30
+            periodSeconds: 15
+            failureThreshold: 20
+          resources:
+            {{- toYaml .Values.resources.consensus | nindent 12 }}
+          securityContext:
+            allowPrivilegeEscalation: false
+            capabilities: {drop: [ALL]}
+          volumeMounts:
+            - {name: consensus-data, mountPath: /data}
+            - {name: engine-jwt, mountPath: /jwt, readOnly: true}
+      volumes:
+        - name: execution-data
+          persistentVolumeClaim:
+            claimName: {{ include "ethereum-node.fullname" . }}-execution
+        - name: consensus-data
+          persistentVolumeClaim:
+            claimName: {{ include "ethereum-node.fullname" . }}-consensus
+        - name: engine-jwt
+          secret:
+            secretName: {{ include "ethereum-node.fullname" . }}-engine-jwt
+{{- end }}

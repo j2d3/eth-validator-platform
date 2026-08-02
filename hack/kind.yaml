@@ -1,0 +1,39 @@
+kind: Cluster
+apiVersion: kind.x-k8s.io/v1alpha4
+name: eth-validator-local
+networking:
+  ipFamily: ipv4
+  apiServerAddress: 127.0.0.1
+nodes:
+  - role: control-plane
+    labels:
+      workload: ethereum
+      platform.galaxy-lab/environment: local
+    kubeadmConfigPatches:
+      - |
+        kind: ClusterConfiguration
+        apiVersion: kubeadm.k8s.io/v1beta3
+        apiServer:
+          extraArgs:
+            service-node-port-range: "1024-65535"
+    extraPortMappings:
+      - containerPort: 30303
+        hostPort: 30303
+        listenAddress: 127.0.0.1
+        protocol: TCP
+      - containerPort: 30303
+        hostPort: 30303
+        listenAddress: 127.0.0.1
+        protocol: UDP
+      - containerPort: 9000
+        hostPort: 9000
+        listenAddress: 127.0.0.1
+        protocol: TCP
+      - containerPort: 9000
+        hostPort: 9000
+        listenAddress: 127.0.0.1
+        protocol: UDP
+      - containerPort: 9001
+        hostPort: 9001
+        listenAddress: 127.0.0.1
+        protocol: UDP

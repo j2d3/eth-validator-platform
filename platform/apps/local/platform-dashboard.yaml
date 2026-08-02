@@ -1,0 +1,62 @@
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: ethereum-platform-smoke-dashboard
+  namespace: observability
+  labels:
+    grafana_dashboard: "1"
+    app.kubernetes.io/part-of: ethereum-validator-platform
+data:
+  platform-smoke.json: |-
+    {
+      "annotations": {"list": []},
+      "editable": false,
+      "graphTooltip": 1,
+      "links": [],
+      "panels": [
+        {
+          "type": "stat",
+          "title": "Web3Signer scrape health",
+          "id": 1,
+          "datasource": {"type": "prometheus", "uid": "prometheus"},
+          "targets": [{"refId": "A", "expr": "max(up{namespace=\"signing\",pod=~\"web3signer.*\"})"}],
+          "fieldConfig": {"defaults": {"mappings": [{"type": "value", "options": {"0": {"text": "DOWN", "color": "red"}, "1": {"text": "UP", "color": "green"}}}], "thresholds": {"mode": "absolute", "steps": [{"color": "red", "value": null}, {"color": "green", "value": 1}]}}, "overrides": []},
+          "gridPos": {"h": 6, "w": 8, "x": 0, "y": 0}
+        },
+        {
+          "type": "stat",
+          "title": "PostgreSQL scrape health",
+          "id": 2,
+          "datasource": {"type": "prometheus", "uid": "prometheus"},
+          "targets": [{"refId": "A", "expr": "max(up{namespace=\"database\"})"}],
+          "fieldConfig": {"defaults": {"mappings": [{"type": "value", "options": {"0": {"text": "DOWN", "color": "red"}, "1": {"text": "UP", "color": "green"}}}], "thresholds": {"mode": "absolute", "steps": [{"color": "red", "value": null}, {"color": "green", "value": 1}]}}, "overrides": []},
+          "gridPos": {"h": 6, "w": 8, "x": 8, "y": 0}
+        },
+        {
+          "type": "stat",
+          "title": "Platform pods ready",
+          "id": 3,
+          "datasource": {"type": "prometheus", "uid": "prometheus"},
+          "targets": [{"refId": "A", "expr": "sum(kube_pod_status_ready{namespace=~\"signing|database|external-secrets|cnpg-system|observability\",condition=\"true\"})"}],
+          "gridPos": {"h": 6, "w": 8, "x": 16, "y": 0}
+        },
+        {
+          "type": "timeseries",
+          "title": "Platform container working set",
+          "id": 4,
+          "datasource": {"type": "prometheus", "uid": "prometheus"},
+          "targets": [{"refId": "A", "expr": "sum by (namespace, pod) (container_memory_working_set_bytes{namespace=~\"signing|database|external-secrets|cnpg-system|observability\",container!=\"\",image!=\"\"})", "legendFormat": "{{namespace}} / {{pod}}"}],
+          "fieldConfig": {"defaults": {"unit": "bytes"}, "overrides": []},
+          "gridPos": {"h": 10, "w": 24, "x": 0, "y": 6}
+        }
+      ],
+      "refresh": "30s",
+      "schemaVersion": 41,
+      "tags": ["ethereum", "platform", "local"],
+      "templating": {"list": []},
+      "time": {"from": "now-1h", "to": "now"},
+      "timezone": "browser",
+      "title": "Ethereum Platform / Local Smoke",
+      "uid": "eth-platform-local-smoke",
+      "version": 1
+    }

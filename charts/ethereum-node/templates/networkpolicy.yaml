@@ -1,0 +1,96 @@
+{{- if eq .Values.lifecycleState "active" }}
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: {{ include "ethereum-node.fullname" . }}-node
+  labels:
+    {{- include "ethereum-node.labels" . | nindent 4 }}
+spec:
+  podSelector:
+    matchLabels:
+      {{- include "ethereum-node.selectorLabels" . | nindent 6 }}
+      platform.galaxy-lab/component: node
+  policyTypes: [Ingress, Egress]
+  ingress:
+    - ports:
+        - {port: 30303, protocol: TCP}
+        - {port: 30303, protocol: UDP}
+        - {port: 9000, protocol: TCP}
+        - {port: 9000, protocol: UDP}
+        - {port: 9001, protocol: UDP}
+    - from:
+        - podSelector:
+            matchLabels:
+              {{- include "ethereum-node.selectorLabels" . | nindent 14 }}
+              platform.galaxy-lab/component: validator
+      ports:
+        - {port: 5052, protocol: TCP}
+    - from:
+        - namespaceSelector:
+            matchLabels:
+              kubernetes.io/metadata.name: observability
+      ports:
+        - {port: 6060, protocol: TCP}
+        - {port: 8008, protocol: TCP}
+  egress:
+    - to:
+        - ipBlock:
+            cidr: 0.0.0.0/0
+            except:
+              - 10.0.0.0/8
+              - 172.16.0.0/12
+              - 192.168.0.0/16
+    - to:
+        - namespaceSelector:
+            matchLabels:
+              kubernetes.io/metadata.name: kube-system
+      ports:
+        - {port: 53, protocol: UDP}
+        - {port: 53, protocol: TCP}
+{{- if .Values.validator.enabled }}
+---
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: {{ include "ethereum-node.fullname" . }}-validator
+  labels:
+    {{- include "ethereum-node.labels" . | nindent 4 }}
+spec:
+  podSelector:
+    matchLabels:
+      {{- include "ethereum-node.selectorLabels" . | nindent 6 }}
+      platform.galaxy-lab/component: validator
+  policyTypes: [Ingress, Egress]
+  ingress:
+    - from:
+        - namespaceSelector:
+            matchLabels:
+              kubernetes.io/metadata.name: observability
+      ports:
+        - {port: 5064, protocol: TCP}
+  egress:
+    - to:
+        - podSelector:
+            matchLabels:
+              {{- include "ethereum-node.selectorLabels" . | nindent 14 }}
+              platform.galaxy-lab/component: node
+      ports:
+        - {port: 5052, protocol: TCP}
+    - to:
+        - namespaceSelector:
+            matchLabels:
+              kubernetes.io/metadata.name: signing
+          podSelector:
+            matchLabels:
+              app.kubernetes.io/name: web3signer
+      ports:
+        - {port: 9000, protocol: TCP}
+    - to:
+        - namespaceSelector:
+            matchLabels:
+              kubernetes.io/metadata.name: kube-system
+      ports:
+        - {port: 53, protocol: UDP}
+        - {port: 53, protocol: TCP}
+{{- end }}
+{{- end }}
