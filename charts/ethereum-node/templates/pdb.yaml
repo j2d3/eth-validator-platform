@@ -1,0 +1,29 @@
+{{- if eq .Values.lifecycleState "active" }}
+apiVersion: policy/v1
+kind: PodDisruptionBudget
+metadata:
+  name: {{ include "ethereum-node.fullname" . }}-node
+  labels:
+    {{- include "ethereum-node.labels" . | nindent 4 }}
+spec:
+  minAvailable: 1
+  selector:
+    matchLabels:
+      {{- include "ethereum-node.selectorLabels" . | nindent 6 }}
+      platform.galaxy-lab/component: node
+{{- if .Values.validator.enabled }}
+---
+apiVersion: policy/v1
+kind: PodDisruptionBudget
+metadata:
+  name: {{ include "ethereum-node.fullname" . }}-validator
+  labels:
+    {{- include "ethereum-node.labels" . | nindent 4 }}
+spec:
+  minAvailable: 1
+  selector:
+    matchLabels:
+      {{- include "ethereum-node.selectorLabels" . | nindent 6 }}
+      platform.galaxy-lab/component: validator
+{{- end }}
+{{- end }}

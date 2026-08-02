@@ -1,0 +1,42 @@
+{{- if ne .Values.lifecycleState "archived" }}
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: {{ include "ethereum-node.fullname" . }}-execution
+  labels:
+    {{- include "ethereum-node.labels" . | nindent 4 }}
+spec:
+  accessModes: [ReadWriteOnce]
+  storageClassName: {{ .Values.storageClassName }}
+  resources:
+    requests:
+      storage: {{ .Values.storage.execution }}
+---
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: {{ include "ethereum-node.fullname" . }}-consensus
+  labels:
+    {{- include "ethereum-node.labels" . | nindent 4 }}
+spec:
+  accessModes: [ReadWriteOnce]
+  storageClassName: {{ .Values.storageClassName }}
+  resources:
+    requests:
+      storage: {{ .Values.storage.consensus }}
+{{- if .Values.validator.enabled }}
+---
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: {{ include "ethereum-node.fullname" . }}-validator
+  labels:
+    {{- include "ethereum-node.labels" . | nindent 4 }}
+spec:
+  accessModes: [ReadWriteOnce]
+  storageClassName: {{ .Values.storageClassName }}
+  resources:
+    requests:
+      storage: {{ .Values.storage.validator }}
+{{- end }}
+{{- end }}

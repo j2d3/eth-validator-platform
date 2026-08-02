@@ -1,0 +1,9 @@
+apiVersion: platform.galaxy-lab/v1alpha1
+kind: ValidatorIdentity
+metadata:
+  name: validator-synthetic-01
+spec:
+  customerRef: customer-synthetic-lab
+  network: hoodi
+  lifecycle: draft
+  synthetic: true

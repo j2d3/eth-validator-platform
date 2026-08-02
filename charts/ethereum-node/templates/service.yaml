@@ -1,0 +1,35 @@
+{{- if eq .Values.lifecycleState "active" }}
+apiVersion: v1
+kind: Service
+metadata:
+  name: {{ include "ethereum-node.fullname" . }}
+  labels:
+    {{- include "ethereum-node.labels" . | nindent 4 }}
+spec:
+  type: ClusterIP
+  selector:
+    {{- include "ethereum-node.selectorLabels" . | nindent 4 }}
+    platform.galaxy-lab/component: node
+  ports:
+    - {name: cl-api, port: 5052, targetPort: cl-api}
+    - {name: el-metrics, port: 6060, targetPort: el-metrics}
+    - {name: cl-metrics, port: 8008, targetPort: cl-metrics}
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: {{ include "ethereum-node.fullname" . }}-p2p
+  labels:
+    {{- include "ethereum-node.labels" . | nindent 4 }}
+spec:
+  type: NodePort
+  selector:
+    {{- include "ethereum-node.selectorLabels" . | nindent 4 }}
+    platform.galaxy-lab/component: node
+  ports:
+    - {name: el-p2p-tcp, port: 30303, targetPort: el-p2p-tcp, nodePort: 30303, protocol: TCP}
+    - {name: el-p2p-udp, port: 30303, targetPort: el-p2p-udp, nodePort: 30303, protocol: UDP}
+    - {name: cl-p2p-tcp, port: 9000, targetPort: cl-p2p-tcp, nodePort: 9000, protocol: TCP}
+    - {name: cl-p2p-udp, port: 9000, targetPort: cl-p2p-udp, nodePort: 9000, protocol: UDP}
+    - {name: cl-quic, port: 9001, targetPort: cl-quic, nodePort: 9001, protocol: UDP}
+{{- end }}

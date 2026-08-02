@@ -1,0 +1,6 @@
+apiVersion: v2
+name: ethereum-node
+description: First vertical-slice Ethereum pair using a shared Web3Signer service
+type: application
+version: 0.2.0
+appVersion: "1.0"

@@ -1,0 +1,16 @@
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: platform-profile
+  namespace: ethereum
+  labels:
+    app.kubernetes.io/part-of: ethereum-validator-platform
+    platform.galaxy-lab/environment: local
+    platform.galaxy-lab/profile: platform-smoke
+    platform.galaxy-lab/signing-enabled: "false"
+data:
+  environment: local
+  profile: platform-smoke
+  network: hoodi
+  signingEnabled: "false"
+  explanation: "Platform services are active; validator clients and signing are disabled."

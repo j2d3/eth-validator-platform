@@ -1,0 +1,113 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: web3signer
+  namespace: signing
+  labels:
+    app.kubernetes.io/name: web3signer
+    app.kubernetes.io/component: remote-signer
+    app.kubernetes.io/part-of: ethereum-validator-platform
+spec:
+  replicas: 1
+  strategy:
+    type: Recreate
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: web3signer
+  template:
+    metadata:
+      labels:
+        app.kubernetes.io/name: web3signer
+        app.kubernetes.io/component: remote-signer
+        app.kubernetes.io/part-of: ethereum-validator-platform
+    spec:
+      automountServiceAccountToken: false
+      terminationGracePeriodSeconds: 60
+      securityContext:
+        runAsNonRoot: true
+        seccompProfile:
+          type: RuntimeDefault
+      containers:
+        - name: web3signer
+          image: consensys/web3signer:26.4.2@sha256:9a20e02a5821ad72fd318fa2a3ec0158a9a5acd9db80aa9214e9cc991ad4dbc3
+          imagePullPolicy: IfNotPresent
+          args:
+            - --http-listen-host=0.0.0.0
+            - --http-listen-port=9000
+            - --http-host-allowlist=web3signer,web3signer.signing.svc,web3signer.signing.svc.cluster.local
+            - --metrics-enabled=true
+            - --metrics-host=0.0.0.0
+            - --metrics-port=9001
+            - --key-store-path=/var/run/web3signer/keys
+            - eth2
+            - --network=hoodi
+            - --slashing-protection-enabled=true
+            - --slashing-protection-db-url=jdbc:postgresql://$(DB_HOST):$(DB_PORT)/$(DB_NAME)?sslmode=require
+            - --slashing-protection-db-username=$(DB_USERNAME)
+            - --slashing-protection-db-password=$(DB_PASSWORD)
+          env:
+            - name: DB_HOST
+              valueFrom:
+                secretKeyRef:
+                  name: web3signer-database
+                  key: host
+            - name: DB_PORT
+              valueFrom:
+                secretKeyRef:
+                  name: web3signer-database
+                  key: port
+            - name: DB_NAME
+              valueFrom:
+                secretKeyRef:
+                  name: web3signer-database
+                  key: database
+            - name: DB_USERNAME
+              valueFrom:
+                secretKeyRef:
+                  name: web3signer-database
+                  key: username
+            - name: DB_PASSWORD
+              valueFrom:
+                secretKeyRef:
+                  name: web3signer-database
+                  key: password
+          ports:
+            - name: signer-http
+              containerPort: 9000
+              protocol: TCP
+            - name: metrics
+              containerPort: 9001
+              protocol: TCP
+          readinessProbe:
+            tcpSocket:
+              port: signer-http
+            initialDelaySeconds: 10
+            periodSeconds: 10
+            failureThreshold: 12
+          livenessProbe:
+            tcpSocket:
+              port: signer-http
+            initialDelaySeconds: 30
+            periodSeconds: 20
+          resources:
+            requests:
+              cpu: 100m
+              memory: 384Mi
+            limits:
+              cpu: "1"
+              memory: 1Gi
+          securityContext:
+            allowPrivilegeEscalation: false
+            capabilities:
+              drop: ["ALL"]
+            readOnlyRootFilesystem: true
+          volumeMounts:
+            - name: key-store
+              mountPath: /var/run/web3signer/keys
+            - name: tmp
+              mountPath: /tmp
+      volumes:
+        - name: key-store
+          emptyDir: {}
+        - name: tmp
+          emptyDir: {}

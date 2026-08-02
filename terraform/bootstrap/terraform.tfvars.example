@@ -1,0 +1,2 @@
+aws_region        = "us-west-2"
+state_bucket_name = "j2d3-eth-validator-platform-tfstate-REPLACE-ME"

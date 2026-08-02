@@ -1,0 +1,13 @@
+apiVersion: platform.galaxy-lab/v1alpha1
+kind: Customer
+metadata:
+  name: customer-synthetic-lab
+spec:
+  customerId: cus_SYNTHLAB01
+  displayName: Synthetic Institutional Lab
+  lifecycle: active
+  serviceTier: testnet-standard
+  externalRefs:
+    portfolioId: portfolio_synthetic_001
+  labels:
+    portfolio: institutional-lab

@@ -1,0 +1,20 @@
+aws_region = "us-west-2"
+
+# Use your workstation /32 for local runs. GitHub Actions adds its current /32.
+cluster_public_access_cidrs = ["203.0.113.10/32"]
+
+# One NAT is a conscious lab cost optimization and an AZ-level egress dependency.
+single_nat_gateway = true
+
+# Add an operator role if the cluster creator should not be the only administrator.
+access_entries = {
+  # operator = {
+  #   principal_arn = "arn:aws:iam::123456789012:role/eth-validator-operator"
+  #   policy_associations = {
+  #     admin = {
+  #       policy_arn = "arn:aws:eks::aws:cluster-access-policy/AmazonEKSClusterAdminPolicy"
+  #       access_scope = { type = "cluster" }
+  #     }
+  #   }
+  # }
+}

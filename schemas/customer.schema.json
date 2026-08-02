@@ -1,0 +1,40 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://platform.galaxy-lab/schemas/customer.schema.json",
+  "title": "Customer",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["apiVersion", "kind", "metadata", "spec"],
+  "properties": {
+    "apiVersion": {"const": "platform.galaxy-lab/v1alpha1"},
+    "kind": {"const": "Customer"},
+    "metadata": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["name"],
+      "properties": {
+        "name": {"type": "string", "pattern": "^[a-z][a-z0-9-]{2,62}$"}
+      }
+    },
+    "spec": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["customerId", "displayName", "lifecycle", "serviceTier", "externalRefs"],
+      "properties": {
+        "customerId": {"type": "string", "pattern": "^cus_[A-Z0-9]{8,32}$"},
+        "displayName": {"type": "string", "minLength": 3, "maxLength": 80},
+        "lifecycle": {"enum": ["active", "suspended", "offboarding", "offboarded"]},
+        "serviceTier": {"type": "string", "pattern": "^[a-z][a-z0-9-]{2,62}$"},
+        "externalRefs": {
+          "type": "object",
+          "additionalProperties": {"type": "string", "minLength": 1, "maxLength": 128},
+          "minProperties": 1
+        },
+        "labels": {
+          "type": "object",
+          "additionalProperties": {"type": "string", "maxLength": 63}
+        }
+      }
+    }
+  }
+}

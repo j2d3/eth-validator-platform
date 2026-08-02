@@ -1,0 +1,3 @@
+bucket         = "j2d3-eth-validator-platform-tfstate-REPLACE-ME"
+region         = "us-west-2"
+use_lockfile   = true

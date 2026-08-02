@@ -1,0 +1,15 @@
+apiVersion: platform.galaxy-lab/v1alpha1
+kind: ValidatorAssignment
+metadata:
+  name: assignment-synthetic-01
+spec:
+  validatorRef: validator-synthetic-01
+  lifecycle: stopped
+  serviceProfileRef: dedicated-geth-lighthouse
+  signerRef: shared-web3signer
+  signingEnabled: false
+  safety:
+    slashingProtectionConfirmed: false
+    doppelgangerProtectionConfirmed: false
+  maintenance:
+    reason: Initial local platform-smoke profile

@@ -1,0 +1,16 @@
+apiVersion: monitoring.coreos.com/v1
+kind: PodMonitor
+metadata:
+  name: web3signer
+  namespace: signing
+  labels:
+    app.kubernetes.io/name: web3signer
+    app.kubernetes.io/part-of: ethereum-validator-platform
+spec:
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: web3signer
+  podMetricsEndpoints:
+    - port: metrics
+      interval: 30s
+      path: /metrics

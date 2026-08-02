@@ -1,0 +1,14 @@
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: {{ include "ethereum-node.fullname" . }}-record
+  labels:
+    {{- include "ethereum-node.labels" . | nindent 4 }}
+data:
+  lifecycleState: {{ .Values.lifecycleState | quote }}
+  network: {{ .Values.network | quote }}
+  executionClient: {{ .Values.executionClient | quote }}
+  consensusClient: {{ .Values.consensusClient | quote }}
+  validatorEnabled: {{ .Values.validator.enabled | quote }}
+  validatorPublicKey: {{ .Values.validator.publicKey | quote }}
+  signerEndpoint: {{ .Values.web3signer.endpoint | quote }}

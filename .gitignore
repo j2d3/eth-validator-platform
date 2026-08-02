@@ -1,0 +1,27 @@
+.DS_Store
+.terraform/
+*.tfstate
+*.tfstate.*
+*.tfplan
+*.auto.tfvars
+!*.auto.tfvars.example
+crash.log
+override.tf
+override.tf.json
+*_override.tf
+*_override.tf.json
+
+# Local credentials, generated secrets, and scratch output
+.env
+.env.*
+!.env.example
+*.pem
+*.key
+secrets/
+tmp/
+.local/
+__pycache__/
+*.py[cod]
+
+# Generated Flux bootstrap manifests are committed, but local kubeconfigs are not.
+kubeconfig*
