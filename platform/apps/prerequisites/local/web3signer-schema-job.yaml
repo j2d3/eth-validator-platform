@@ -16,7 +16,7 @@ metadata:
 spec:
   completions: 1
   parallelism: 1
-  backoffLimit: 6
+  backoffLimit: 3
   activeDeadlineSeconds: 900
   template:
     metadata:
@@ -27,7 +27,8 @@ spec:
         app.kubernetes.io/version: "12"
     spec:
       automountServiceAccountToken: false
-      restartPolicy: OnFailure
+      # Keep failed attempts as separate Pods so their logs remain inspectable.
+      restartPolicy: Never
       securityContext:
         runAsNonRoot: true
         runAsUser: 999
@@ -42,7 +43,9 @@ spec:
           imagePullPolicy: IfNotPresent
           command: ["/bin/cp"]
           args:
-            - -a
+            # The emptyDir mount point is root-owned and fsGroup-writable. Preserve
+            # migration contents, not source ownership/timestamps on the mount root.
+            - -R
             - /opt/web3signer/migrations/postgresql/.
             - /work/migrations/
           resources:
