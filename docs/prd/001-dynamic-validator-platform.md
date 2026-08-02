@@ -7,7 +7,7 @@
 |---|---|
 | Status | **Approved architecture baseline** |
 | Version | 0.1.0 |
-| Owner | John Durkin |
+| Owner | the human |
 | Repository | `j2d3/eth-validator-platform` (private) |
 | Initial environments | One local `kind` cluster, followed by one AWS EKS cluster; one Ethereum testnet |
 | Operating model | Terraform bootstraps infrastructure; Flux owns in-cluster state |
@@ -1667,6 +1667,6 @@ Primary project references:
 
 | Version | Date | Reviewer | Result | Notes |
 |---|---|---|---|---|
-| 0.1.0 | 2026-08-01 | John Durkin | Approved | Architecture baseline accepted; explicitly proposed design checkpoints remain visible for implementation-time decisions. |
+| 0.1.0 | 2026-08-01 | the human | Approved | Architecture baseline accepted; explicitly proposed design checkpoints remain visible for implementation-time decisions. |
 
 Once approved, this document becomes the baseline contract. Implementation pull requests must identify the requirement, safety invariant, dashboard contract, or phase exit criterion they satisfy—and must update the specification when the product behavior changes.

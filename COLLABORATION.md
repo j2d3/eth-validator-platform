@@ -6,8 +6,8 @@ Humans and AI agents share this repository. This document is the stable referenc
 
 | Actor | GitHub identity | Branch prefix | Merge authority |
 |---|---|---|---|
-| John Durkin (owner) | `j2d3` | any | Sole merger |
-| Codex (OpenAI CLI) | `j2d3` (John's session) | `codex/*` | None; opens PRs, reviews Claude's |
+| the human (owner) | `j2d3` | any | Sole merger |
+| Codex (OpenAI CLI) | `j2d3` (the human's session) | `codex/*` | None; opens PRs, reviews Claude's |
 | Claude Code (Anthropic CLI) | `5u6r054` (collaborator, Write) | `claude/*` | None; opens PRs, reviews Codex's |
 
 ## Coordination channels
@@ -18,18 +18,18 @@ Each GitHub primitive has exactly one job.
 |---|---|
 | Pinned issue [#6](https://github.com/j2d3/eth-validator-platform/issues/6) | Claim work, hand off, request review, flag blockers |
 | Draft pull requests | Visible work in progress |
-| Ready pull requests | Ready-for-review artifacts; the *other* agent reviews before John merges |
+| Ready pull requests | Ready-for-review artifacts; the *other* agent reviews before the human merges |
 | PR comments | Handoffs, cross-review, technical discussion tied to a diff |
 | ADRs (`docs/adrs/`) | Durable architecture decisions |
 | PRD (`docs/prd/`) | Product/architecture baseline; changes require a PR that names what shifted |
 
 ## Rules
 
-1. **John is the only merger** unless he explicitly overrides.
+1. **The human is the only merger** unless they explicitly override.
 2. **No self-approval, no self-merge.** Codex reviews Claude's PRs; Claude reviews Codex's.
 3. **Every PR names the PRD section, safety invariant, phase-exit criterion, or operational hygiene rule it satisfies.** If none applies, that itself is a question to raise on issue #6 before proceeding.
-4. **Disagreements between agents surface to John** rather than being resolved privately. The disagreement is the signal that makes two AIs valuable.
-5. **Meta-tooling changes** (CI, `.github/`, hooks, Terraform apply, secret handling) use the ordinary PR flow *and* require explicit notice to John on issue #6 plus explicit human approval before merge.
+4. **Disagreements between agents surface to the human** rather than being resolved privately. The disagreement is the signal that makes two AIs valuable.
+5. **Meta-tooling changes** (CI, `.github/`, hooks, Terraform apply, secret handling) use the ordinary PR flow *and* require explicit notice to the human on issue #6 plus explicit human approval before merge.
 6. **Fail-closed for signing.** Nothing in local scripts, CI, or GitHub automation may weaken the safety invariants in PRD §5.
 7. **No secrets** — no credentials, keys, mnemonic material, keystore passwords, customer data, or secret values in issue #6, PR bodies, comments, commit messages, or logs.
 
@@ -65,7 +65,7 @@ git config --local user.name
 git config --local user.email
 ```
 
-Expected: `5u6r054` and `156010594+5u6r054@users.noreply.github.com` when Claude commits; John's chosen j2d3 identity when Codex commits.
+Expected: `5u6r054` and `156010594+5u6r054@users.noreply.github.com` when Claude commits; the human's chosen j2d3 identity when Codex commits.
 
 **Structural note on isolation.** Separate git worktrees do *not* isolate global `gh` auth state. The clean multi-agent solution on one machine is per-agent isolated clones plus per-agent `GH_CONFIG_DIR` (with `gh auth login --insecure-storage` on macOS to avoid the shared Keychain), plus per-clone SSH host aliases (`github.com-<user>`) so `git push` uses the intended key regardless of `gh` state. Convenience wrappers on any given laptop that combine those are helpful shortcuts, not normative — a new contributor on a different machine must be able to satisfy the portable rules above with plain `gh` and `git`.
 

@@ -23,5 +23,8 @@ tmp/
 __pycache__/
 *.py[cod]
 
+# Claude Code local scheduler state
+.claude/scheduled_tasks.lock
+
 # Generated Flux bootstrap manifests are committed, but local kubeconfigs are not.
 kubeconfig*
