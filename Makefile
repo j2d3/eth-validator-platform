@@ -4,7 +4,7 @@ LOCAL_BIN := $(CURDIR)/.local/bin
 TF_PLUGIN_CACHE_DIR := $(CURDIR)/.local/terraform-plugin-cache
 export PATH := $(LOCAL_BIN):$(PATH)
 
-.PHONY: help tools format fmt validate catalog test container-contracts helm-template helm-releases kustomize-build verify-scripts local-preflight local-up local-bootstrap local-seed local-status local-down eks-capacity-status check
+.PHONY: help tools format fmt validate catalog test container-contracts helm-template helm-releases kustomize-build verify-scripts portal-check local-preflight local-up local-bootstrap local-seed local-status local-down eks-capacity-status check
 
 help: ## Show available targets
 	@awk 'BEGIN {FS = ":.*## "; printf "Usage: make <target>\n\n"} /^[a-zA-Z_-]+:.*## / {printf "  %-18s %s\n", $$1, $$2}' $(MAKEFILE_LIST)
@@ -55,6 +55,9 @@ kustomize-build: ## Build every Kustomize layer, reconciled or not, without cont
 verify-scripts: ## Syntax-check bash scripts under hack/
 	@for script in hack/*.sh; do bash -n "$$script" || exit 1; done
 	@echo "Syntax-checked hack/ scripts."
+
+portal-check: ## Build and verify the project home/operator portal
+	npm --prefix control-plane/portal test
 
 local-preflight: ## Verify local Kubernetes and GitOps prerequisites
 	./hack/local-cluster.sh preflight

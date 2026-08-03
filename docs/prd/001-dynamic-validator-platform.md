@@ -70,6 +70,7 @@ It is **not** a claim that a one-cluster testnet lab is production-ready for ins
 | G-11 | Model customers and their validator estates declaratively, with safe CRUD workflows and a future Customer Service portal. |
 | G-12 | Preserve an auditable customer → validator → assignment relationship without coupling customer lifecycle to Terraform. |
 | G-13 | Run and qualify the complete application/GitOps path on a local Kubernetes environment before creating billable AWS infrastructure. |
+| G-14 | Provide one attractive project home and operator index that explains the platform, preserves evidence provenance, and links every specialist visibility surface without replacing its source of truth. |
 
 ### 2.2 Non-goals for the first release
 
@@ -147,6 +148,20 @@ The operator selects a new pair for an existing validator identity. The platform
 #### Diagnose a missed duty
 
 From one Grafana landing page the operator can move from a validator duty miss to signer latency/rejections, consensus and execution sync status, peer health, pod events/logs, node pressure, Flux drift, and the deployment change that preceded the incident.
+
+#### Enter through the project home
+
+The operator starts at a purpose-built portal rather than remembering a list of
+ports and tool URLs. The public-safe home explains the product, safety boundary,
+architecture, client/network coverage, implementation phase, and evidence
+quality. The authenticated workspace later adds fleet, customer, lifecycle,
+capacity, cost, alert, and change summaries and carries context into Grafana,
+Loki, Flux, GitHub, AWS, chain explorers, and runbooks.
+
+The home never collapses declared, reconciled, and observed state into a single
+health value. Every operational field names its authoritative source and
+freshness. Specialist tools retain ownership of detailed analysis, while the
+portal remains the navigation and explanation layer above them.
 
 ### 3.3 Secondary user: Customer Service operator
 
@@ -959,6 +974,14 @@ CI still runs `fmt`, `validate`, static security checks, and plan-quality tests.
 ## 12. Observability product
 
 Observability is a first-class user interface, not a post-deployment add-on.
+
+The project home and operator portal sits above the specialist observability
+surfaces. It provides the narrative, fleet posture, evidence provenance, and
+cross-tool navigation; Grafana remains the metrics workbench, Loki the log
+backend, Flux the reconciliation authority, GitHub the change record, AWS the
+cloud control plane, and beacon explorers the external chain view. The first
+portal slice is read-only and public-safe. Live operator data and mutation
+requests arrive only in later, authenticated phases.
 
 ### 12.1 Initial stack
 
