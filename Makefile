@@ -4,7 +4,7 @@ LOCAL_BIN := $(CURDIR)/.local/bin
 TF_PLUGIN_CACHE_DIR := $(CURDIR)/.local/terraform-plugin-cache
 export PATH := $(LOCAL_BIN):$(PATH)
 
-.PHONY: help tools format fmt validate catalog test container-contracts helm-template helm-releases kustomize-build verify-scripts local-preflight local-up local-bootstrap local-seed local-status local-down check
+.PHONY: help tools format fmt validate catalog test container-contracts helm-template helm-releases kustomize-build verify-scripts local-preflight local-up local-bootstrap local-seed local-status local-down eks-capacity-status check
 
 help: ## Show available targets
 	@awk 'BEGIN {FS = ":.*## "; printf "Usage: make <target>\n\n"} /^[a-zA-Z_-]+:.*## / {printf "  %-18s %s\n", $$1, $$2}' $(MAKEFILE_LIST)
@@ -73,5 +73,8 @@ local-status: ## Show Flux and workload reconciliation status
 
 local-down: ## Delete the local cluster after the signing-safety guard passes
 	./hack/local-cluster.sh down
+
+eks-capacity-status: ## Show live zonal Ethereum capacity in the EKS lab
+	./hack/eks-lab-capacity.sh status
 
 check: fmt catalog test helm-template kustomize-build verify-scripts ## Run offline local validation
