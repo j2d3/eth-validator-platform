@@ -195,7 +195,7 @@ export default function Home() {
               <span className="kicker">Fail-closed posture</span>
               <h2>Ready is not authorization.</h2>
               <p>
-                The signer's key store is empty. A healthy pod, synced node, or
+                The signer&apos;s key store is empty. A healthy pod, synced node, or
                 reconciled release does not by itself enable validator duties.
               </p>
             </div>
