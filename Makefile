@@ -2,6 +2,7 @@ SHELL := /bin/bash
 .DEFAULT_GOAL := help
 LOCAL_BIN := $(CURDIR)/.local/bin
 TF_PLUGIN_CACHE_DIR := $(CURDIR)/.local/terraform-plugin-cache
+TF_ROOTS := terraform/bootstrap terraform/environments/dev terraform/environments/dns
 export PATH := $(LOCAL_BIN):$(PATH)
 
 .PHONY: help tools format fmt validate catalog test container-contracts helm-template helm-releases kustomize-build verify-scripts portal-check local-preflight local-up local-bootstrap local-seed local-status local-down eks-capacity-status check
@@ -20,7 +21,7 @@ fmt: ## Check Terraform formatting without modifying files
 
 validate: ## Initialize without a backend and validate each Terraform root
 	@mkdir -p "$(TF_PLUGIN_CACHE_DIR)"
-	@for root in terraform/bootstrap terraform/environments/dev; do \
+	@for root in $(TF_ROOTS); do \
 		if [[ -d "$$root" ]]; then \
 			TF_PLUGIN_CACHE_DIR="$(TF_PLUGIN_CACHE_DIR)" terraform -chdir="$$root" init -backend=false -input=false; \
 			TF_PLUGIN_CACHE_DIR="$(TF_PLUGIN_CACHE_DIR)" terraform -chdir="$$root" validate; \

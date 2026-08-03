@@ -5,6 +5,8 @@
 *.tfplan
 *.auto.tfvars
 !*.auto.tfvars.example
+backend.hcl
+terraform.tfvars
 crash.log
 override.tf
 override.tf.json

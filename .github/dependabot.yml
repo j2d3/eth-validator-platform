@@ -111,6 +111,31 @@ updates:
           - minor
           - patch
 
+  # Terraform root: public Route 53 records for the portal custom domain. It
+  # has an independent state key so DNS changes cannot couple to EKS/RDS.
+  - package-ecosystem: terraform
+    directory: /terraform/environments/dns
+    schedule:
+      interval: weekly
+      day: wednesday
+      time: "06:30"
+      timezone: Etc/UTC
+    open-pull-requests-limit: 2
+    labels:
+      - dependencies
+      - terraform
+    commit-message:
+      prefix: chore
+      include: scope
+    groups:
+      terraform-dns-minor-patch:
+        applies-to: version-updates
+        patterns:
+          - "*"
+        update-types:
+          - minor
+          - patch
+
   # Python validation dependencies (requirements-dev.txt). Test-and-validation
   # only — no runtime or signing path imports these. CI installs them in the
   # catalog and container-contracts jobs. `versioning-strategy: increase` keeps

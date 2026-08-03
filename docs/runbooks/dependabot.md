@@ -28,6 +28,7 @@ Only ecosystems and directories that exist on `main`:
 | `github-actions` | `/` | `.github/workflows/*.yaml` | Monday | 3 |
 | `terraform` | `/terraform/bootstrap` | `*.tf`, `.terraform.lock.hcl` | Tuesday | 2 |
 | `terraform` | `/terraform/environments/dev` | `*.tf`, `.terraform.lock.hcl` | Wednesday | 2 |
+| `terraform` | `/terraform/environments/dns` | `*.tf`, `.terraform.lock.hcl` | Wednesday | 2 |
 | `pip` | `/` | `requirements-dev.txt` | Thursday | 2 |
 | `npm` | `/control-plane/portal` | `package.json`, `package-lock.json` | Friday | 2 |
 

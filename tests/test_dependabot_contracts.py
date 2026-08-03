@@ -41,6 +41,7 @@ EXPECTED_OPEN_PR_LIMITS = {
     ("github-actions", "/"): 3,
     ("terraform", "/terraform/bootstrap"): 2,
     ("terraform", "/terraform/environments/dev"): 2,
+    ("terraform", "/terraform/environments/dns"): 2,
     ("pip", "/"): 2,
     ("npm", "/control-plane/portal"): 2,
 }
