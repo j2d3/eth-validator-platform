@@ -71,3 +71,23 @@ jobs:
         run: python3 -m pip install --disable-pip-version-check -r requirements-dev.txt
       - name: Verify pinned image identities
         run: make container-contracts
+
+  portal:
+    name: Portal build and contracts
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - name: Set up Node.js
+        uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4.4.0
+        with:
+          node-version: 22.22.0
+          cache: npm
+          cache-dependency-path: control-plane/portal/package-lock.json
+      - name: Install portal dependencies
+        run: npm --prefix control-plane/portal ci --ignore-scripts --no-audit --no-fund
+      - name: Audit the complete portal dependency graph
+        run: npm --prefix control-plane/portal audit
+      - name: Build and verify portal contracts
+        run: make portal-check

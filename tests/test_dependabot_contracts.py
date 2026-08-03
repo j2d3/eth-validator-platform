@@ -42,6 +42,7 @@ EXPECTED_OPEN_PR_LIMITS = {
     ("terraform", "/terraform/bootstrap"): 2,
     ("terraform", "/terraform/environments/dev"): 2,
     ("pip", "/"): 2,
+    ("npm", "/control-plane/portal"): 2,
 }
 
 
@@ -188,6 +189,26 @@ class DependabotMatchesTheTree(unittest.TestCase):
         self.assertIn(
             ("pip", "/"),
             {(entry["package-ecosystem"], entry["directory"]) for entry in self.updates},
+        )
+
+    def test_first_party_npm_manifests_are_covered(self) -> None:
+        """A new checked-in JavaScript application must receive update PRs."""
+        ignored_parts = {"node_modules", "dist", ".next", ".vinext"}
+        roots = {
+            "/" + manifest.parent.relative_to(ROOT).as_posix()
+            for manifest in ROOT.glob("**/package.json")
+            if not ignored_parts.intersection(manifest.relative_to(ROOT).parts)
+            and not any(part.startswith(".") for part in manifest.relative_to(ROOT).parts)
+        }
+        configured = {
+            entry["directory"]
+            for entry in self.updates
+            if entry["package-ecosystem"] == "npm"
+        }
+        self.assertEqual(
+            roots - configured,
+            set(),
+            "first-party npm manifest(s) present with no Dependabot entry",
         )
 
 

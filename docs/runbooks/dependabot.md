@@ -29,16 +29,16 @@ Only ecosystems and directories that exist on `main`:
 | `terraform` | `/terraform/bootstrap` | `*.tf`, `.terraform.lock.hcl` | Tuesday | 2 |
 | `terraform` | `/terraform/environments/dev` | `*.tf`, `.terraform.lock.hcl` | Wednesday | 2 |
 | `pip` | `/` | `requirements-dev.txt` | Thursday | 2 |
+| `npm` | `/control-plane/portal` | `package.json`, `package-lock.json` | Friday | 2 |
 
-Nine open pull requests is the declared ceiling, weekly, staggered across four
+Eleven open pull requests is the declared ceiling, weekly, staggered across five
 days. Every commit is prefixed `chore(...)`. Within each block, minor and patch
 updates are grouped into a single pull request while **majors are excluded from
 the group** so each arrives alone — an actions major can change runner or input
 contracts, and a Terraform provider major can change resource defaults against
 a live EKS foundation.
 
-Deliberately absent: `npm` (no `package.json` on `main`), `docker` (no
-Dockerfile; client images are digest-pinned and gated by
+Deliberately absent: `docker` (no Dockerfile; client images are digest-pinned and gated by
 `tools/verify_container_contracts.py` plus the `CONTRIBUTING.md` release-note
 review), and `helm` (no chart dependencies, and Dependabot has no Helm
 ecosystem).
