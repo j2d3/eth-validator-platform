@@ -21,7 +21,7 @@ This project builds a **dynamic, fully automated Ethereum validator platform**.
 
 An operator chooses an execution client, a consensus client, a validator identity, and a desired lifecycle action. The platform launches or retires the corresponding validator stack on EKS, keeps signing keys outside Git, preserves slashing history across every transition, and exposes enough telemetry to understand the validator, its client pair, the signer, and the Kubernetes cluster as one system.
 
-The laboratory mirrors the boundaries of a larger institutional staking platform while fitting inside one personal AWS account. All sixteen execution/consensus client combinations are represented in the catalog and schema-validated in CI; one or two run at a time.
+The laboratory mirrors the boundaries of a larger institutional staking platform while fitting inside one personal AWS account. The catalog and schema permit all sixteen execution/consensus client combinations; the Geth + Lighthouse profile is the currently implemented pair adapter, and additional pair adapters land one at a time as they are qualified.
 
 ### 1.1 Product promise
 
@@ -509,7 +509,7 @@ flowchart TB
 | Layer | Authoritative owner | Responsibilities |
 |---|---|---|
 | AWS foundation | Terraform, applied locally in v1 | VPC, EKS, node capacity, IAM, KMS, RDS, secret containers/policies, EBS prerequisites, DNS primitives, outputs. |
-| Flux bootstrap | One-time trusted operator command | Installs Flux controllers and connects the cluster to the private repository. |
+| Flux bootstrap | One-time trusted operator command | Installs Flux controllers and connects the cluster to the GitHub repository. |
 | Kubernetes platform | Flux | Add-on controllers, namespaces, policies, observability, shared signer, application releases. |
 | Customer/validator desired state | Git | Opaque customer metadata, identity ownership, pair assignment, lifecycle state, service profiles, versions, dashboard/rule definitions. |
 | Change preparation | GitHub Actions | Input validation, rendering, policy tests, PR creation, status reporting. |
@@ -1342,7 +1342,7 @@ The scalable unit is not “one full node per validator.” Ethereum separates t
 | Archive execution service | Shared by audit, compliance, analytics, support, and historical-RPC consumers | Keep off the latency-critical validator path; protect it from unbounded customer queries. |
 | Observability backend | Shared fleet-wide with tenant/customer labels and RBAC | Control label cardinality and prevent PII/secret exposure. |
 
-Public research from large staking providers has noted that operators commonly run hundreds of validators on a single node and must spread customer assets across machines to reduce correlated penalties. Public staking products likewise expose validator provisioning in large batches and advertise client and geographic diversity. Those facts support a many-identities-to-fewer-node-stacks model, but published information does not disclose any specific operator's internal topology.
+The design assumes a many-identities-to-fewer-node-stacks topology: one validator-client shard manages hundreds of disjoint keys, customer assets are spread across shards to bound correlated penalties, and provisioning is exposed in large batches with client and geographic diversity. This is stated here as a design assumption for the cell topology below, not as a factual claim about any specific operator's production shape.
 
 ### 15.2 Recommended cell topology
 
@@ -1508,7 +1508,7 @@ A pair is **qualified** only when it:
 ### Phase 1 — Reproducible local GitOps foundation
 
 - Create a pinned, reproducible `kind` cluster with explicit laptop resource prerequisites and P2P port mappings.
-- Define `clusters/local` and bootstrap Flux against the private repository.
+- Define `clusters/local` and bootstrap Flux against the GitHub repository.
 - Add local StorageClass, secret-source, database, and network adapters behind stable application contracts.
 - Make create, bootstrap, verify, stop, and delete operations documented and scriptable.
 
@@ -1539,7 +1539,7 @@ A pair is **qualified** only when it:
 
 - Terraform VPC, EKS, node capacity, IAM, KMS, EBS prerequisites, RDS, and Secrets Manager containers.
 - Apply locally and record outputs without secrets.
-- Bootstrap `clusters/dev` Flux reconciliation against the private repository.
+- Bootstrap `clusters/dev` Flux reconciliation against the GitHub repository.
 - Replace only the local infrastructure adapters with EBS, RDS, Secrets Manager/workload identity, and AWS P2P exposure.
 - Re-run the platform and first-pair qualification evidence on EKS.
 

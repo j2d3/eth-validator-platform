@@ -57,15 +57,15 @@ test("server-renders the project home and its safety posture", async () => {
     new RegExp(`rel="canonical" href="${CANONICAL_ORIGIN_RE}/?"`, "i"),
   );
   assert.match(html, /name="twitter:card" content="summary_large_image"/i);
-  assert.match(html, /One view of the system/);
-  assert.match(html, /None of the comforting lies/);
-  assert.match(html, /Ready is not authorized/);
+  assert.match(html, /One view of the platform/);
+  assert.match(html, /Committed intent, cluster state, and observed evidence/);
+  assert.match(html, /Readiness is not authorization/);
   assert.match(html, /signing<\/span><strong>OFF/);
-  assert.match(html, /Three answers, never one blended status/);
-  assert.match(html, /Scan status belongs beside runtime health/);
+  assert.match(html, /Three separate answers, not one blended status/);
+  assert.match(html, /Which supply-chain controls are enabled/);
   assert.match(html, /Vulnerability alerts/);
   assert.match(html, /Container image scanning/);
-  assert.match(html, /The front door, not another replacement dashboard/);
+  assert.match(html, /Entry points into the existing tools/);
   assert.match(html, /not a production staking service/i);
   assert.equal(
     response.headers.get("strict-transport-security"),

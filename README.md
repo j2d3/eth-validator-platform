@@ -1,6 +1,6 @@
 # Ethereum Validator Platform Lab
 
-A GitOps-operated Ethereum validator platform for learning and demonstrating institutional staking-platform practices. The platform runs completely on local Kubernetes before its AWS adapters are provisioned on EKS.
+A GitOps-operated Ethereum validator platform for learning and demonstrating institutional staking-platform practices. The platform is designed to run completely on local Kubernetes before its AWS adapters are provisioned on EKS.
 
 | | |
 |---|---|
@@ -8,7 +8,7 @@ A GitOps-operated Ethereum validator platform for learning and demonstrating ins
 | **Network** | Hoodi testnet configuration |
 | **Local profile** | `platform-smoke` (validator clients stopped) |
 | **Signing** | Disabled — Web3Signer runs with an empty key store |
-| **Reconciliation** | Flux, from a private GitHub repository |
+| **Reconciliation** | Flux, from the GitHub repository |
 | **Cloud resources** | EKS foundation applied; system tier active, Ethereum capacity scaled to zero |
 
 The canonical product and architecture contract is [docs/prd/001-dynamic-validator-platform.md](docs/prd/001-dynamic-validator-platform.md). Where this README and the PRD disagree, the PRD is current and this file is stale.
@@ -115,7 +115,7 @@ make local-seed
 make local-status
 ```
 
-Run `make check` before opening a pull request. Flux bootstrap requires the current commit to be pushed to the private GitHub repository and a valid `j2d3` GitHub token. Local secret material is generated or read only from `secrets/local/`, which is excluded from Git.
+Run `make check` before opening a pull request. Flux bootstrap requires the current commit to be pushed to the GitHub repository and a valid `j2d3` GitHub token. Local secret material is generated or read only from `secrets/local/`, which is excluded from Git.
 
 The operator-facing lifecycle form lives under **Actions → Request non-signing node-pair lifecycle**. It changes the assignment catalog and its generated Flux HelmRelease together, opens a PR, and has no AWS or Kubernetes credentials. The first slice can start or stop only Geth plus the Lighthouse beacon node; it cannot start a validator client. GitHub's repository-level “Allow GitHub Actions to create and approve pull requests” setting must be enabled before the form can open its first PR, and PR-triggered CI created with `GITHUB_TOKEN` may require a write collaborator to approve the run. Those are GitHub control-plane prerequisites, not application permissions.
 

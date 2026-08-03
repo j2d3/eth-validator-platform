@@ -15,7 +15,7 @@ const geistMono = Geist_Mono({
 
 const title = "Validator Platform — Field Console";
 const description =
-  "The project home and operating index for a spec-built, GitOps-operated Ethereum validator platform lab.";
+  "Project home and operating index for a GitOps-operated Ethereum validator platform lab.";
 const origin = CANONICAL_URL;
 const socialImage = new URL("/og.png", origin).toString();
 
@@ -34,7 +34,7 @@ export const metadata: Metadata = {
         url: socialImage,
         width: 1734,
         height: 907,
-        alt: "Validator Platform field console — ready is not authorized",
+        alt: "Validator Platform field console — readiness is not authorization",
       },
     ],
   },

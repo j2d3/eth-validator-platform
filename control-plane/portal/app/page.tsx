@@ -193,7 +193,7 @@ export default function Home() {
             </div>
             <div>
               <span className="kicker">Fail-closed posture</span>
-              <h2>Ready is not authorization.</h2>
+              <h2>Readiness is not authorization.</h2>
               <p>
                 The signer&apos;s key store is empty. A healthy pod, synced node, or
                 reconciled release does not by itself enable validator duties.
@@ -369,12 +369,12 @@ export default function Home() {
         <section className="section matrix-section">
           <div className="matrix-copy">
             <span className="kicker">Client diversity</span>
-            <h2>Every EL/CL combination is defined; one runs at a time.</h2>
+            <h2>Sixteen combinations in the catalog; one implemented today.</h2>
             <p>
-              Sixteen execution/consensus combinations are represented in the
-              catalog. One pair runs at a time in the lab, exercises its
-              complete lifecycle, records the gotchas, then yields capacity to
-              the next adapter.
+              The catalog and schema permit all sixteen execution/consensus
+              combinations. The Geth + Lighthouse profile is the currently
+              implemented pair adapter; additional pair adapters land one at a
+              time as they are qualified.
             </p>
             <div className="legend">
               <span><i className="legend__implemented" /> implemented</span>

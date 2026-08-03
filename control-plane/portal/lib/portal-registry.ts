@@ -124,7 +124,7 @@ export const surfaces: PortalSurface[] = [
     access: "operator",
     state: "available",
     href: repository,
-    detail: "GitHub · private repository",
+    detail: "GitHub · repository",
   },
   {
     name: "Lifecycle requests",
