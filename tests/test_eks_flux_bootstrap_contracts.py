@@ -145,6 +145,14 @@ class EksFluxEntrypointTests(unittest.TestCase):
         self.assertIn("WEB3SIGNER_POD_SECURITY_GROUP_ID", runbook)
         self.assertIn("WEB3SIGNER_MIGRATION_POD_SECURITY_GROUP_ID", runbook)
         self.assertIn("prune=disabled", runbook)
+        self.assertLess(
+            runbook.index(
+                "kubectl apply -f clusters/local/flux-system/gotk-components.yaml"
+            ),
+            runbook.index(
+                "kubectl -n flux-system create configmap aws-secret-store-role-arns"
+            ),
+        )
 
     def test_rendered_config_layer_declares_exact_runtime_and_migration_groups(self) -> None:
         documents = render_all(CONFIGS)
@@ -547,11 +555,13 @@ class EksApplicationSafetyTests(unittest.TestCase):
         self.assertIn("GitHub Actions", runbook)
         self.assertIn("Do not pass `--allow-write`", runbook)
         self.assertNotIn("flux bootstrap github", runbook)
+        self.assertIn('export PATH="$PWD/.local/bin:$PATH"', runbook)
         self.assertIn('enableNetworkPolicy == "true"', runbook)
         self.assertIn('ENABLE_POD_ENI == "true"', runbook)
         self.assertIn("NETWORK_POLICY_ENFORCING_MODE", runbook)
         self.assertIn("POD_SECURITY_GROUP_ENFORCING_MODE", runbook)
-        self.assertIn("vpc.amazonaws.com/has-trunk-attached", runbook)
+        self.assertIn("vpc.amazonaws.com/pod-eni", runbook)
+        self.assertNotIn("vpc.amazonaws.com/has-trunk-attached", runbook)
         self.assertIn("eks-network-policy-probe.yaml", runbook)
         self.assertIn("ALLOWED_OUTPUT", runbook)
         self.assertIn("DENIED_STATUS", runbook)

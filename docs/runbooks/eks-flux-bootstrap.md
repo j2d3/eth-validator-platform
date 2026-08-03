@@ -48,6 +48,7 @@ git pull --ff-only origin main
 git status --short
 git config --local user.email
 
+export PATH="$PWD/.local/bin:$PATH"
 export GH_CONFIG_DIR="$HOME/.config/gh-j2d3"
 gh api user --jq .login
 
@@ -55,9 +56,10 @@ export AWS_PROFILE=default
 aws sts get-caller-identity --query '{Account:Account,Arn:Arn}' --output json
 ```
 
-Expected: the worktree is clean, `gh` reports `j2d3`, and the AWS identity is
-the same account that owns the Terraform `dev` state. Do not paste the account
-number or ARN into Git, issues, or logs.
+Expected: the worktree is clean, the project-local Flux and Terraform binaries
+are first on `PATH`, `gh` reports `j2d3`, and the AWS identity is the same
+account that owns the Terraform `dev` state. Do not paste the account number or
+ARN into Git, issues, or logs.
 
 Verify the committed safety posture before pointing Flux at the path:
 
@@ -119,14 +121,16 @@ jq -e '
 kubectl -n kube-system rollout status daemonset/aws-node --timeout=5m
 kubectl get nodes -l workload=system -o json | jq -e '
   (.items | length) > 0 and
-  all(.items[]; .metadata.labels["vpc.amazonaws.com/has-trunk-attached"] == "true")
+  all(.items[];
+    ((.status.allocatable["vpc.amazonaws.com/pod-eni"] // "0") | tonumber) > 0
+  )
 ' >/dev/null
 ```
 
 If that check fails, stop. Do not unsuspend either signer layer; update the
-reviewed Terraform/add-on contract first. These configuration and trunk-label
-checks are prerequisites, not runtime proof that either policy engine enforced a
-decision. Step 5 uses a matched allow/deny test against one policy-only target;
+reviewed Terraform/add-on contract first. These configuration and trunk-capacity
+checks are prerequisites, not runtime proof that either policy engine enforced
+a decision. Step 5 uses a matched allow/deny test against one policy-only target;
 Steps 6 and 7 separately prove that the selected Pods received branch ENIs with
 the exact Terraform security groups.
 
@@ -167,14 +171,14 @@ aws eks list-pod-identity-associations \
   --service-account external-secrets
 ```
 
-Before Flux can reconcile `infrastructure-configs`, materialize the three
-non-secret scoped reader-role ARNs and two Pod security-group IDs from
-Terraform. This is an explicit,
-reviewed bootstrap input: it is not a secret, it is not committed to Git, and
-it is not the base Pod Identity role. Check that all three ARNs belong to the AWS
-account selected above and that their role names match the Terraform outputs;
-the command deliberately prints neither ARN, security-group ID, nor any secret
-value:
+Before Flux can reconcile `infrastructure-configs`, stage the three non-secret
+scoped reader-role ARNs and two Pod security-group IDs from Terraform. Step 4
+materializes them after the Flux manifests create the `flux-system` namespace.
+This is an explicit, reviewed bootstrap input: it is not a secret, it is not
+committed to Git, and it is not the base Pod Identity role. Check that all three
+ARNs belong to the AWS account selected above and that their role names match
+the Terraform outputs; the command deliberately prints neither ARN,
+security-group ID, nor any secret value:
 
 ```bash
 AWS_ACCOUNT_ID="$(aws sts get-caller-identity --query Account --output text)"
@@ -198,35 +202,10 @@ for group_id in "$WEB3SIGNER_POD_SECURITY_GROUP_ID" "$WEB3SIGNER_MIGRATION_POD_S
     *) echo "Web3Signer Pod security-group output is not an EC2 security-group ID" >&2; exit 1 ;;
   esac
 done
-
-kubectl -n flux-system create configmap aws-secret-store-role-arns \
-  --from-literal=EXTERNAL_SECRETS_ENGINE_READER_ROLE_ARN="$ENGINE_READER_ROLE_ARN" \
-  --from-literal=EXTERNAL_SECRETS_DATABASE_READER_ROLE_ARN="$DATABASE_READER_ROLE_ARN" \
-  --from-literal=EXTERNAL_SECRETS_SIGNING_READER_ROLE_ARN="$SIGNING_READER_ROLE_ARN" \
-  --from-literal=WEB3SIGNER_POD_SECURITY_GROUP_ID="$WEB3SIGNER_POD_SECURITY_GROUP_ID" \
-  --from-literal=WEB3SIGNER_MIGRATION_POD_SECURITY_GROUP_ID="$WEB3SIGNER_MIGRATION_POD_SECURITY_GROUP_ID" \
-  --dry-run=client -o yaml | kubectl apply -f -
-kubectl -n flux-system annotate configmap aws-secret-store-role-arns \
-  kustomize.toolkit.fluxcd.io/prune=disabled --overwrite
 ```
 
-Do not substitute the base `external_secrets_role_arn` output into either
-field. Verify only the ConfigMap's existence and keys before continuing:
-
-```bash
-kubectl -n flux-system get configmap aws-secret-store-role-arns \
-  -o jsonpath='{.metadata.annotations.kustomize\.toolkit\.fluxcd\.io/prune}{"\n"}'
-kubectl -n flux-system get configmap aws-secret-store-role-arns \
-  -o json | jq -e '.data | has("EXTERNAL_SECRETS_ENGINE_READER_ROLE_ARN")' >/dev/null
-kubectl -n flux-system get configmap aws-secret-store-role-arns \
-  -o json | jq -e '.data | has("EXTERNAL_SECRETS_DATABASE_READER_ROLE_ARN")' >/dev/null
-kubectl -n flux-system get configmap aws-secret-store-role-arns \
-  -o json | jq -e '.data | has("EXTERNAL_SECRETS_SIGNING_READER_ROLE_ARN")' >/dev/null
-kubectl -n flux-system get configmap aws-secret-store-role-arns \
-  -o json | jq -e '.data | has("WEB3SIGNER_POD_SECURITY_GROUP_ID")' >/dev/null
-kubectl -n flux-system get configmap aws-secret-store-role-arns \
-  -o json | jq -e '.data | has("WEB3SIGNER_MIGRATION_POD_SECURITY_GROUP_ID")' >/dev/null
-```
+Do not substitute the base `external_secrets_role_arn` output into a scoped
+reader field.
 
 `optional: false` on Flux `postBuild.substituteFrom` fails reconciliation when
 the ConfigMap is absent. This repository does not enable Flux's
@@ -243,7 +222,7 @@ placing it in Terraform state, Git, shell history, or workflow logs.
 ## 4. Bootstrap with a read-only deploy key
 
 This is the first mutating step. It creates a **read-only** deploy key on the
-private repository, stores its private half only in the EKS `flux-system`
+repository, stores its private half only in the EKS `flux-system`
 Secret, and applies the already-reviewed Flux v2.8.8 controller/sync bundle.
 It does not generate or push a commit directly to branch-protected `main`.
 
@@ -278,6 +257,28 @@ kubectl wait --for=condition=Established \
   crd/helmreleases.helm.toolkit.fluxcd.io \
   --timeout=2m
 
+kubectl -n flux-system create configmap aws-secret-store-role-arns \
+  --from-literal=EXTERNAL_SECRETS_ENGINE_READER_ROLE_ARN="$ENGINE_READER_ROLE_ARN" \
+  --from-literal=EXTERNAL_SECRETS_DATABASE_READER_ROLE_ARN="$DATABASE_READER_ROLE_ARN" \
+  --from-literal=EXTERNAL_SECRETS_SIGNING_READER_ROLE_ARN="$SIGNING_READER_ROLE_ARN" \
+  --from-literal=WEB3SIGNER_POD_SECURITY_GROUP_ID="$WEB3SIGNER_POD_SECURITY_GROUP_ID" \
+  --from-literal=WEB3SIGNER_MIGRATION_POD_SECURITY_GROUP_ID="$WEB3SIGNER_MIGRATION_POD_SECURITY_GROUP_ID" \
+  --dry-run=client -o yaml | kubectl apply -f -
+kubectl -n flux-system annotate configmap aws-secret-store-role-arns \
+  kustomize.toolkit.fluxcd.io/prune=disabled --overwrite
+
+kubectl -n flux-system get configmap aws-secret-store-role-arns \
+  -o jsonpath='{.metadata.annotations.kustomize\.toolkit\.fluxcd\.io/prune}{"\n"}'
+kubectl -n flux-system get configmap aws-secret-store-role-arns \
+  -o json | jq -e '
+    .data |
+    has("EXTERNAL_SECRETS_ENGINE_READER_ROLE_ARN") and
+    has("EXTERNAL_SECRETS_DATABASE_READER_ROLE_ARN") and
+    has("EXTERNAL_SECRETS_SIGNING_READER_ROLE_ARN") and
+    has("WEB3SIGNER_POD_SECURITY_GROUP_ID") and
+    has("WEB3SIGNER_MIGRATION_POD_SECURITY_GROUP_ID")
+  ' >/dev/null
+
 flux create secret git flux-system \
   --namespace=flux-system \
   --url=ssh://git@github.com/j2d3/eth-validator-platform \
@@ -297,6 +298,9 @@ The temporary Secret manifest contains the private key. The restrictive umask
 protects it until the trap deletes it on shell exit. Never attach it to an
 issue, commit it, or print it. After the Kubernetes Secret exists, the local
 private-key files are removed immediately.
+
+The ConfigMap checks above verify only its annotation and key names. Step 5
+compares each applied value without printing it.
 
 Verify the public deploy-key metadata and the committed sync path:
 
