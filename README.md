@@ -9,7 +9,7 @@ A spec-built, GitOps-operated Ethereum validator platform for learning and demon
 | **Local profile** | `platform-smoke` (validator clients stopped) |
 | **Signing** | Disabled — Web3Signer runs with an empty key store |
 | **Reconciliation** | Flux, from a private GitHub repository |
-| **Cloud resources** | None created |
+| **Cloud resources** | EKS foundation applied; system tier active, Ethereum capacity scaled to zero |
 
 The canonical product and architecture contract is [docs/prd/001-dynamic-validator-platform.md](docs/prd/001-dynamic-validator-platform.md). Where this README and the PRD disagree, the PRD is current and this file is stale.
 
