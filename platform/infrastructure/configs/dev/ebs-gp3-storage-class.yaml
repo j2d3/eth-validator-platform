@@ -1,0 +1,39 @@
+# Application chain-data StorageClass for the single EKS development environment.
+#
+# EKS installs the ebs.csi.aws.com driver as a managed add-on but creates no
+# application StorageClass. The only class a fresh cluster has is the
+# EKS-created legacy gp2 one, which is neither the cheapest SSD nor the shape a
+# chain database wants. This class is the explicitly-referenced alternative.
+#
+# It is deliberately NOT annotated with storageclass.kubernetes.io/is-default-class.
+# A workload that forgets to name a class must fail visibly on an unbound claim
+# rather than silently landing on gp2 or on whatever a future overlay defaults to.
+#
+# Performance is gp3 baseline: 3,000 IOPS and 125 MiB/s are included in the
+# per-GiB price, so neither `iops` nor `throughput` is set here. Adding either
+# is a billed decision and belongs behind measured queue depth, latency, or
+# sync-rate evidence, not behind a guess.
+apiVersion: storage.k8s.io/v1
+kind: StorageClass
+metadata:
+  name: ebs-gp3-encrypted
+  labels:
+    app.kubernetes.io/part-of: ethereum-validator-platform
+    platform.galaxy-lab/environment: dev
+provisioner: ebs.csi.aws.com
+parameters:
+  type: gp3
+  # No kmsKeyId: this requests the account's default EBS encryption key, which
+  # is the same AWS-managed posture the Terraform node root volumes request.
+  # An explicit customer-managed KMS decision is still open work.
+  encrypted: "true"
+  csi.storage.k8s.io/fstype: ext4
+# The volume is created only once a Pod is scheduled, so the EBS volume lands in
+# the zone that actually runs the pair instead of stranding a pod in another AZ.
+volumeBindingMode: WaitForFirstConsumer
+# Expansion only. EBS and ext4 grow online; neither shrinks.
+allowVolumeExpansion: true
+# Execution and consensus databases are reproducible by resync. Key material and
+# slashing-protection history never live on these volumes, so releasing them with
+# the claim is correct — and retaining idle EBS after an archive is a pure cost.
+reclaimPolicy: Delete

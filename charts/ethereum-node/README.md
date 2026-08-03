@@ -16,6 +16,10 @@ The local Flux application overlay now includes one catalog-generated HelmReleas
 
 That is declared implementation, not runtime evidence. The pair has not yet completed a Flux-managed lifecycle or chain sync on this workstation.
 
+## Storage
+
+Every claim names its StorageClass explicitly; `values.schema.json` rejects an empty `storageClassName` because Kubernetes reads it as "ignore every StorageClass". `values.yaml` defaults to the local `standard` class and the laptop-sized 20/10/5 GiB claims. `values-eks-hoodi-storage.yaml` is the EKS override — the encrypted `gp3` class from `platform/infrastructure/configs/dev` and a proposed 200/50/5 GiB Hoodi profile whose sizes are a first-sync hypothesis rather than a measurement. Neither environment inherits the other's class: `standard` does not exist on EKS, and the EBS class does not exist in `kind`.
+
 Run the static lifecycle tests with:
 
 ```bash

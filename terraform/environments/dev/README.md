@@ -9,9 +9,11 @@ the ability to launch a worker where an EBS volume is bound. On first creation,
 one selected group receives at most one lab node; subsequent desired capacity
 is operated through the EKS API until an autoscaler is separately qualified.
 
-The first trusted-local apply completed on 2026-08-02. That is runtime evidence
-for the foundation described below; it is not evidence for the still-missing
-RDS, Flux, External Secrets, application-storage, P2P, or validator paths.
+Two trusted-local applies completed on 2026-08-02: the foundation itself, then
+the zonal Spot replacement for the single on-demand Ethereum group. That is
+runtime evidence for the foundation described below; it is not evidence for the
+still-missing RDS, Flux, External Secrets, application-storage, P2P, or
+validator paths.
 
 ## Operating boundary
 
@@ -31,11 +33,11 @@ releases, dashboards, validator assignments, or node-pair lifecycle state.
 |---|---|---|---|
 | Networking | Three-AZ VPC; public, private worker, and intra control-plane subnets; DNS; flow logs; one NAT gateway by lab default | VPC, nine subnets, routes, flow logs, and the single-NAT lab path were created by the reviewed 90-resource plan | Sustained routing/egress evidence, VPC endpoints/cost decision, production NAT/AZ posture |
 | EKS | Restricted public plus private API; control-plane logs; access-entry input | Kubernetes 1.35 control plane created; the dedicated kubeconfig reached the restricted endpoint; post-apply Terraform plan reported no drift | Upgrade, API-throttling, access-role, and private-connectivity exercises |
-| Capacity | Two-node on-demand system group; three tainted, zonal, zero-minimum Ethereum groups; explicit ON_DEMAND/SPOT selector; at most one initially selected Ethereum node; Terraform hard bounds plus EKS-API desired-size ownership | The applied baseline had two Ready `m7i.large` system nodes and one Ready `r7i.2xlarge` on-demand Ethereum node. The zonal/Spot revision is declared but not yet applied | Review replacement plan; guarded EKS scaling command; Spot/FIS interruption test; scale-to-zero and same-AZ resume; later Karpenter decision |
-| Add-ons and identity | VPC CNI, CoreDNS, kube-proxy, EKS Pod Identity agent, EBS CSI with a dedicated role | All five managed add-ons and their pods were Running; EBS CSI controller/node pods were fully Ready with zero restarts | Application EBS StorageClass, AWS External Secrets `SecretStore`, Flux EKS overlay |
+| Capacity | Two-node on-demand system group; three tainted, zonal, zero-minimum Ethereum groups; explicit ON_DEMAND/SPOT selector; at most one initially selected Ethereum node; Terraform hard bounds plus EKS-API desired-size ownership | The first baseline had two Ready `m7i.large` system nodes and one Ready `r7i.2xlarge` on-demand Ethereum node. The zonal/Spot replacement was then applied — `21 added, 2 changed, 7 destroyed` — leaving all four managed groups `ACTIVE` with no health issues: a two-node on-demand system group of Ready `m7i.large` nodes in `us-west-2b`/`us-west-2c`, and one Spot Ethereum group per AZ. The active `us-west-2a` group obtained a Ready `r8i.2xlarge` Spot node — the pool's first-preference type, so fallback is still unexercised. An EKS `UpdateNodegroupConfig` call then paused that group to zero; all three Ethereum groups now report `0/1`. Both the post-apply and post-pause plans reported no changes | Guarded EKS status/pause/resume command; Spot/FIS interruption test; same-AZ resume with a bound chain PVC; later Karpenter decision |
+| Add-ons and identity | VPC CNI, CoreDNS, kube-proxy, EKS Pod Identity agent, EBS CSI with a dedicated role | All five managed add-ons and their pods were Running; EBS CSI controller/node pods were fully Ready with zero restarts. The application `gp3` StorageClass was accepted by a server-side dry-run against this cluster, but it was not persisted, and no application PVC or EBS volume exists | AWS External Secrets `SecretStore`, Flux EKS overlay, and registration plus runtime qualification of the application EBS StorageClass — the class manifest itself is declared and unreconciled in [`platform/infrastructure/configs/dev`](../../../platform/infrastructure/configs/dev/README.md) |
 | Secrets | Empty Secrets Manager container for the EL/CL Engine JWT; read-only External Secrets role scoped to it | Secret container, role, policy, and Pod Identity association exist; no secret value was created | Restricted operator value bootstrap, signing-key containers/policies, rotation evidence |
 | Slashing database | Not declared | None | RDS PostgreSQL, subnet/security groups, credentials adapter, backups/PITR, restore and failover qualification |
-| Encryption | AWS-managed encryption is requested for node root volumes and Terraform state | Remote state controls were applied; the three observed node roots were encrypted gp3 at baseline 3,000 IOPS / 125 MiB/s | Explicit KMS/AWS-managed-key decision for RDS, EBS application data, and Secrets Manager |
+| Encryption | AWS-managed encryption is requested for node root volumes and Terraform state | Remote state controls were applied; every observed node root was encrypted gp3 at baseline 3,000 IOPS / 125 MiB/s, and after the replacement they measured 40 GiB per system node and 30 GiB per Ethereum node | Explicit KMS/AWS-managed-key decision for RDS, EBS application data, and Secrets Manager |
 | Public Ethereum networking | Not declared | None | P2P Service/NLB design, source ranges, discovery/TCP/UDP qualification |
 
 Local CloudNativePG, local-path volumes, and the Kubernetes External Secrets
@@ -56,8 +58,8 @@ terraform -chdir=terraform/environments/dev init -backend-config=backend.hcl
 terraform -chdir=terraform/environments/dev plan
 ```
 
-Review and save every plan before a manual apply. The first foundation apply
-used this path and was followed by a zero-drift plan; do not add an automatic
+Review and save every plan before a manual apply. Both 2026-08-02 applies used
+this path and each was followed by a zero-drift plan; do not add an automatic
 apply merely to avoid the operator checkpoint. The root is not yet a Phase
 4-complete environment; the table above is the remaining work list.
 
@@ -91,8 +93,9 @@ A warm pause is not a Terraform variable edit: first merge a stopped
 assignment, wait until client pods are absent, and only then run the reviewed,
 bounded EKS scaling operation that sets the active group to zero. The guarded
 command is follow-up work; until it exists, use the EKS API only through an
-individually reviewed operator action. EKS, NAT, system nodes, EBS, logs, and
-later RDS continue to cost money while validator compute is paused. Resume sets
+individually reviewed operator action — the route the one observed pause below
+took. EKS, NAT, system nodes, EBS, logs, and later RDS continue to cost money
+while validator compute is paused. Resume sets
 one group to one in the PVC's AZ, waits for node readiness, volume attachment,
 and client sync, and does not authorize signing.
 
@@ -103,28 +106,61 @@ cost and recovery bug. Changing a root size publishes a new launch-template
 version; applying it asks EKS to roll the affected managed node group. It does
 not shrink a running instance's EBS volume in place.
 
-### Unapplied replacement-plan evidence
+### Applied replacement evidence
 
-A read-only saved plan against the applied 2026-08-02 state, with Spot selected,
-reported **21 additions, 2 in-place changes, and 7 deletions**. It would:
+The reviewed replacement plan against the 90-resource 2026-08-02 state, with Spot
+selected, reported **21 additions, 2 in-place changes, and 7 deletions**, and was
+applied later the same day from the trusted-local path. It:
 
-- create one Spot Ethereum group in each of `us-west-2a`, `us-west-2b`, and
+- created one Spot Ethereum group in each of `us-west-2a`, `us-west-2b`, and
   `us-west-2c`, with initial desired sizes `1`, `0`, and `0` respectively;
-- remove the old single on-demand Ethereum group and its dedicated IAM,
+- removed the old single on-demand Ethereum group and its dedicated IAM,
   launch-template, and module-validation resources; and
-- publish the 40-GiB system launch-template version and update the system group
-  to it, causing an EKS-managed node rollout.
+- published the 40-GiB system launch-template version and updated the system
+  group to it, causing an EKS-managed node rollout.
 
-The old and new Ethereum modules are independent graph branches, so the plan
-does not promise create-before-destroy ordering between them. That is acceptable
-only because the observed lab currently has no application workloads or chain
-PVCs. A later migration with live clients must be staged: stop the assignment,
-verify client-pod absence, create and qualify replacement capacity in the PVC's
-AZ, and only then remove the old group.
+Observed afterwards: all four managed node groups `ACTIVE` with no reported
+health issues; the initially active `us-west-2a` group carrying a Ready
+`r8i.2xlarge` Spot node; the two replacement system nodes Ready as `m7i.large`
+in `us-west-2b` and `us-west-2c`; every EKS system pod Running with zero
+restarts; encrypted baseline gp3 roots at the intended 40 GiB and 30 GiB; and a
+post-apply plan reporting no changes.
+
+`r8i.2xlarge` is the *first* entry in `ethereum_instance_types`, so this run
+proves that the diversified pool is accepted end to end and that Spot fulfilled
+the top preference in `us-west-2a` at that moment. It does not prove fallback:
+no substitution to a later family was observed, because none was needed. The
+Spot/FIS interruption exercise is what would test the remaining five entries.
+
+The old and new Ethereum modules were independent graph branches, so the plan
+did not promise create-before-destroy ordering between them. That was acceptable
+only because the lab had no application workloads or chain PVCs at the time. A
+later migration with live clients must be staged: stop the assignment, verify
+client-pod absence, create and qualify replacement capacity in the PVC's AZ, and
+only then remove the old group.
 
 On the same date, AWS reported that every declared Ethereum instance type was
 offered in all three selected Availability Zones. That proves API availability,
 not Spot capacity at the moment of a future apply.
+
+### Observed pause to zero
+
+With that fleet up, the pause path was exercised once by hand on the empty lab.
+After confirming that no application pods, StatefulSets, or PersistentVolumeClaims
+existed, a bounded EKS `UpdateNodegroupConfig` call set the `us-west-2a` Ethereum
+group's desired size to zero. It succeeded; all three Ethereum groups now report
+`0/1` and only the two system nodes remain.
+
+A second Terraform plan taken after that pause also reported no changes. That is
+the ownership boundary proving itself rather than being asserted: Terraform still
+declares an initial desired size of one for the selected group, EKS reports zero,
+and Terraform does not try to reconcile the difference. An operational pause
+survives a subsequent plan.
+
+What this does not evidence: resume has not been exercised, and neither has a
+pause with a bound chain PVC — the volume whose Availability Zone the whole
+design exists to protect did not exist during this run. Both belong to the
+guarded command that is still follow-up work.
 
 ### Cost snapshot, not a quote
 
@@ -132,14 +168,17 @@ The 2026-08-02 `us-west-2` observation put the original fixed baseline at about
 $0.876/hour before application PVCs, RDS, log ingestion, NAT data processing,
 or transfer: two `m7i.large` nodes, one `r7i.2xlarge`, the EKS control plane,
 and one NAT gateway. Compatible 8-vCPU/64-GiB Spot pools were approximately
-$0.19–$0.23/hour at that moment versus $0.5292/hour on demand. That would reduce
-the Ethereum worker by roughly 60%, but Spot price and availability are dynamic.
+$0.19–$0.23/hour at that moment versus $0.5292/hour on demand. That reduces the
+Ethereum worker by roughly 60% while it runs, but Spot price and availability
+are dynamic, and no Spot bill has been observed over a sustained period.
 
 Scaling only Ethereum capacity to zero leaves roughly $0.347/hour—about
 $253/month at 730 hours—before storage, RDS, logs, and traffic. It is a warm
-pause, not zero cost. Right-sizing the three roots from 260 GiB to 110 GiB at
-the then-current $0.08/GiB-month gp3 rate reduces their nominal storage from
-$20.80 to $8.80 per month. Recalculate before every sustained run; see
+pause, not zero cost, and it is the lab's observed state right now. The
+replacement also right-sized a running three-node fleet's roots from 260 GiB to
+110 GiB, which at the then-current $0.08/GiB-month gp3 rate takes their nominal
+storage from $20.80 to $8.80 per month; while Ethereum capacity is paused, only
+the two 40-GiB system roots exist. Recalculate before every sustained run; see
 [EKS pricing](https://aws.amazon.com/eks/pricing/),
 [VPC pricing](https://aws.amazon.com/vpc/pricing/), and
 [EBS pricing](https://aws.amazon.com/ebs/pricing/).
