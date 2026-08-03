@@ -35,10 +35,51 @@ are not excluded merely because they are absent from the production bundle.
 
 ## Hosting and transport boundary
 
-`https://g.j2d3.com` is the portal's sole canonical origin. The Worker returns
-a permanent redirect for plaintext HTTP and for every noncanonical hostname;
-successful canonical responses carry HSTS. Open Graph, Twitter, and canonical
-metadata are static and cannot be rewritten through request host headers.
+The Worker enforces a single canonical origin. Requests that arrive on any
+other hostname — or over plaintext HTTP — receive a permanent redirect to
+the canonical origin. Successful canonical responses carry HSTS. Open
+Graph, Twitter, and canonical metadata are baked in at build time and cannot
+be rewritten through request host headers.
+
+The reference deployment's canonical origin is `https://g.j2d3.com`. A fork
+sets its own canonical origin at build time:
+
+```bash
+PORTAL_CANONICAL_ORIGIN="https://portal.example.org" npm run build
+PORTAL_CANONICAL_ORIGIN="https://portal.example.org" npm test
+```
+
+The value must be a bare HTTPS origin: `https:` scheme, a non-empty
+hostname, **no explicit port** (including `:443` — WHATWG URL parsing
+strips default ports so the validator inspects the raw string before
+parsing), no username or password, no path other than `/`, no query,
+no fragment.
+
+Validation lives in
+[`lib/canonical-origin-validator.mjs`](lib/canonical-origin-validator.mjs)
+(pure JS so Node's test runner can exercise it directly), and is
+covered by [`tests/canonical-origin.test.mjs`](tests/canonical-origin.test.mjs).
+Vite's config-load runs the same validator, so an invalid
+`PORTAL_CANONICAL_ORIGIN` throws before any build work happens — a
+deployable artifact is never produced from a misconfigured environment.
+
+Vite `define` injects the validated origin as a compile-time string
+literal into every bundle (Worker, RSC, SSR), so the compiled
+artifacts carry the build-time value directly. Changing
+`PORTAL_CANONICAL_ORIGIN` at runtime has no effect on a built Worker.
+The build-versus-runtime separation is exercised by a dedicated test
+(`build-time origin is baked into the compiled Worker`) that mutates
+`process.env` post-build and confirms the Worker's redirect still
+resolves to the build-time literal. A pure runtime-binding design
+(where the Worker reads its canonical origin from a Cloudflare
+binding at request time) is architecturally viable but is not the
+mechanism this repository qualifies.
+
+The single source of truth is
+[`lib/canonical-origin.ts`](lib/canonical-origin.ts); both the Worker
+and the Next.js layout import from it. If `PORTAL_CANONICAL_ORIGIN`
+is unset, the build falls back to the reference deployment origin so
+unmodified `npm run build` and `npm test` still work.
 
 The hosting provider manages the certificate. The deployment is not considered
 live until the provider reports both the custom domain and SSL certificate

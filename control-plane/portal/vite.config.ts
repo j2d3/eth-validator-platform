@@ -1,6 +1,18 @@
 import vinext from "vinext";
 import { defineConfig } from "vite";
 import { sites } from "./build/sites-vite-plugin.ts";
+import {
+  assertCanonicalOrigin,
+  DEFAULT_CANONICAL_ORIGIN,
+} from "./lib/canonical-origin-validator.mjs";
+
+// Validate PORTAL_CANONICAL_ORIGIN at config-load time and capture the
+// validated literal for `define`-based build-time injection below. An invalid
+// value throws here, before any build work happens — a deployable artifact is
+// never produced from a misconfigured environment.
+const VALIDATED_CANONICAL_ORIGIN = assertCanonicalOrigin(
+  process.env.PORTAL_CANONICAL_ORIGIN ?? DEFAULT_CANONICAL_ORIGIN,
+);
 
 // The restricted macOS sandbox reports itself through CODEX_SANDBOX and blocks
 // FSEvents, so local previews use polling there. Other environments keep their
@@ -23,6 +35,17 @@ export default defineConfig(async () => {
   const { cloudflare } = await import("@cloudflare/vite-plugin");
 
   return {
+    // Inject the validated canonical origin as a compile-time string
+    // literal so the compiled Worker, RSC, and SSR bundles carry the
+    // build-time value directly and cannot be influenced by
+    // runtime env changes. The .ts wrapper's expression
+    // `process.env.PORTAL_CANONICAL_ORIGIN ?? DEFAULT_CANONICAL_ORIGIN`
+    // therefore evaluates to a string literal at runtime.
+    define: {
+      "process.env.PORTAL_CANONICAL_ORIGIN": JSON.stringify(
+        VALIDATED_CANONICAL_ORIGIN,
+      ),
+    },
     server: isCodexSeatbeltSandbox
       ? { watch: { useFsEvents: false, usePolling: true } }
       : undefined,

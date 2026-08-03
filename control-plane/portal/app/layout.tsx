@@ -1,6 +1,7 @@
 import type { Metadata } from "next";
 import { Geist, Geist_Mono } from "next/font/google";
 import "./globals.css";
+import { CANONICAL_URL } from "../lib/canonical-origin";
 
 const geistSans = Geist({
   variable: "--font-geist-sans",
@@ -15,7 +16,7 @@ const geistMono = Geist_Mono({
 const title = "Validator Platform — Field Console";
 const description =
   "The project home and operating index for a spec-built, GitOps-operated Ethereum validator platform lab.";
-const origin = new URL("https://g.j2d3.com");
+const origin = CANONICAL_URL;
 const socialImage = new URL("/og.png", origin).toString();
 
 export const metadata: Metadata = {

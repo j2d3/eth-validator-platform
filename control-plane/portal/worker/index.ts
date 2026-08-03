@@ -1,17 +1,23 @@
 /** Read-only Cloudflare Worker entry point for the operator portal. */
 import handler from "vinext/server/app-router-entry";
-
-const CANONICAL_ORIGIN = "https://g.j2d3.com";
+import { CANONICAL_ORIGIN } from "../lib/canonical-origin";
 
 const worker = {
   async fetch(request: Request, env: unknown, ctx: unknown): Promise<Response> {
     const requestUrl = new URL(request.url);
 
-    if (
-      requestUrl.protocol !== "https:" ||
-      requestUrl.hostname !== "g.j2d3.com"
-    ) {
-      const destination = new URL(`${requestUrl.pathname}${requestUrl.search}`, CANONICAL_ORIGIN);
+    // Compare the full request origin (scheme + host + port) to the
+    // validated canonical origin. `url.origin` normalization means
+    // ports and case are handled consistently on both sides.
+    if (requestUrl.origin !== CANONICAL_ORIGIN) {
+      // Construct the destination from CANONICAL_ORIGIN and assign
+      // pathname + search directly. Using
+      // `new URL(pathname + search, CANONICAL_ORIGIN)` would treat a
+      // `//attacker.example/collect` pathname as a network-path
+      // reference and produce an open redirect off-origin.
+      const destination = new URL(CANONICAL_ORIGIN);
+      destination.pathname = requestUrl.pathname;
+      destination.search = requestUrl.search;
       return Response.redirect(destination, 308);
     }
 
