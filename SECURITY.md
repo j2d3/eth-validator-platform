@@ -62,9 +62,12 @@ material was not exfiltrated. Something in the *access path* was
 compromised: remote-signer credentials, database credentials, IAM
 role, TLS material, service account, or network trust.
 
-1. Isolate every caller of the signer for affected identities;
-   confirm no residual signing capability remains (empty keystore,
-   database access revoked, NetworkPolicy tightened).
+1. Isolate every caller of the signer for affected identities.
+   Local controls can prove *this cluster's* signing paths are
+   disabled — empty keystore, database access revoked, NetworkPolicy
+   tightened — but cannot prove an incident actor has no copied
+   credential outside the cluster; treat that as a separate custody
+   question, not a claim you can close from the operator's console.
 2. Revoke and rotate the compromised service credentials — IAM roles,
    database users/passwords, TLS material, tokens.
 3. Preserve slashing-protection history **complete through the last
@@ -72,9 +75,16 @@ role, TLS material, service account, or network trust.
    it predates the incident window; duties signed during the window
    must be represented in the restored history or reactivation risks
    double-signing.
-4. Prove single-writer status and conflicting-duty rejection with a
-   deliberate slashable-request test (which must be rejected) before
-   reactivation.
+4. Before reactivation, prove single-writer status and conflicting-duty
+   rejection against a **hermetic clone** of the slashing-protection
+   database, driven by a **synthetic unfunded validator key with no
+   on-chain identity**. No beacon or validator client may be attached
+   to the clone, no signature produced may reach a broadcast path, and
+   the test key must never have been registered with any deposit
+   contract. Never issue a deliberate slashable request against a
+   funded or affected live identity — if any layer of the protection
+   under test were to fail, that request would itself become the
+   forbidden signature.
 5. Restricted reactivation only after every step above is evidenced.
 
 ### Case B — validator BLS signing key possibly disclosed
@@ -91,13 +101,37 @@ identity-level, not service-level.
    record — the exited identity's history must remain durable so a
    future forensic review can distinguish operator duties from
    any adversary-signed ones.
-4. Follow the offline key-custody team's voluntary-exit / replacement
-   procedure. Voluntary exit is an on-chain, irreversible operation
-   requiring the withdrawal-credential holder's approval and its own
-   safety review.
+4. Trigger a voluntary exit through the safer of the two
+   protocol-level exit mechanisms available for the identity, then
+   provision a replacement per the offline key-custody team's
+   procedure:
+   - A consensus-layer **voluntary exit ([EIP-7044])** is signed by
+     the validator's own active BLS key. When the concern is that
+     that key has been disclosed, do **not** use the disclosed key
+     to sign the exit unless the offline key-custody team confirms
+     no safer path exists — signing with a possibly-adversary-held
+     key is the failure mode this case exists to avoid.
+   - An **execution-layer withdrawal-credential-triggered exit
+     ([EIP-7002])** is the intended path when the BLS signing key is
+     unavailable or untrusted: the exit is initiated by the
+     withdrawal-credential holder acting through the execution layer
+     against the beacon deposit contract, requiring no signature
+     from the possibly-compromised BLS key. This is the safer path
+     for a disclosed-key scenario when the identity's withdrawal
+     credentials support it (`0x01`/`0x02`-style eligible
+     credentials).
+   - **Policy layer**, separate from the protocol: this project
+     additionally requires the withdrawal-credential holder's
+     approval before either exit mechanism is initiated. That is a
+     custody-and-authorization policy of this lab, not a consensus
+     requirement, and it applies on top of whichever protocol path is
+     chosen.
 5. If a replacement identity is provisioned, treat it as a brand-new
    registration through the standard onboarding path — never as a
    continuation of the compromised one.
+
+[EIP-7002]: https://eips.ethereum.org/EIPS/eip-7002
+[EIP-7044]: https://eips.ethereum.org/EIPS/eip-7044
 
 ### Runbook status
 
