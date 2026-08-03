@@ -35,6 +35,7 @@ releases, dashboards, validator assignments, or node-pair lifecycle state.
 | EKS | Restricted public plus private API; control-plane logs; access-entry input | Kubernetes 1.35 control plane created; the dedicated kubeconfig reached the restricted endpoint; post-apply Terraform plan reported no drift | Upgrade, API-throttling, access-role, and private-connectivity exercises |
 | Capacity | Two-node on-demand system group; three tainted, zonal, zero-minimum Ethereum groups; explicit ON_DEMAND/SPOT selector; at most one initially selected Ethereum node; Terraform hard bounds plus EKS-API desired-size ownership | The first baseline had two Ready `m7i.large` system nodes and one Ready `r7i.2xlarge` on-demand Ethereum node. The zonal/Spot replacement was then applied — `21 added, 2 changed, 7 destroyed` — leaving all four managed groups `ACTIVE` with no health issues: a two-node on-demand system group of Ready `m7i.large` nodes in `us-west-2b`/`us-west-2c`, and one Spot Ethereum group per AZ. The active `us-west-2a` group obtained a Ready `r8i.2xlarge` Spot node — the pool's first-preference type, so fallback is still unexercised. An EKS `UpdateNodegroupConfig` call then paused that group to zero; all three Ethereum groups now report `0/1`. Both the post-apply and post-pause plans reported no changes | Guarded EKS status/pause/resume command; Spot/FIS interruption test; same-AZ resume with a bound chain PVC; later Karpenter decision |
 | Add-ons and identity | VPC CNI, CoreDNS, kube-proxy, EKS Pod Identity agent, EBS CSI with a dedicated role | All five managed add-ons and their pods were Running; EBS CSI controller/node pods were fully Ready with zero restarts. The application `gp3` StorageClass was accepted by a server-side dry-run against this cluster, but it was not persisted, and no application PVC or EBS volume exists | AWS External Secrets `SecretStore`, Flux EKS overlay, and registration plus runtime qualification of the application EBS StorageClass — the class manifest itself is declared and unreconciled in [`platform/infrastructure/configs/dev`](../../../platform/infrastructure/configs/dev/README.md) |
+| Image registry | One project-owned immutable portal repository; AES-256 encryption; repository-scoped ECR basic scan-on-push; 14-day untagged expiry plus a newest-30 total retention rule | Not applied; no project image or scan result exists, so findings are unknown rather than zero | Review a saved add-only plan; apply locally; push an exact digest; verify effective scan configuration and a `COMPLETE` result for that digest; add SBOM/provenance and a promotion gate |
 | Secrets | Empty Secrets Manager container for the EL/CL Engine JWT; read-only External Secrets role scoped to it | Secret container, role, policy, and Pod Identity association exist; no secret value was created | Restricted operator value bootstrap, signing-key containers/policies, rotation evidence |
 | Slashing database | Not declared | None | RDS PostgreSQL, subnet/security groups, credentials adapter, backups/PITR, restore and failover qualification |
 | Encryption | AWS-managed encryption is requested for node root volumes and Terraform state | Remote state controls were applied; every observed node root was encrypted gp3 at baseline 3,000 IOPS / 125 MiB/s, and after the replacement they measured 40 GiB per system node and 30 GiB per Ethereum node | Explicit KMS/AWS-managed-key decision for RDS, EBS application data, and Secrets Manager |
@@ -62,6 +63,75 @@ Review and save every plan before a manual apply. Both 2026-08-02 applies used
 this path and each was followed by a zero-drift plan; do not add an automatic
 apply merely to avoid the operator checkpoint. The root is not yet a Phase
 4-complete environment; the table above is the remaining work list.
+
+The ECR repository uses repository-level basic scan-on-push because this AWS
+account contains an unrelated repository. Do not manage
+`aws_ecr_registry_scanning_configuration` or enable Amazon Inspector as part of
+this root: both operate at account/Region scope and could change another
+workload's behavior or cost. Basic scanning covers supported operating-system
+packages only, runs for newly pushed images, and is not evidence until ECR
+reports a completed scan for the exact digest. The repository-level scanning
+API is deprecated in favor of registry-level configuration, but the latter is
+deliberately not owned here. Before every apply, verify that the live registry
+remains basic-scanning compatible and that no account-level rule overlaps this
+repository.
+
+The lifecycle policy expires untagged images after 14 days and targets every
+image older than the newest 30 across all tag states. ECR applies matching
+expiry asynchronously, so the repository can temporarily exceed that count.
+This bounds steady-state storage, but it also means a digest can eventually age
+out even if stale GitOps state still names it. The portal is reproducible
+application content, not validator chain data: before pushing beyond the
+rollback window, prove the deployed digest is within the newest 30 and preserve
+its source/provenance. Preview any future lifecycle-policy change before
+applying it. See the [ECR lifecycle policy behavior](https://docs.aws.amazon.com/AmazonECR/latest/userguide/LifecyclePolicies.html)
+and [basic scanning boundary](https://docs.aws.amazon.com/AmazonECR/latest/userguide/image-scanning-basic.html).
+
+After apply and the first exact-digest push, verify the effective configuration
+and poll only that digest to a terminal result:
+
+```bash
+export AWS_REGION="us-west-2"
+export REPOSITORY_NAME="$(terraform -chdir=terraform/environments/dev \
+  output -json portal_ecr_repository | jq -r .name)"
+export IMAGE_DIGEST="sha256:replace-with-pushed-digest"
+test "$IMAGE_DIGEST" != "sha256:replace-with-pushed-digest"
+
+aws ecr get-registry-scanning-configuration \
+  --region "$AWS_REGION" \
+  | jq -e '.scanningConfiguration.scanType == "BASIC" and
+    ((.scanningConfiguration.rules // []) | length == 0)'
+
+aws ecr batch-get-repository-scanning-configuration \
+  --region "$AWS_REGION" \
+  --repository-names "$REPOSITORY_NAME" \
+  | jq -e '.scanningConfigurations | length == 1 and
+    .[0].scanOnPush == true and .[0].scanFrequency == "SCAN_ON_PUSH"'
+
+attempt=0
+status=""
+while [ "$attempt" -lt 30 ]; do
+  status="$(aws ecr describe-image-scan-findings \
+    --region "$AWS_REGION" \
+    --repository-name "$REPOSITORY_NAME" \
+    --image-id imageDigest="$IMAGE_DIGEST" \
+    --query 'imageScanStatus.status' --output text)"
+  case "$status" in
+    COMPLETE) break ;;
+    FAILED|UNSUPPORTED_IMAGE) echo "ECR scan failed: $status" >&2; exit 1 ;;
+    IN_PROGRESS|PENDING|ACTIVE) sleep 10 ;;
+    *) echo "Unexpected ECR scan status: $status" >&2; exit 1 ;;
+  esac
+  attempt=$((attempt + 1))
+done
+test "$status" = "COMPLETE"
+
+aws ecr describe-image-scan-findings \
+  --region "$AWS_REGION" \
+  --repository-name "$REPOSITORY_NAME" \
+  --image-id imageDigest="$IMAGE_DIGEST" \
+  --query '{status:imageScanStatus.status,findings:imageScanFindings.findingSeverityCounts}'
+```
 
 ## Zonal Ethereum capacity and pause semantics
 
