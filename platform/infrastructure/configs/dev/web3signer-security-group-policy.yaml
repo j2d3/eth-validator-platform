@@ -1,0 +1,18 @@
+# The Terraform RDS foundation admits only this Pod security group. Flux
+# substitutes its non-secret ID from the trusted-local bootstrap ConfigMap;
+# without that input this layer fails closed before any signer is admitted.
+apiVersion: vpcresources.k8s.aws/v1beta1
+kind: SecurityGroupPolicy
+metadata:
+  name: web3signer
+  namespace: signing
+  labels:
+    app.kubernetes.io/part-of: ethereum-validator-platform
+    platform.galaxy-lab/environment: dev
+spec:
+  podSelector:
+    matchLabels:
+      app.kubernetes.io/name: web3signer
+  securityGroups:
+    groupIds:
+      - ${WEB3SIGNER_POD_SECURITY_GROUP_ID}

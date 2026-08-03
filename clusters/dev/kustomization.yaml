@@ -1,0 +1,10 @@
+apiVersion: kustomize.config.k8s.io/v1beta1
+kind: Kustomization
+resources:
+  # Reuses the pinned generated Flux controller bundle and patches only the
+  # sync path for EKS.
+  - flux-system
+  - infrastructure-controllers.yaml
+  - infrastructure-configs.yaml
+  - signer-prerequisites.yaml
+  - apps.yaml

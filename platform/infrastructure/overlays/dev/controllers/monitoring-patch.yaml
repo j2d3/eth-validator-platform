@@ -1,0 +1,12 @@
+apiVersion: helm.toolkit.fluxcd.io/v2
+kind: HelmRelease
+metadata:
+  name: kube-prometheus-stack
+  namespace: observability
+spec:
+  values:
+    grafana:
+      # The local Loki/Alloy topology is intentionally not claimed as an EKS
+      # logging design. Add an AWS logging adapter after retention, object
+      # storage, and ingestion cost have been reviewed.
+      additionalDataSources: []

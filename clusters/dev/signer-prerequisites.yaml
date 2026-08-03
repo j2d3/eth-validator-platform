@@ -1,0 +1,25 @@
+apiVersion: kustomize.toolkit.fluxcd.io/v1
+kind: Kustomization
+metadata:
+  name: signer-prerequisites
+  namespace: flux-system
+  labels:
+    platform.galaxy-lab/environment: dev
+spec:
+  dependsOn:
+    - name: infrastructure-configs
+  interval: 10m
+  retryInterval: 1m
+  timeout: 15m
+  sourceRef:
+    kind: GitRepository
+    name: flux-system
+  path: ./platform/apps/prerequisites/dev
+  prune: true
+  wait: true
+  # Fail closed until the separately reviewed RDS and credential adapter has
+  # supplied every runtime gate documented in the EKS Flux runbook.
+  suspend: true
+  commonMetadata:
+    labels:
+      platform.galaxy-lab/environment: dev

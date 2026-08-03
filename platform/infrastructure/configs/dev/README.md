@@ -4,30 +4,33 @@ Environment-specific Kubernetes adapters for `dev`, the single cost-aware
 testnet EKS environment declared in
 [`terraform/environments/dev`](../../../../terraform/environments/dev/README.md).
 It is the AWS sibling of [`../local`](../local), which holds the same class of
-adapter for the `kind` cluster.
-
-Today it contains exactly one thing: the application chain-data StorageClass.
+adapter for the `kind` cluster. It declares the application namespaces, the
+EKS Pod Identity-backed AWS Secrets Manager interfaces, and the application
+chain-data StorageClass. It also declares exact-selector Pod security-group
+adapters for Web3Signer and its one-shot migration Job. Secret values and RDS
+resources remain outside this directory.
 
 ## Reconciliation status
 
-**Declared, validated, and unreconciled.** There is no `clusters/dev` Flux
-entrypoint, and **no Flux Kustomization reconciles this directory** — not in
-this repository, and not on any cluster. The live cluster exists; this manifest
-has been validated against it but has never been applied to it. See
-[what is and is not evidence](#what-is-and-is-not-evidence) below.
+**Declared, registered, and not yet bootstrapped.** The
+[`clusters/dev`](../../../../clusters/dev/README.md) entrypoint now names this
+directory and the full fail-closed dependency chain. Nothing in this change
+bootstraps Flux or applies Kubernetes state to the live cluster. The signer
+prerequisite and application Kustomizations are committed suspended until the
+separately reviewed RDS, credential, network, TLS, backup, and migration gates
+are proven.
 
-That is deliberate rather than unfinished. A `clusters/dev` entrypoint would
-name a reconciliation chain whose other links do not exist: no RDS instance or
-credential adapter for the slashing database, no AWS External Secrets
-`SecretStore`, and no EKS apps overlay. Registering it now would produce a Flux
-Kustomization that cannot reach `Ready`, and a repository that claims an
-environment it cannot bring up. The remaining work list is the "Still required
-before Phase 4 exit" column of the Terraform environment README.
+`make check` renders the entrypoint and every EKS layer. Focused contract tests
+assert that the existing StorageClass is registered rather than duplicated,
+the SecretStores use separate engine/database reader roles through ambient EKS
+Pod Identity rather than static credentials, the runtime and migration
+`SecurityGroupPolicy` selectors stay disjoint, the dependency graph is ordered,
+and all launch/signing defaults remain off.
 
-What holds this file honest in the meantime is `make check`: `make
-kustomize-build` builds this directory alongside the reconciled ones, and
-`tests/test_eks_storage_contracts.py` asserts the class's parameters, the values
-profile that references it, and the accuracy of the paragraph you are reading.
+`aws-database-secrets` is namespace-visible to both the migration Job in
+`database` and Web3Signer in `signing`, but it assumes only the database-reader
+role. The separately output signing-reader role is reserved for a future
+signing-key store and is not used by this non-signing desired state.
 
 ## What is and is not evidence
 
@@ -39,11 +42,11 @@ This class was checked against it: a **server-side dry-run on that live cluster
 accepted the manifest**. What that proves is real but narrow — a running API
 server and the installed CSI driver accept these fields as a valid StorageClass.
 
-It proves nothing beyond that, and the gap matters. The dry-run deliberately
-did not persist the object, so **the StorageClass does not exist on the
-cluster**; nothing reconciles it, and nothing will until a `clusters/dev`
-entrypoint exists. No PersistentVolumeClaim has been created against it, and no
-EBS volume has ever been provisioned from it. Every operational claim below —
+It proves nothing beyond that, and the gap matters. At the time of that dry-run,
+the command deliberately did not persist the object, so **the StorageClass does
+not exist on the cluster**. The new entrypoint remains only declared until the
+trusted-local bootstrap runbook is executed. No PersistentVolumeClaim has been
+created against it, and no EBS volume has ever been provisioned from it. Every operational claim below —
 zonal binding, expansion, stop/resume reattachment, reclaim behavior, and the
 cost arithmetic — is therefore reasoning from the AWS and Kubernetes contracts,
 not something this repository has observed. A dry-run validates shape against a

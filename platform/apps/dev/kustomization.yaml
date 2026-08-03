@@ -1,0 +1,145 @@
+apiVersion: kustomize.config.k8s.io/v1beta1
+kind: Kustomization
+resources:
+  - ../local
+
+patches:
+  - path: profile.yaml
+  - path: signer-telemetry-patch.yaml
+  - target:
+      kind: ConfigMap
+      name: ethereum-platform-logging-dashboard
+    patch: |-
+      apiVersion: v1
+      kind: ConfigMap
+      metadata:
+        name: ethereum-platform-logging-dashboard
+        namespace: observability
+      $patch: delete
+  - target:
+      kind: ConfigMap
+      name: ethereum-platform-smoke-dashboard
+    patch: |-
+      apiVersion: v1
+      kind: ConfigMap
+      metadata:
+        name: ethereum-platform-smoke-dashboard
+        namespace: observability
+      $patch: delete
+  - target:
+      kind: ConfigMap
+      name: ethereum-platform-signer-slashing-dashboard
+    patch: |-
+      apiVersion: v1
+      kind: ConfigMap
+      metadata:
+        name: ethereum-platform-signer-slashing-dashboard
+        namespace: observability
+      $patch: delete
+  - target:
+      kind: ConfigMap
+      name: geth-lighthouse-pair-dashboard
+    patch: |-
+      apiVersion: v1
+      kind: ConfigMap
+      metadata:
+        name: geth-lighthouse-pair-dashboard
+        namespace: observability
+      $patch: delete
+  - target:
+      kind: ConfigMap
+      name: ethereum-platform-fleet-overview-dashboard
+    patch: |-
+      apiVersion: v1
+      kind: ConfigMap
+      metadata:
+        name: ethereum-platform-fleet-overview-dashboard
+        namespace: observability
+      $patch: delete
+  - target:
+      kind: ConfigMap
+      name: ethereum-platform-validator-detail-dashboard
+    patch: |-
+      apiVersion: v1
+      kind: ConfigMap
+      metadata:
+        name: ethereum-platform-validator-detail-dashboard
+        namespace: observability
+      $patch: delete
+  - target:
+      group: external-secrets.io
+      version: v1
+      kind: ExternalSecret
+      name: web3signer-database
+    patch: |-
+      - op: replace
+        path: /spec/secretStoreRef/name
+        value: aws-database-secrets
+      - op: replace
+        path: /spec/data/0/remoteRef/key
+        value: eth-validator-platform-dev/signing/web3signer-database
+      - op: replace
+        path: /spec/data/1/remoteRef/key
+        value: eth-validator-platform-dev/signing/web3signer-database
+      - op: replace
+        path: /spec/data/2/remoteRef/key
+        value: eth-validator-platform-dev/signing/web3signer-database
+      - op: replace
+        path: /spec/data/3/remoteRef/key
+        value: eth-validator-platform-dev/signing/web3signer-database
+      - op: replace
+        path: /spec/data/4/remoteRef/key
+        value: eth-validator-platform-dev/signing/web3signer-database
+      - op: replace
+        path: /spec/data/2/remoteRef/property
+        value: database
+  - target:
+      group: apps
+      version: v1
+      kind: Deployment
+      name: web3signer
+    patch: |-
+      - op: replace
+        path: /spec/template/spec/containers/0/args/10
+        value: --slashing-protection-db-url=jdbc:postgresql://$(DB_HOST):$(DB_PORT)/$(DB_NAME)?sslmode=verify-full
+  - target:
+      group: networking.k8s.io
+      version: v1
+      kind: NetworkPolicy
+      name: web3signer
+    patch: |-
+      - op: replace
+        path: /spec/egress/0
+        value:
+          to:
+            - ipBlock:
+                cidr: 10.42.0.0/16
+          ports:
+            - port: 5432
+              protocol: TCP
+  - target:
+      group: helm.toolkit.fluxcd.io
+      version: v2
+      kind: HelmRelease
+    patch: |-
+      - op: add
+        path: /spec/chart/spec/valuesFiles
+        value:
+          - values.yaml
+          - values-eks-hoodi-storage.yaml
+      - op: replace
+        path: /spec/values/telemetry
+        value:
+          cluster: eth-validator-platform-dev
+          environment: dev
+      - op: add
+        path: /spec/values/engineJwt
+        value:
+          secretStoreName: aws-engine-secrets
+          remoteSecretKey: eth-validator-platform-dev/ethereum/engine-jwt
+          remoteSecretProperty: jwt.hex
+
+labels:
+  - pairs:
+      platform.galaxy-lab/environment: dev
+    includeSelectors: false
