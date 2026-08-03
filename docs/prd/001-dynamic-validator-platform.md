@@ -17,11 +17,11 @@
 
 ## 1. Product vision
 
-This project builds a **dynamic, fully automated Ethereum validator platform** rather than a collection of disconnected infrastructure examples.
+This project builds a **dynamic, fully automated Ethereum validator platform**.
 
-An operator chooses an execution client, a consensus client, a validator identity, and a desired lifecycle action. The platform safely launches or retires the corresponding validator stack on EKS, keeps signing keys outside Git, preserves slashing history across every transition, and exposes enough telemetry to understand the validator, its client pair, the signer, and the Kubernetes cluster as one system.
+An operator chooses an execution client, a consensus client, a validator identity, and a desired lifecycle action. The platform launches or retires the corresponding validator stack on EKS, keeps signing keys outside Git, preserves slashing history across every transition, and exposes enough telemetry to understand the validator, its client pair, the signer, and the Kubernetes cluster as one system.
 
-The laboratory deliberately mirrors the boundaries of a larger institutional staking platform while remaining affordable and understandable in a personal AWS account. All sixteen execution/consensus client combinations are defined and continuously validated, but only one or two run at a time.
+The laboratory mirrors the boundaries of a larger institutional staking platform while fitting inside one personal AWS account. All sixteen execution/consensus client combinations are represented in the catalog and schema-validated in CI; one or two run at a time.
 
 ### 1.1 Product promise
 
@@ -37,7 +37,7 @@ Given a registered testnet validator identity, the platform will let an authoriz
 
 ### 1.2 Why this product exists
 
-The product is an educational and portfolio-grade model of the platform responsibilities behind institutional Ethereum staking:
+The product is an educational model of the platform responsibilities behind institutional Ethereum staking:
 
 - mixed execution and consensus client operations;
 - remote signing and durable slashing protection;
@@ -1342,7 +1342,7 @@ The scalable unit is not “one full node per validator.” Ethereum separates t
 | Archive execution service | Shared by audit, compliance, analytics, support, and historical-RPC consumers | Keep off the latency-critical validator path; protect it from unbounded customer queries. |
 | Observability backend | Shared fleet-wide with tenant/customer labels and RBAC | Control label cardinality and prevent PII/secret exposure. |
 
-Galaxy’s own research has publicly noted that large providers commonly run hundreds of validators on a node and must spread customer assets across machines to reduce correlated penalties. Its public staking product also exposes validator provisioning in large batches and advertises client/geographic diversity. Those facts support a many-identities-to-fewer-node-stacks model, but do not disclose Galaxy’s internal topology.
+Public research from large staking providers has noted that operators commonly run hundreds of validators on a single node and must spread customer assets across machines to reduce correlated penalties. Public staking products likewise expose validator provisioning in large batches and advertise client and geographic diversity. Those facts support a many-identities-to-fewer-node-stacks model, but published information does not disclose any specific operator's internal topology.
 
 ### 15.2 Recommended cell topology
 
@@ -1396,7 +1396,7 @@ The placement controller should consider:
 
 A large customer’s validators should be spread across cells and client profiles. Conversely, a dedicated-customer service tier may reserve cells for that customer without changing the core customer/identity/assignment model.
 
-### 15.4 Illustrative 7,000-validator sizing—not a Galaxy claim
+### 15.4 Illustrative 7,000-validator sizing
 
 Validator density is determined more by correlated-risk policy and measured duty latency than by raw CPU. The following is a thought experiment for discussing blast radius:
 
@@ -1406,7 +1406,7 @@ Validator density is determined more by correlated-risk policy and measured duty
 | 500 | 14 | 28 | Balanced illustrative starting point for institutional cell design. |
 | 250 | 28 | 56 | Smaller blast radius with materially higher infrastructure and operational cost. |
 
-Canaries, warm spares, testnets, migration overlap, regional failover, maintenance capacity, and dedicated customers can add materially to those counts. Node pairs may also be shared across multiple key shards, reducing them. Therefore a plausible institutional platform could operate tens of ordinary full-node stacks for a fleet of this size, but public information is insufficient to infer Galaxy’s number.
+Canaries, warm spares, testnets, migration overlap, regional failover, maintenance capacity, and dedicated customers can add materially to those counts. Node pairs may also be shared across multiple key shards, reducing them. A plausible institutional platform for a fleet of this size therefore operates on the order of tens of ordinary full-node stacks; public information is insufficient to infer any specific operator's number.
 
 ### 15.5 Archive nodes versus validator full nodes
 
@@ -1417,8 +1417,8 @@ Consequently:
 - the number of archive nodes scales with query load, retention/SLA, regions, and client diversity—not validator count;
 - archive nodes belong in a separate RPC/data service with rate limits and independent storage;
 - validator beacon nodes should use ordinary synced execution nodes on the critical path;
-- an institutional operator might run a small HA archive tier—perhaps two regional replicas, or more if it requires multiple execution clients—but there is no sound public basis for assigning Galaxy a number;
-- Galaxy may also share archive infrastructure with its broader trading, research, custody, or blockchain-data estate, making validator-count inference even less reliable.
+- an institutional operator might run a small HA archive tier—perhaps two regional replicas, or more if it requires multiple execution clients—but there is no sound public basis for assigning any specific operator a number;
+- a large staking operator may also share archive infrastructure with a broader trading, research, custody, or blockchain-data estate, making validator-count inference even less reliable.
 
 As an illustrative range only, an operator might have 2–8 archive execution nodes alongside tens of ordinary validator full-node stacks. Requiring archive coverage for four execution clients across two regions would already imply eight archive instances before spares. Cost varies sharply by client and historical-proof requirements, so this is a product/SLA decision, not a validator formula.
 
@@ -1680,9 +1680,6 @@ Primary project references:
 - [Grafana provisioning](https://grafana.com/docs/grafana/latest/administration/provisioning/)
 - [Amazon Managed Service for Prometheus collectors](https://docs.aws.amazon.com/prometheus/latest/userguide/AMP-collector.html)
 - [Amazon Managed Grafana for EKS](https://docs.aws.amazon.com/grafana/latest/userguide/solution-eks.html)
-- [Galaxy Staking — public platform overview](https://www.galaxy.com/staking)
-- [Galaxy Staking API — Ethereum validator provisioning](https://docs.staking.galaxy.com/ethereum/ethereum)
-- [Galaxy Research — validator/node sharing and correlated risk](https://www.galaxy.com/insights/research/paths-toward-reducing-validator-set-size-growth)
 
 ---
 

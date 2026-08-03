@@ -40,7 +40,7 @@ validator:
   enabled: false
   publicKey: ""
   feeRecipient: ""
-  graffiti: galaxy-platform-lab
+  graffiti: eth-validator-platform-lab
   # Required acknowledgment before the chart starts signing components.
   slashingProtectionConfirmed: false
 

@@ -1,6 +1,6 @@
 # Ethereum Validator Platform Lab
 
-A spec-built, GitOps-operated Ethereum validator platform for learning and demonstrating institutional staking-platform practices. The platform is designed to run completely on local Kubernetes before its AWS adapters are provisioned on EKS.
+A GitOps-operated Ethereum validator platform for learning and demonstrating institutional staking-platform practices. The platform runs completely on local Kubernetes before its AWS adapters are provisioned on EKS.
 
 | | |
 |---|---|
@@ -15,13 +15,13 @@ The canonical product and architecture contract is [docs/prd/001-dynamic-validat
 
 ## Why this exists
 
-Running one validator is a weekend project. Running a fleet of them on behalf of customers is a key-custody problem wearing an infrastructure costume — the hard parts are signing-key handling, slashing protection, and proving that a machine which *looks* healthy is actually authorized to sign.
+Running one validator is a weekend project. Running a fleet of them on behalf of customers is primarily a key-custody problem — the hard parts are signing-key handling, slashing protection, and proving that a machine which looks healthy is actually authorized to sign.
 
-The scope of that custody is worth stating precisely, because it is narrower than it sounds. This platform holds encrypted **signing** keystores. It never holds withdrawal credentials, which stay in offline operator custody and are never imported (PRD §10.2). It therefore cannot move customer funds — but it can get a customer slashed. The controls here are custody-grade because the consequences are, not because the platform is a fund custodian.
+The scope of that custody is worth stating precisely. This platform holds encrypted **signing** keystores. It never holds withdrawal credentials, which stay in offline operator custody and are never imported (PRD §10.2). It therefore cannot move customer funds — but it can get a customer slashed. The controls here are custody-grade because the consequences are, not because the platform is a fund custodian.
 
-This repository builds that platform the way a regulated operator would have to: the product contract is written and agreed before the code, every safety property is an explicit invariant rather than an emergent behavior, and the system is designed to fail closed when anything about identity, storage, or readiness is uncertain. It runs locally first so the Kubernetes and application contracts can be proven without an AWS bill or a funded key.
+The repository builds this platform in a way that would carry over to a regulated setting: the product contract is written and agreed before code lands, safety properties are explicit invariants, and the system is designed to fail closed when anything about identity, storage, or readiness is uncertain. It runs locally first so the Kubernetes and application contracts can be exercised without an AWS bill or a funded key.
 
-It is a lab, not a production service, and the documentation is written to keep that distinction honest.
+It is a lab, not a production service.
 
 ## Design principles
 

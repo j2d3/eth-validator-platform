@@ -159,13 +159,13 @@ export default function Home() {
               <span>Hoodi / us-west-2</span>
             </div>
             <h1>
-              One view of the system.
-              <span>None of the comforting lies.</span>
+              One view of the platform.
+              <span>Committed intent, cluster state, and observed evidence — kept separate.</span>
             </h1>
             <p className="hero__lede">
-              A spec-built, GitOps-operated laboratory for running heterogeneous
-              Ethereum validator clients on EKS with remote signing, durable
-              slashing protection, and explicit lifecycle control.
+              A GitOps-operated laboratory for running heterogeneous Ethereum
+              validator clients on EKS with remote signing, durable slashing
+              protection, and explicit lifecycle control.
             </p>
 
             <div className="hero__actions">
@@ -193,10 +193,10 @@ export default function Home() {
             </div>
             <div>
               <span className="kicker">Fail-closed posture</span>
-              <h2>Ready is not authorized.</h2>
+              <h2>Ready is not authorization.</h2>
               <p>
-                The signer has an empty key store. A healthy pod, synced node, or
-                reconciled release cannot enable validator duties by itself.
+                The signer's key store is empty. A healthy pod, synced node, or
+                reconciled release does not by itself enable validator duties.
               </p>
             </div>
           </aside>
@@ -214,7 +214,7 @@ export default function Home() {
           <div className="section-heading">
             <div>
               <span className="kicker">Fleet posture</span>
-              <h2>A calm board should explain why it is calm.</h2>
+              <h2>What the fleet is doing right now.</h2>
             </div>
             <p>
               This first portal slice is built from committed and recorded
@@ -236,10 +236,11 @@ export default function Home() {
           <div className="truth-model">
             <div className="truth-model__intro">
               <span className="kicker">The truth model</span>
-              <h3>Three answers, never one blended status.</h3>
+              <h3>Three separate answers, not one blended status.</h3>
               <p>
                 “Requested active,” “Flux deployed,” and “beacon active” are
-                different facts owned by different systems.
+                different facts owned by different systems, and the portal
+                shows them separately.
               </p>
             </div>
             <div className="truth-model__layers">
@@ -260,12 +261,12 @@ export default function Home() {
           <div className="section-heading">
             <div>
               <span className="kicker">Dependency &amp; image security</span>
-              <h2>Scan status belongs beside runtime health.</h2>
+              <h2>Which supply-chain controls are enabled.</h2>
             </div>
             <p>
               Enablement and findings are different facts. This static slice records
               which controls are active and links authorized operators to GitHub for
-              the live finding set; it never freezes an alert count into the page.
+              the live finding set; it does not freeze an alert count into the page.
             </p>
           </div>
 
@@ -315,7 +316,7 @@ export default function Home() {
           <div className="section-heading section-heading--light">
             <div>
               <span className="kicker">Operating architecture</span>
-              <h2>Intent travels forward. Authority stays bounded.</h2>
+              <h2>Three writers, three bounded scopes.</h2>
             </div>
             <p>
               Terraform owns the AWS foundation. Git records application intent.
@@ -349,17 +350,17 @@ export default function Home() {
           <div className="architecture-notes">
             <article>
               <span>01 / cloud</span>
-              <h3>Terraform is infrequent.</h3>
+              <h3>Terraform, applied infrequently.</h3>
               <p>VPC, EKS, capacity, IAM, RDS, KMS, EBS, and secret containers.</p>
             </article>
             <article>
               <span>02 / applications</span>
-              <h3>Flux is continuous.</h3>
+              <h3>Flux, reconciling continuously.</h3>
               <p>Controllers, policies, signer, observability, releases, and lifecycle.</p>
             </article>
             <article>
               <span>03 / safety</span>
-              <h3>Signing is the last gate.</h3>
+              <h3>Signing, gated last.</h3>
               <p>Exclusive assignment, sync, key admission, slashing DB, and doppelganger checks.</p>
             </article>
           </div>
@@ -368,11 +369,12 @@ export default function Home() {
         <section className="section matrix-section">
           <div className="matrix-copy">
             <span className="kicker">Client diversity</span>
-            <h2>The matrix is a product contract, not a wall of replicas.</h2>
+            <h2>Every EL/CL combination is defined; one runs at a time.</h2>
             <p>
-              Sixteen execution/consensus combinations are the destination. One
-              pair runs at a time in the lab, exercises its complete lifecycle,
-              records the gotchas, then yields capacity to the next adapter.
+              Sixteen execution/consensus combinations are represented in the
+              catalog. One pair runs at a time in the lab, exercises its
+              complete lifecycle, records the gotchas, then yields capacity to
+              the next adapter.
             </p>
             <div className="legend">
               <span><i className="legend__implemented" /> implemented</span>
@@ -402,7 +404,7 @@ export default function Home() {
           <div className="section-heading">
             <div>
               <span className="kicker">Explore every surface</span>
-              <h2>The front door, not another replacement dashboard.</h2>
+              <h2>Entry points into the existing tools.</h2>
             </div>
             <p>
               Start here, then drill into the tool that owns the detail. Private
@@ -426,11 +428,12 @@ export default function Home() {
 
         <section className="section roadmap" id="roadmap">
           <div className="roadmap__copy">
-            <span className="kicker">Build evidence, then widen authority</span>
-            <h2>The portal evolves without becoming a second deployment system.</h2>
+            <span className="kicker">Portal evolution</span>
+            <h2>Explain, then read, then authenticate.</h2>
             <p>
-              First it explains. Then it reads. Later it authenticates. Only after
-              those boundaries are proven may it author typed, reviewable Git changes.
+              First it explains. Then it reads live state. Later it authenticates.
+              Only after those boundaries are proven does it author typed,
+              reviewable Git changes.
             </p>
             <a
               href="https://github.com/j2d3/eth-validator-platform/issues/40"
@@ -477,9 +480,9 @@ export default function Home() {
       <footer>
         <div className="brand brand--footer">
           <span className="brand__mark" aria-hidden="true"><i /><i /><i /></span>
-          <span><strong>Validator Platform</strong><small>built from evidence</small></span>
+          <span><strong>Validator Platform</strong><small>reference lab</small></span>
         </div>
-        <p>Spec-built Ethereum infrastructure lab · not a production staking service</p>
+        <p>Ethereum validator infrastructure lab · not a production staking service</p>
         <a href="#top">Back to top ↑</a>
       </footer>
     </>
