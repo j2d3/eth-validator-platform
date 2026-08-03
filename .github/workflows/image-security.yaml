@@ -1,0 +1,129 @@
+name: Container image security evidence
+
+on:
+  workflow_dispatch:
+  schedule:
+    - cron: "17 11 * * 1"
+  push:
+    branches: [main]
+    paths:
+      - "**/*.yaml"
+      - "**/*.yml"
+      - "**/*.sh"
+      - "Dockerfile*"
+      - "**/Dockerfile*"
+      - requirements-dev.txt
+      - tools/discover_container_images.py
+      - tools/verify_image_scan_evidence.py
+      - tools/verify_container_contracts.py
+  pull_request:
+    paths:
+      - "**/*.yaml"
+      - "**/*.yml"
+      - "**/*.sh"
+      - "Dockerfile*"
+      - "**/Dockerfile*"
+      - requirements-dev.txt
+      - tools/discover_container_images.py
+      - tools/verify_image_scan_evidence.py
+      - tools/verify_container_contracts.py
+
+permissions:
+  contents: read
+
+concurrency:
+  group: image-security-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  inventory:
+    name: Discover exact image subjects
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    outputs:
+      matrix: ${{ steps.inventory.outputs.matrix }}
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          persist-credentials: false
+      - name: Install inventory dependencies
+        run: python3 -m pip install --disable-pip-version-check -r requirements-dev.txt
+      - name: Build inventory and report coverage gaps
+        id: inventory
+        shell: bash
+        run: |
+          python3 tools/discover_container_images.py --format json > image-inventory.json
+          python3 tools/discover_container_images.py --format markdown >> "$GITHUB_STEP_SUMMARY"
+          matrix="$(python3 tools/discover_container_images.py --format github-matrix)"
+          printf 'matrix=%s\n' "$matrix" >> "$GITHUB_OUTPUT"
+      - name: Retain exact subjects and explicit gaps
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a
+        with:
+          name: container-image-inventory
+          path: image-inventory.json
+          if-no-files-found: error
+          retention-days: 14
+
+  scan:
+    name: Scan ${{ matrix.id }}
+    needs: inventory
+    runs-on: ubuntu-latest
+    timeout-minutes: 25
+    strategy:
+      fail-fast: false
+      max-parallel: 2
+      matrix: ${{ fromJSON(needs.inventory.outputs.matrix) }}
+    steps:
+      - name: Check out evidence verifier
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          persist-credentials: false
+      - name: Scan exact digest with Trivy
+        uses: aquasecurity/trivy-action@a9c7b0f06e461e9d4b4d1711f154ee024b8d7ab8
+        with:
+          scan-type: image
+          image-ref: ${{ matrix.image }}
+          version: v0.73.0
+          format: json
+          output: trivy-results.json
+          scanners: vuln
+          vuln-type: os,library
+          severity: UNKNOWN,LOW,MEDIUM,HIGH,CRITICAL
+          ignore-unfixed: false
+          exit-code: "0"
+          timeout: 20m
+      - name: Record scanner and vulnerability-database identity
+        run: trivy version --cache-dir .cache/trivy --format json > trivy-version.json
+      - name: Verify and record exact scan subject
+        env:
+          IMAGE_ID: ${{ matrix.id }}
+          IMAGE_REF: ${{ matrix.image }}
+          SOURCE_SHA: ${{ github.event.pull_request.head.sha || github.sha }}
+          CHECKOUT_SHA: ${{ github.sha }}
+          WORKFLOW_RUN_ID: ${{ github.run_id }}
+          WORKFLOW_RUN_ATTEMPT: ${{ github.run_attempt }}
+          WORKFLOW_EVENT: ${{ github.event_name }}
+        run: |
+          python3 tools/verify_image_scan_evidence.py \
+            --image-id "$IMAGE_ID" \
+            --expected-image "$IMAGE_REF" \
+            --report trivy-results.json \
+            --scanner-version trivy-version.json \
+            --output scan-subject.json \
+            --source-sha "$SOURCE_SHA" \
+            --checkout-sha "$CHECKOUT_SHA" \
+            --run-id "$WORKFLOW_RUN_ID" \
+            --run-attempt "$WORKFLOW_RUN_ATTEMPT" \
+            --event "$WORKFLOW_EVENT"
+          printf 'Scanned exact subject `%s`. Findings are evidence, not yet a promotion gate.\n' "$IMAGE_REF" >> "$GITHUB_STEP_SUMMARY"
+      - name: Retain scanner evidence
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a
+        with:
+          name: image-scan-${{ matrix.id }}
+          path: |
+            scan-subject.json
+            trivy-results.json
+            trivy-version.json
+          if-no-files-found: error
+          retention-days: 14

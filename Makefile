@@ -5,7 +5,7 @@ TF_PLUGIN_CACHE_DIR := $(CURDIR)/.local/terraform-plugin-cache
 TF_ROOTS := terraform/bootstrap terraform/environments/dev terraform/environments/dns
 export PATH := $(LOCAL_BIN):$(PATH)
 
-.PHONY: help tools format fmt validate catalog test container-contracts helm-template helm-releases kustomize-build verify-scripts portal-check local-preflight local-up local-bootstrap local-seed local-status local-down eks-capacity-status check
+.PHONY: help tools format fmt validate catalog test image-inventory container-contracts helm-template helm-releases kustomize-build verify-scripts portal-check local-preflight local-up local-bootstrap local-seed local-status local-down eks-capacity-status check
 
 help: ## Show available targets
 	@awk 'BEGIN {FS = ":.*## "; printf "Usage: make <target>\n\n"} /^[a-zA-Z_-]+:.*## / {printf "  %-18s %s\n", $$1, $$2}' $(MAKEFILE_LIST)
@@ -34,6 +34,9 @@ catalog: ## Validate desired-state schemas, relations, and generated local proje
 
 test: ## Run desired-state safety unit tests
 	python3 -m unittest discover -s tests -v
+
+image-inventory: ## Report exact image scan subjects and unresolved coverage gaps
+	python3 tools/discover_container_images.py --format markdown
 
 container-contracts: ## Verify pinned images match declared Kubernetes runtime identities
 	python3 tools/verify_container_contracts.py
