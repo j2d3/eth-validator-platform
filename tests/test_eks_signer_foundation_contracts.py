@@ -208,6 +208,16 @@ class EksSignerFoundationContractTests(unittest.TestCase):
         self.assertIn("performance_insights_enabled = false", database)
         self.assertIn("monitoring_interval = 0", database)
 
+    def test_rds_requires_ssl_without_a_perpetual_apply_method_diff(self) -> None:
+        parameter_group = resource_block("aws_db_parameter_group", "web3signer")
+
+        self.assertIn('name = "rds.force_ssl"', " ".join(parameter_group.split()))
+        self.assertIn('value = "1"', " ".join(parameter_group.split()))
+        self.assertIn(
+            'apply_method = "pending-reboot"',
+            " ".join(parameter_group.split()),
+        )
+
     def test_slashing_history_has_pitr_and_destroy_guards(self) -> None:
         database = resource_block("aws_db_instance", "web3signer")
 
