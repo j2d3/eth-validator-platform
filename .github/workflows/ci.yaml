@@ -89,5 +89,7 @@ jobs:
         run: npm --prefix control-plane/portal ci --ignore-scripts --no-audit --no-fund
       - name: Audit the complete portal dependency graph
         run: npm --prefix control-plane/portal audit
+      - name: Lint portal source
+        run: npm --prefix control-plane/portal run lint
       - name: Build and verify portal contracts
         run: make portal-check
