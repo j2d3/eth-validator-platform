@@ -222,11 +222,15 @@ class AutomationMergeContractTests(unittest.TestCase):
         self.assertIn("'github-actions[bot]') printf 'j2d3\\n5u6r054'", self.text)
         self.assertIn('latest_commit" == "$head_oid', self.text)
 
-    def test_lifecycle_bot_is_single_commit_rebase_not_squash(self) -> None:
+    def test_every_recognized_author_uses_verified_single_commit_rebase(self) -> None:
         self.assertIn('[[ "$commit_count" -eq 1 ]]', self.text)
-        self.assertIn("merge_mode='rebase'", self.text)
+        self.assertIn(".commit.author.email, .commit.committer.email", self.text)
+        self.assertIn('source_author_email" == "$expected_email', self.text)
+        self.assertIn('source_committer_email" == "$expected_email', self.text)
         self.assertIn("--rebase", self.text)
         self.assertIn("--match-head-commit", self.text)
+        self.assertNotIn("--squash", self.text)
+        self.assertNotIn("--author-email", self.text)
 
     def test_unknown_pr_authors_still_fail_closed(self) -> None:
         self.assertIn("unknown PR author", self.text)

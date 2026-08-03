@@ -24,14 +24,11 @@
 #      (success, neutral, skipped), and there must be at least one.
 #      Additionally, mergeStateStatus must be CLEAN — CI runs alone do
 #      not detect a branch that is BEHIND main.
-#   6. Agent-authored merge is squash with --match-head-commit and mandatory
-#      --author-email set to the PR author's noreply address. This
-#      addresses the class of failures observed in the 2026-08-02
-#      merge-attribution incident, where GitHub's default squash-merge
-#      behavior used the PR author's profile primary email instead of
-#      a noreply address, requiring a history rewrite. A single-commit
-#      automation PR is rebased instead, preserving its already-verified bot
-#      noreply author while maintaining linear history.
+#   6. Every PR must contain exactly one source commit. The wrapper verifies
+#      that commit's author and committer use the PR author's canonical noreply
+#      identity, then performs an exact-head rebase merge. This avoids the
+#      squash API's profile-email selection entirely while preserving linear
+#      history and the already-reviewed source attribution.
 #   7. Post-merge, the wrapper polls (bounded, up to 20s) for the
 #      merged=true state before trusting merge_commit_sha (GitHub
 #      populates that field pre-merge with a synthetic test-merge SHA),
@@ -57,7 +54,7 @@ require_command() {
     || fail "required command missing: $1"
 }
 
-# Recognized PR author -> mandatory --author-email mapping.
+# Recognized PR author -> mandatory source/post-merge email mapping.
 author_email_for() {
   case "$1" in
     j2d3)    printf '86860+j2d3@users.noreply.github.com' ;;
@@ -202,42 +199,33 @@ fi
 [[ "$merge_state" == 'CLEAN' ]] \
   || fail "mergeStateStatus=$merge_state (need CLEAN); CI passed but the branch may be BEHIND main or otherwise unmergeable"
 
-# 8. Merge with all mandatory flags. Lifecycle automation produces exactly
-#    one bot-authored commit; verify that source author and rebase it so the
-#    noreply identity is preserved without relying on squash-author profile
-#    metadata. Agent-authored PRs keep the established squash path.
-merge_mode='squash'
-if [[ "$pr_author" == 'github-actions[bot]' ]]; then
-  [[ "$commit_count" -eq 1 ]] \
-    || fail "automation PR has $commit_count commits (need exactly 1 for verified rebase merge)"
-  source_email="$(gh api "/repos/$REPO/commits/$head_oid" --jq '.commit.author.email')" \
-    || fail "cannot verify automation head commit author for $head_oid"
-  [[ "$source_email" == "$expected_email" ]] \
-    || fail "automation head author email mismatch: expected $expected_email, got $source_email"
-  merge_mode='rebase'
-fi
+# 8. Merge with all mandatory flags. Rebase the exact single source commit so
+#    its already-verified noreply author survives without asking GitHub's
+#    squash API to synthesize identity from account profile metadata.
+[[ "$commit_count" -eq 1 ]] \
+  || fail "PR has $commit_count commits (need exactly 1 for verified rebase merge; squash the branch locally and request a fresh exact-head review)"
 
-printf 'merging PR #%s\n  author:    %s\n  head:      %s\n  reviewers: %s\n  mode:      %s\n  email:     %s\n' \
-  "$PR_NUMBER" "$pr_author" "$head_oid" "$reviewers_display" "$merge_mode" "$expected_email"
-if [[ "$merge_mode" == 'rebase' ]]; then
-  gh pr merge "$PR_NUMBER" --repo "$REPO" \
-    --rebase \
-    --delete-branch \
-    --match-head-commit "$head_oid" \
-    || fail 'gh pr rebase merge failed'
-else
-  gh pr merge "$PR_NUMBER" --repo "$REPO" \
-    --squash \
-    --delete-branch \
-    --match-head-commit "$head_oid" \
-    --author-email "$expected_email" \
-    || fail 'gh pr squash merge failed'
-fi
+source_identity="$(gh api "/repos/$REPO/commits/$head_oid" \
+  --jq '[.commit.author.email, .commit.committer.email] | @tsv')" \
+  || fail "cannot verify source commit identity for $head_oid"
+IFS=$'\t' read -r source_author_email source_committer_email <<<"$source_identity"
+[[ "$source_author_email" == "$expected_email" ]] \
+  || fail "source author email mismatch: expected $expected_email, got $source_author_email"
+[[ "$source_committer_email" == "$expected_email" ]] \
+  || fail "source committer email mismatch: expected $expected_email, got $source_committer_email"
+
+printf 'merging PR #%s\n  author:    %s\n  head:      %s\n  reviewers: %s\n  mode:      rebase\n  email:     %s\n' \
+  "$PR_NUMBER" "$pr_author" "$head_oid" "$reviewers_display" "$expected_email"
+gh pr merge "$PR_NUMBER" --repo "$REPO" \
+  --rebase \
+  --delete-branch \
+  --match-head-commit "$head_oid" \
+  || fail 'gh pr rebase merge failed'
 
 # 9. Post-merge verification (bounded polling for API propagation).
 # Wait for .merged == true before trusting merge_commit_sha: GitHub's
 # merge_commit_sha field is populated PRE-merge with a synthetic test-merge
-# commit and only changes to the actual squash commit after the merge
+# commit and only changes to the actual rebased commit after the merge
 # completes. Reading it before merged=true can produce a stale value.
 merge_commit=""
 for attempt in 1 2 3 4 5 6 7 8 9 10; do
