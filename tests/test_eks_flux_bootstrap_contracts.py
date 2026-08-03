@@ -302,9 +302,22 @@ class EksAwsAdapterTests(unittest.TestCase):
     def test_existing_storage_class_is_registered_once_not_reimplemented(self) -> None:
         kustomization = load_one(CONFIGS / "kustomization.yaml")
         self.assertEqual(kustomization["resources"].count("ebs-gp3-storage-class.yaml"), 1)
+
+        # Inspect the repository inventory, not every file physically nested
+        # below the checkout. Claude and other tools may keep isolated Git
+        # worktrees under an ignored .claude/worktrees directory; a filesystem
+        # rglob would count those independent checkouts as duplicate desired
+        # state even though Git contains exactly one definition.
+        tracked = subprocess.run(
+            ["git", "ls-files", "--", ":(glob)**/ebs-gp3-storage-class.yaml"],
+            cwd=ROOT,
+            check=True,
+            capture_output=True,
+            text=True,
+        ).stdout.splitlines()
         self.assertEqual(
-            list(ROOT.rglob("ebs-gp3-storage-class.yaml")),
-            [CONFIGS / "ebs-gp3-storage-class.yaml"],
+            tracked,
+            ["platform/infrastructure/configs/dev/ebs-gp3-storage-class.yaml"],
         )
 
     def test_database_secret_is_reference_only_and_tls_is_verify_full(self) -> None:
