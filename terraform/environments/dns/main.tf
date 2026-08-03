@@ -15,13 +15,13 @@ locals {
       name    = "_openai-site-verification.${local.portal_hostname}"
       type    = "TXT"
       ttl     = 300
-      records = ["\"openai-site-verification=IqdULfiTB3ESC64Zc45864orM6PGtI2rAaYFdK0SPBQ\""]
+      records = ["openai-site-verification=IqdULfiTB3ESC64Zc45864orM6PGtI2rAaYFdK0SPBQ"]
     }
     certificate_validation = {
       name    = "_cf-custom-hostname.${local.portal_hostname}"
       type    = "TXT"
       ttl     = 300
-      records = ["\"9bbfa39a-d1b6-476a-abcf-a41ef74b312f\""]
+      records = ["9bbfa39a-d1b6-476a-abcf-a41ef74b312f"]
     }
   }
 }

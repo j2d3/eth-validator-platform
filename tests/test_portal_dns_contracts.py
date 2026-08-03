@@ -36,6 +36,22 @@ class PortalDnsContracts(unittest.TestCase):
         self.assertEqual(self.main.count('type    = "TXT"'), 2)
         self.assertEqual(self.main.count('type    = "CNAME"'), 1)
 
+    def test_txt_payloads_do_not_embed_route53_quote_characters(self) -> None:
+        """The AWS provider owns TXT character-string serialization."""
+
+        for payload in (
+            "openai-site-verification=IqdULfiTB3ESC64Zc45864orM6PGtI2rAaYFdK0SPBQ",
+            "9bbfa39a-d1b6-476a-abcf-a41ef74b312f",
+        ):
+            with self.subTest(payload=payload):
+                self.assertIn(f'records = ["{payload}"]', self.main)
+                self.assertNotIn(f'records = ["\\"{payload}\\""]', self.main)
+
+        self.assertIn(
+            "the AWS provider emits the Route 53 character-string quoting",
+            " ".join(self.readme.split()),
+        )
+
     def test_uses_existing_public_zone(self) -> None:
         self.assertIn('data "aws_route53_zone" "public"', self.main)
         self.assertIn("private_zone = false", self.main)
