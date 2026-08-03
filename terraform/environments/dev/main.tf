@@ -77,7 +77,7 @@ resource "aws_iam_role_policy_attachment" "ebs_csi" {
 
 module "eks" {
   source  = "terraform-aws-modules/eks/aws"
-  version = "21.24.0"
+  version = "21.24.1"
 
   name               = local.name
   kubernetes_version = var.kubernetes_version
