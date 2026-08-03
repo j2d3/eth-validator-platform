@@ -12,7 +12,10 @@ single custom hostname: **`g.j2d3.com`**. It discovers the existing public
 
 The verification strings are public DNS values, not credentials. They are
 checked in deliberately so the entire DNS contract is recoverable from Git.
-There is no wildcard record and no wildcard custom-domain request.
+Their Terraform values are the unquoted TXT payloads; the AWS provider emits
+the Route 53 character-string quoting. Embedding literal quote characters here
+would double-quote the request and Route 53 would reject it. There is no
+wildcard record and no wildcard custom-domain request.
 
 ## Why this is a separate state
 
