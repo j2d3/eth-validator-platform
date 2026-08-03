@@ -126,6 +126,7 @@ The operator-facing lifecycle form lives under **Actions → Request non-signing
 | [ADRs](docs/adrs/) | Why a specific decision was made and what it cost. |
 | [Local development runbook](docs/runbooks/local-development.md) | How to bring the cluster up, verify it, and take it down safely. |
 | [EKS capacity runbook](docs/runbooks/eks-capacity.md) | How to inspect, pause, and resume one zonal Ethereum worker without changing validator lifecycle or signing state. |
+| [Dependabot runbook](docs/runbooks/dependabot.md) | How scheduled version updates differ from alerts and automated security fixes, and how to verify each. |
 | [Production evolution](docs/production-evolution.md) | What changes between local qualification and EKS — and what a green local cluster does *not* prove. |
 | [COLLABORATION.md](COLLABORATION.md) | How the human and the AI agents coordinate, review, and merge. |
 | [CONTRIBUTING.md](CONTRIBUTING.md) | Branch, PR, and review process. |

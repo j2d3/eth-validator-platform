@@ -1,12 +1,142 @@
+# Dependabot **version updates** — scheduled currency for the dependency
+# manifests that exist in this repository.
+#
+# Scope boundary, stated once here because the two halves are easy to conflate:
+#
+#   * This file configures *version updates* only. It is source control, it is
+#     reviewable in a pull request, and it is the whole of what a PR can change.
+#   * *Dependabot alerts* and *automated security fixes* are repository API
+#     state, not configuration. Nothing in this file enables, disables, or
+#     influences them, and a security fix will open a pull request against a
+#     vulnerable manifest whether or not that manifest appears below.
+#
+# Verifying the API-state half is documented in docs/runbooks/dependabot.md.
+# tests/test_dependabot_contracts.py holds the invariants this file asserts.
+#
+# Every ecosystem/directory pair here exists on main. Deliberately absent:
+#
+#   * npm — there is no package.json in the tree.
+#   * docker — there is no Dockerfile. Client images are digest-pinned and
+#     governed by tools/verify_container_contracts.py plus the CONTRIBUTING
+#     upstream-release-note review gate. Dependabot must not route around that.
+#   * helm — charts/ethereum-node declares no chart dependencies, and
+#     Dependabot has no Helm ecosystem.
+#
+# Cadence is staggered across the week so a quiet Monday cannot arrive as one
+# undifferentiated block of dependency pull requests.
+#
+# Limits are small on purpose, and load-bearing rather than stylistic. A
+# Dependabot pull request is authored by dependabot[bot], which
+# hack/merge-pr.sh does not recognize and therefore refuses to merge. That
+# fail-closed refusal is correct, but it means each of these pull requests
+# needs a human intake decision; the runbook documents that path.
 version: 2
+
 updates:
+  # GitHub Actions used by .github/workflows/. Actions are SHA-pinned with a
+  # trailing version comment; Dependabot updates the SHA and the comment
+  # together, which is why pinning does not freeze this ecosystem out.
   - package-ecosystem: github-actions
     directory: /
     schedule:
       interval: weekly
-    labels: [dependencies, ci]
+      day: monday
+      time: "06:00"
+      timezone: Etc/UTC
+    open-pull-requests-limit: 3
+    labels:
+      - dependencies
+      - ci
+    commit-message:
+      prefix: chore
+      include: scope
+    groups:
+      # Minor and patch land as one reviewable pull request. Majors are
+      # excluded so each arrives alone and gets its own review — an actions
+      # major can change runner or input contracts.
+      actions-minor-patch:
+        applies-to: version-updates
+        patterns:
+          - "*"
+        update-types:
+          - minor
+          - patch
+
+  # Terraform root: bootstrap. Has its own .terraform.lock.hcl and is one of
+  # the two roots make validate iterates over.
+  - package-ecosystem: terraform
+    directory: /terraform/bootstrap
+    schedule:
+      interval: weekly
+      day: tuesday
+      time: "06:00"
+      timezone: Etc/UTC
+    open-pull-requests-limit: 2
+    labels:
+      - dependencies
+      - terraform
+    commit-message:
+      prefix: chore
+      include: scope
+    groups:
+      terraform-bootstrap-minor-patch:
+        applies-to: version-updates
+        patterns:
+          - "*"
+        update-types:
+          - minor
+          - patch
+
+  # Terraform root: dev environment. Carries the live EKS foundation, so a
+  # provider major is reviewed on its own rather than inside a group.
   - package-ecosystem: terraform
     directory: /terraform/environments/dev
     schedule:
       interval: weekly
-    labels: [dependencies, terraform]
+      day: wednesday
+      time: "06:00"
+      timezone: Etc/UTC
+    open-pull-requests-limit: 2
+    labels:
+      - dependencies
+      - terraform
+    commit-message:
+      prefix: chore
+      include: scope
+    groups:
+      terraform-dev-minor-patch:
+        applies-to: version-updates
+        patterns:
+          - "*"
+        update-types:
+          - minor
+          - patch
+
+  # Python validation dependencies (requirements-dev.txt). Test-and-validation
+  # only — no runtime or signing path imports these. CI installs them in the
+  # catalog and container-contracts jobs. `versioning-strategy: increase` keeps
+  # the exact `==` pins exact, moving them to a newer pinned version rather
+  # than widening them into a range.
+  - package-ecosystem: pip
+    directory: /
+    schedule:
+      interval: weekly
+      day: thursday
+      time: "06:00"
+      timezone: Etc/UTC
+    open-pull-requests-limit: 2
+    versioning-strategy: increase
+    labels:
+      - dependencies
+      - python
+    commit-message:
+      prefix: chore
+      include: scope
+    groups:
+      python-dev-minor-patch:
+        applies-to: version-updates
+        patterns:
+          - "*"
+        update-types:
+          - minor
+          - patch
