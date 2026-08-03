@@ -18,8 +18,10 @@ ROOT = Path(__file__).resolve().parents[1]
 CLUSTER = ROOT / "clusters" / "dev"
 CONTROLLERS = ROOT / "platform" / "infrastructure" / "overlays" / "dev" / "controllers"
 CONFIGS = ROOT / "platform" / "infrastructure" / "configs" / "dev"
+SIGNER_CONFIGS = CONFIGS / "signer"
 PREREQUISITES = ROOT / "platform" / "apps" / "prerequisites" / "dev"
 APPS = ROOT / "platform" / "apps" / "dev"
+NODE_APPS = ROOT / "platform" / "apps" / "nodes" / "dev"
 WORKFLOWS = ROOT / ".github" / "workflows"
 RUNBOOK = ROOT / "docs" / "runbooks" / "eks-flux-bootstrap.md"
 NETWORK_POLICY_PROBE = ROOT / "hack" / "qualification" / "eks-network-policy-probe.yaml"
@@ -95,6 +97,8 @@ class EksFluxEntrypointTests(unittest.TestCase):
             for name in (
                 "infrastructure-controllers",
                 "infrastructure-configs",
+                "node-apps",
+                "signer-infrastructure-configs",
                 "signer-prerequisites",
                 "apps",
             )
@@ -107,11 +111,21 @@ class EksFluxEntrypointTests(unittest.TestCase):
         }
         self.assertEqual(dependencies["infrastructure-controllers"], [])
         self.assertEqual(dependencies["infrastructure-configs"], ["infrastructure-controllers"])
-        self.assertEqual(dependencies["signer-prerequisites"], ["infrastructure-configs"])
+        self.assertEqual(dependencies["node-apps"], ["infrastructure-configs"])
+        self.assertEqual(
+            dependencies["signer-infrastructure-configs"],
+            ["infrastructure-configs"],
+        )
+        self.assertEqual(
+            dependencies["signer-prerequisites"],
+            ["signer-infrastructure-configs"],
+        )
         self.assertEqual(dependencies["apps"], ["signer-prerequisites"])
 
         self.assertNotIn("suspend", self.layers["infrastructure-controllers"]["spec"])
         self.assertNotIn("suspend", self.layers["infrastructure-configs"]["spec"])
+        self.assertTrue(self.layers["node-apps"]["spec"]["suspend"])
+        self.assertTrue(self.layers["signer-infrastructure-configs"]["spec"]["suspend"])
         self.assertTrue(self.layers["signer-prerequisites"]["spec"]["suspend"])
         self.assertTrue(self.layers["apps"]["spec"]["suspend"])
 
@@ -132,11 +146,13 @@ class EksFluxEntrypointTests(unittest.TestCase):
                 self.assertTrue(layer["spec"]["wait"])
 
     def test_config_layer_requires_the_scoped_role_input_configmap(self) -> None:
-        post_build = self.layers["infrastructure-configs"]["spec"]["postBuild"]
-        self.assertEqual(
-            post_build["substituteFrom"],
-            [{"kind": "ConfigMap", "name": "aws-secret-store-role-arns", "optional": False}],
-        )
+        for name in ("infrastructure-configs", "signer-infrastructure-configs"):
+            with self.subTest(layer=name):
+                post_build = self.layers[name]["spec"]["postBuild"]
+                self.assertEqual(
+                    post_build["substituteFrom"],
+                    [{"kind": "ConfigMap", "name": "aws-secret-store-role-arns", "optional": False}],
+                )
         runbook = RUNBOOK.read_text(encoding="utf-8")
         self.assertIn("external_secrets_reader_role_arns", runbook)
         self.assertIn("EXTERNAL_SECRETS_ENGINE_READER_ROLE_ARN", runbook)
@@ -154,8 +170,24 @@ class EksFluxEntrypointTests(unittest.TestCase):
             ),
         )
 
-    def test_rendered_config_layer_declares_exact_runtime_and_migration_groups(self) -> None:
-        documents = render_all(CONFIGS)
+    def test_common_config_needs_only_engine_input_and_signer_branch_fails_closed(self) -> None:
+        common = yaml.safe_dump_all(render_all(CONFIGS))
+        signer = yaml.safe_dump_all(render_all(SIGNER_CONFIGS))
+
+        self.assertIn("${EXTERNAL_SECRETS_ENGINE_READER_ROLE_ARN}", common)
+        for signer_only in (
+            "${EXTERNAL_SECRETS_DATABASE_READER_ROLE_ARN}",
+            "${EXTERNAL_SECRETS_SIGNING_READER_ROLE_ARN}",
+            "${WEB3SIGNER_POD_SECURITY_GROUP_ID}",
+            "${WEB3SIGNER_MIGRATION_POD_SECURITY_GROUP_ID}",
+        ):
+            with self.subTest(signer_only=signer_only):
+                self.assertNotIn(signer_only, common)
+                self.assertIn(signer_only, signer)
+        self.assertNotIn("${EXTERNAL_SECRETS_ENGINE_READER_ROLE_ARN}", signer)
+
+    def test_rendered_signer_config_declares_exact_runtime_and_migration_groups(self) -> None:
+        documents = render_all(SIGNER_CONFIGS)
         runtime = object_named(documents, "SecurityGroupPolicy", "web3signer")
         migration = object_named(documents, "SecurityGroupPolicy", "web3signer-schema")
 
@@ -209,6 +241,8 @@ class EksFluxEntrypointTests(unittest.TestCase):
         expected = {
             "infrastructure-controllers": "./platform/infrastructure/overlays/dev/controllers",
             "infrastructure-configs": "./platform/infrastructure/configs/dev",
+            "node-apps": "./platform/apps/nodes/dev",
+            "signer-infrastructure-configs": "./platform/infrastructure/configs/dev/signer",
             "signer-prerequisites": "./platform/apps/prerequisites/dev",
             "apps": "./platform/apps/dev",
         }
@@ -222,9 +256,15 @@ class EksFluxEntrypointTests(unittest.TestCase):
         self.assertIn("flux-system", root["resources"])
         overlay = load_one(CLUSTER / "flux-system" / "kustomization.yaml")
         self.assertEqual(overlay["resources"], ["../../local/flux-system"])
-        patch = overlay["patches"][0]
-        self.assertEqual(patch["target"]["name"], "flux-system")
-        self.assertIn("value: ./clusters/dev", patch["patch"])
+        sync_patch = overlay["patches"][0]
+        self.assertEqual(sync_patch["target"]["name"], "flux-system")
+        self.assertIn("value: ./clusters/dev", sync_patch["patch"])
+        strict_patch = overlay["patches"][1]
+        self.assertEqual(strict_patch["target"]["name"], "kustomize-controller")
+        self.assertIn(
+            "--feature-gates=StrictPostBuildSubstitutions=true",
+            strict_patch["patch"],
+        )
 
         sync_documents = load_all(
             ROOT / "clusters" / "local" / "flux-system" / "gotk-sync.yaml"
@@ -237,17 +277,23 @@ class EksFluxEntrypointTests(unittest.TestCase):
 
 class EksAwsAdapterTests(unittest.TestCase):
     def setUp(self) -> None:
-        stores = load_all(CONFIGS / "aws-secret-stores.yaml")
+        stores = load_all(CONFIGS / "aws-secret-stores.yaml") + load_all(
+            SIGNER_CONFIGS / "aws-signer-secret-stores.yaml"
+        )
         self.stores = {store["metadata"]["name"]: store for store in stores}
 
     def test_secret_stores_use_ambient_pod_identity_without_static_credentials(self) -> None:
-        self.assertEqual(set(self.stores), {"aws-engine-secrets", "aws-database-secrets"})
+        self.assertEqual(
+            set(self.stores),
+            {"aws-engine-secrets", "aws-database-secrets", "aws-signing-secrets"},
+        )
         for name, store in self.stores.items():
             with self.subTest(store=name):
                 provider = store["spec"]["provider"]["aws"]
                 expected_role = {
                     "aws-engine-secrets": "${EXTERNAL_SECRETS_ENGINE_READER_ROLE_ARN}",
                     "aws-database-secrets": "${EXTERNAL_SECRETS_DATABASE_READER_ROLE_ARN}",
+                    "aws-signing-secrets": "${EXTERNAL_SECRETS_SIGNING_READER_ROLE_ARN}",
                 }[name]
                 self.assertEqual(
                     provider,
@@ -268,14 +314,13 @@ class EksAwsAdapterTests(unittest.TestCase):
                 self.assertNotIn("external_secrets_role_arn", text)
                 self.assertNotIn("sts:assumerole", text)
 
-        rendered = yaml.safe_dump(list(self.stores.values()))
-        self.assertNotIn("${EXTERNAL_SECRETS_SIGNING_READER_ROLE_ARN}", rendered)
-
     def test_secret_store_namespace_boundaries_are_explicit(self) -> None:
         engine = self.stores["aws-engine-secrets"]["spec"]["conditions"]
         database = self.stores["aws-database-secrets"]["spec"]["conditions"]
+        signing = self.stores["aws-signing-secrets"]["spec"]["conditions"]
         self.assertEqual(engine, [{"namespaces": ["ethereum"]}])
         self.assertEqual(database, [{"namespaces": ["database", "signing"]}])
+        self.assertEqual(signing, [{"namespaces": ["signing"]}])
 
     def test_external_secrets_service_account_matches_terraform_pod_identity(self) -> None:
         terraform = (ROOT / "terraform" / "environments" / "dev" / "main.tf").read_text(
@@ -439,17 +484,17 @@ class EksApplicationSafetyTests(unittest.TestCase):
                 self.assertEqual(container["securityContext"]["capabilities"]["drop"], ["ALL"])
 
     def test_dev_overlay_preserves_stopped_non_signing_assignment(self) -> None:
-        release = load_one(ROOT / "platform" / "apps" / "local" / "assignments" / "assignment-synthetic-01.yaml")
+        release = load_one(ROOT / "platform" / "apps" / "local" / "assignments" / "assignment-ephemery-162-synthetic.yaml")
         values = release["spec"]["values"]
         self.assertEqual(values["lifecycleState"], "stopped")
         self.assertFalse(values["validator"]["enabled"])
         self.assertFalse(values["validator"]["slashingProtectionConfirmed"])
 
-        overlay = (APPS / "kustomization.yaml").read_text(encoding="utf-8")
+        overlay = (NODE_APPS / "kustomization.yaml").read_text(encoding="utf-8")
         self.assertNotIn("lifecycleState", overlay)
         self.assertNotIn("signingEnabled: true", overlay)
         self.assertNotIn("validator:\n          enabled: true", overlay)
-        self.assertIn("values-eks-hoodi-storage.yaml", overlay)
+        self.assertIn("values-eks-ephemery.yaml", overlay)
         self.assertIn("eth-validator-platform-dev", overlay)
 
     def test_profile_is_explicitly_non_signing(self) -> None:
@@ -461,23 +506,26 @@ class EksApplicationSafetyTests(unittest.TestCase):
             "false",
         )
 
-    def test_local_only_dashboards_are_not_presented_as_eks_evidence(self) -> None:
-        overlay = load_one(APPS / "kustomization.yaml")
-        deleted = {
-            patch["target"]["name"]
-            for patch in overlay["patches"]
-            if patch.get("target", {}).get("kind") == "ConfigMap"
-            and "$patch: delete" in patch.get("patch", "")
-        }
-        local_dashboards = {
-            document["metadata"]["name"]
-            for path in (ROOT / "platform" / "apps" / "local").glob("*dashboard.yaml")
-            for document in load_all(path)
-        }
-        self.assertEqual(deleted, local_dashboards)
+    def test_eks_surfaces_are_owned_by_separate_signer_and_node_layers(self) -> None:
+        signer_overlay = load_one(APPS / "kustomization.yaml")
+        self.assertEqual(signer_overlay["resources"], ["../base/web3signer", "profile.yaml"])
+        self.assertNotIn("HelmRelease", yaml.safe_dump(signer_overlay))
+
+        node_overlay = load_one(NODE_APPS / "kustomization.yaml")
+        self.assertIn("../../local/assignments", node_overlay["resources"])
+        self.assertIn("sync-dashboard.yaml", node_overlay["resources"])
+        self.assertNotIn("web3signer", yaml.safe_dump(node_overlay).lower())
 
     def test_dev_desired_state_contains_no_gke_contract(self) -> None:
-        roots = (CLUSTER, CONTROLLERS, CONFIGS, PREREQUISITES, APPS)
+        roots = (
+            CLUSTER,
+            CONTROLLERS,
+            CONFIGS,
+            SIGNER_CONFIGS,
+            PREREQUISITES,
+            APPS,
+            NODE_APPS,
+        )
         for root in roots:
             for path in sorted(root.rglob("*")):
                 if path.is_file():
@@ -570,7 +618,8 @@ class EksApplicationSafetyTests(unittest.TestCase):
         self.assertIn("WEB3SIGNER_MIGRATION_POD_SECURITY_GROUP_ID", runbook)
         self.assertIn("WEB3SIGNER_POD_SECURITY_GROUP_ID", runbook)
         self.assertIn("postBuild.substituteFrom", runbook)
-        self.assertIn("does **not** claim that the", runbook)
+        self.assertIn("StrictPostBuildSubstitutions=true", runbook)
+        self.assertIn("missing signer-only key fails", runbook)
         self.assertIn("applied", runbook)
         self.assertNotIn("network-policy-deny-probe", runbook)
 

@@ -15,21 +15,34 @@ spec:
     - {name: el-metrics, port: 6060, targetPort: el-metrics}
     - {name: cl-metrics, port: 8008, targetPort: cl-metrics}
 ---
+{{- if .Values.p2p.service.enabled }}
 apiVersion: v1
 kind: Service
 metadata:
   name: {{ include "ethereum-node.fullname" . }}-p2p
   labels:
     {{- include "ethereum-node.labels" . | nindent 4 }}
+  {{- with .Values.p2p.service.annotations }}
+  annotations:
+    {{- toYaml . | nindent 4 }}
+  {{- end }}
 spec:
-  type: NodePort
+  type: {{ .Values.p2p.service.type }}
+  {{- if ne .Values.p2p.service.type "ClusterIP" }}
+  externalTrafficPolicy: {{ .Values.p2p.service.externalTrafficPolicy }}
+  {{- end }}
+  {{- if and (eq .Values.p2p.service.type "LoadBalancer") .Values.p2p.service.loadBalancerSourceRanges }}
+  loadBalancerSourceRanges:
+    {{- toYaml .Values.p2p.service.loadBalancerSourceRanges | nindent 4 }}
+  {{- end }}
   selector:
     {{- include "ethereum-node.selectorLabels" . | nindent 4 }}
     platform.galaxy-lab/component: node
   ports:
-    - {name: el-p2p-tcp, port: 30303, targetPort: el-p2p-tcp, nodePort: 30303, protocol: TCP}
-    - {name: el-p2p-udp, port: 30303, targetPort: el-p2p-udp, nodePort: 30303, protocol: UDP}
-    - {name: cl-p2p-tcp, port: 9000, targetPort: cl-p2p-tcp, nodePort: 9000, protocol: TCP}
-    - {name: cl-p2p-udp, port: 9000, targetPort: cl-p2p-udp, nodePort: 9000, protocol: UDP}
-    - {name: cl-quic, port: 9001, targetPort: cl-quic, nodePort: 9001, protocol: UDP}
+    - {name: el-p2p-tcp, port: 30303, targetPort: el-p2p-tcp, protocol: TCP}
+    - {name: el-p2p-udp, port: 30303, targetPort: el-p2p-udp, protocol: UDP}
+    - {name: cl-p2p-tcp, port: 9000, targetPort: cl-p2p-tcp, protocol: TCP}
+    - {name: cl-p2p-udp, port: 9000, targetPort: cl-p2p-udp, protocol: UDP}
+    - {name: cl-quic, port: 9001, targetPort: cl-quic, protocol: UDP}
+{{- end }}
 {{- end }}

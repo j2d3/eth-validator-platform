@@ -57,6 +57,17 @@ storage:
   consensus: 10Gi
   validator: 5Gi
 
+# P2P is a separate surface from the internal HTTP/metrics Service. The chart
+# default stays cluster-internal; an environment must explicitly opt into a
+# public Service and own its cloud-controller/cost contract.
+p2p:
+  service:
+    enabled: true
+    type: ClusterIP
+    annotations: {}
+    externalTrafficPolicy: Cluster
+    loadBalancerSourceRanges: []
+
 engineJwt:
   secretStoreName: local-platform-secrets
   remoteSecretKey: engine-jwt
@@ -110,6 +121,21 @@ resources:
 
 nodeSelector:
   workload: ethereum
+
+scheduling:
+  # A preference preserves an on-demand recovery path while selecting Spot
+  # whenever the EKS lab has both capacity types available. The required
+  # workload label and taint/toleration remain the hard isolation boundary.
+  preferSpot: false
+
+# A single node pair cannot become highly available through a PDB. Environment
+# profiles may disable its voluntary-disruption guard and shorten shutdown to
+# fit an interruption exercise; the safer persistent-network defaults remain.
+availability:
+  nodeTerminationGracePeriodSeconds: 300
+  validatorTerminationGracePeriodSeconds: 60
+  nodeDisruptionBudgetEnabled: true
+  validatorDisruptionBudgetEnabled: true
 
 tolerations:
   - key: dedicated

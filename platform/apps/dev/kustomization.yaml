@@ -1,71 +1,11 @@
 apiVersion: kustomize.config.k8s.io/v1beta1
 kind: Kustomization
 resources:
-  - ../local
+  - ../base/web3signer
+  - profile.yaml
 
 patches:
-  - path: profile.yaml
   - path: signer-telemetry-patch.yaml
-  - target:
-      kind: ConfigMap
-      name: ethereum-platform-logging-dashboard
-    patch: |-
-      apiVersion: v1
-      kind: ConfigMap
-      metadata:
-        name: ethereum-platform-logging-dashboard
-        namespace: observability
-      $patch: delete
-  - target:
-      kind: ConfigMap
-      name: ethereum-platform-smoke-dashboard
-    patch: |-
-      apiVersion: v1
-      kind: ConfigMap
-      metadata:
-        name: ethereum-platform-smoke-dashboard
-        namespace: observability
-      $patch: delete
-  - target:
-      kind: ConfigMap
-      name: ethereum-platform-signer-slashing-dashboard
-    patch: |-
-      apiVersion: v1
-      kind: ConfigMap
-      metadata:
-        name: ethereum-platform-signer-slashing-dashboard
-        namespace: observability
-      $patch: delete
-  - target:
-      kind: ConfigMap
-      name: geth-lighthouse-pair-dashboard
-    patch: |-
-      apiVersion: v1
-      kind: ConfigMap
-      metadata:
-        name: geth-lighthouse-pair-dashboard
-        namespace: observability
-      $patch: delete
-  - target:
-      kind: ConfigMap
-      name: ethereum-platform-fleet-overview-dashboard
-    patch: |-
-      apiVersion: v1
-      kind: ConfigMap
-      metadata:
-        name: ethereum-platform-fleet-overview-dashboard
-        namespace: observability
-      $patch: delete
-  - target:
-      kind: ConfigMap
-      name: ethereum-platform-validator-detail-dashboard
-    patch: |-
-      apiVersion: v1
-      kind: ConfigMap
-      metadata:
-        name: ethereum-platform-validator-detail-dashboard
-        namespace: observability
-      $patch: delete
   - target:
       group: external-secrets.io
       version: v1
@@ -117,28 +57,6 @@ patches:
           ports:
             - port: 5432
               protocol: TCP
-  - target:
-      group: helm.toolkit.fluxcd.io
-      version: v2
-      kind: HelmRelease
-    patch: |-
-      - op: add
-        path: /spec/chart/spec/valuesFiles
-        value:
-          - values.yaml
-          - values-eks-hoodi-storage.yaml
-      - op: replace
-        path: /spec/values/telemetry
-        value:
-          cluster: eth-validator-platform-dev
-          environment: dev
-      - op: add
-        path: /spec/values/engineJwt
-        value:
-          secretStoreName: aws-engine-secrets
-          remoteSecretKey: eth-validator-platform-dev/ethereum/engine-jwt
-          remoteSecretProperty: jwt.hex
-
 labels:
   - pairs:
       platform.galaxy-lab/environment: dev

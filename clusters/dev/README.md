@@ -14,35 +14,49 @@ infrastructure-controllers
           |
           v
 infrastructure-configs
-          |
-          v
- signer-prerequisites  (committed suspended)
-          |
-          v
-        apps            (committed suspended)
+          +--------------------------+
+          |                          |
+          v                          v
+      node-apps          signer-infrastructure-configs
+       (suspended)                 (suspended)
+                                      |
+                                      v
+                           signer-prerequisites
+                                (suspended)
+                                      |
+                                      v
+                                    apps
+                                (suspended)
 ```
 
-Controllers and AWS interface configuration may reconcile without launching an
-Ethereum client. The signer migration and application layers remain suspended
+Controllers and the common Engine-JWT/storage configuration may reconcile
+without launching an Ethereum client or requiring any RDS/signer input. The
+node branch and every signer layer remain suspended
 until the RDS credential, network, TLS, backup, and migration gates in the
 runbook are proven. The later RDS slice must supply or prove the AWS RDS CA
 trust path; this slice only commits the fail-closed `sslmode=verify-full`
 requirement. Removing either suspension is deployment authorization and
 must be a separate reviewed Git change.
 
-The three scoped reader-role ARNs are non-secret Terraform outputs, but
-they are account-specific and therefore are not committed here. The trusted
-local bootstrap creates `flux-system/aws-secret-store-role-arns` from the
-reviewed `external_secrets_reader_role_arns` output. The `infrastructure-configs`
-Kustomization refuses to reconcile until that ConfigMap exists; it is annotated
+The three scoped reader-role ARNs are non-secret Terraform outputs, but they are
+account-specific and therefore are not committed here. The trusted local
+bootstrap initially creates `flux-system/aws-secret-store-role-arns` with only
+the reviewed engine-reader field. The common `infrastructure-configs`
+Kustomization references only that field and therefore cannot be blocked by a
+missing database/signing role or Pod security-group ID. The ConfigMap is annotated
 `kustomize.toolkit.fluxcd.io/prune=disabled` because it is a bootstrap input,
-not a Git-managed application object. The engine, database, and signing-key
-values must be their corresponding scoped reader-role ARNs, never the base Pod
-Identity role. The same bootstrap ConfigMap supplies distinct non-secret
+not a Git-managed application object.
+
+Before the separately suspended `signer-infrastructure-configs` layer is
+resumed, the operator adds the database/signing reader fields and distinct
+non-secret
 `WEB3SIGNER_POD_SECURITY_GROUP_ID` and
 `WEB3SIGNER_MIGRATION_POD_SECURITY_GROUP_ID` values used by exact-selector AWS
 VPC CNI `SecurityGroupPolicy` objects; both must match Terraform outputs and
-neither has a node-security-group fallback.
+neither has a node-security-group fallback. Missing signer fields therefore
+fail the signer branch closed without preventing node-only sync. Every reader
+value must be its corresponding scoped role ARN, never the base Pod Identity
+role.
 
 The EKS controller overlay installs Prometheus/Grafana but deliberately excludes
 the local Loki/Alloy topology and local-only dashboard ConfigMaps. Pair and

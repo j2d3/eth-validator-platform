@@ -10,27 +10,35 @@ chain-data StorageClass. It also declares exact-selector Pod security-group
 adapters for Web3Signer and its one-shot migration Job. Secret values and RDS
 resources remain outside this directory.
 
+The root Kustomization is the common node substrate: namespaces, default-deny
+policies, encrypted gp3, and the Engine-JWT store. `signer/` is a separate,
+committed-suspended Flux layer containing the database/signing stores and the
+two signer Pod security-group policies. Missing signer/RDS outputs therefore
+cannot block common infrastructure or a node-only sync.
+
 ## Reconciliation status
 
 **Declared, registered, and not yet bootstrapped.** The
 [`clusters/dev`](../../../../clusters/dev/README.md) entrypoint now names this
 directory and the full fail-closed dependency chain. Nothing in this change
 bootstraps Flux or applies Kubernetes state to the live cluster. The signer
-prerequisite and application Kustomizations are committed suspended until the
-separately reviewed RDS, credential, network, TLS, backup, and migration gates
-are proven.
+infrastructure, signer prerequisite, node application, and signer application
+Kustomizations are committed suspended until their separate gates are proven.
 
 `make check` renders the entrypoint and every EKS layer. Focused contract tests
 assert that the existing StorageClass is registered rather than duplicated,
-the SecretStores use separate engine/database reader roles through ambient EKS
-Pod Identity rather than static credentials, the runtime and migration
+the SecretStores use separate engine/database/signing reader roles through
+ambient EKS Pod Identity rather than static credentials, the runtime and migration
 `SecurityGroupPolicy` selectors stay disjoint, the dependency graph is ordered,
-and all launch/signing defaults remain off.
+all launch/signing defaults remain off, and common configuration contains none
+of the signer-only substitution variables.
 
 `aws-database-secrets` is namespace-visible to both the migration Job in
 `database` and Web3Signer in `signing`, but it assumes only the database-reader
-role. The separately output signing-reader role is reserved for a future
-signing-key store and is not used by this non-signing desired state.
+role. `aws-signing-secrets` is visible only in `signing` and assumes only the
+signing-key reader role. No ExternalSecret consumes that signing store in this
+non-signing slice; declaring its fail-closed identity boundary does not load a
+key.
 
 ## What is and is not evidence
 
@@ -80,6 +88,10 @@ anyone having decided that. Every claim names its class.
 The chart enforces the other half of that: `charts/ethereum-node/values.yaml`
 keeps the local `standard` default, and the EKS profile
 `charts/ethereum-node/values-eks-hoodi-storage.yaml` overrides it explicitly.
+The reset-aware Ephemery sync profile instead uses
+`charts/ethereum-node/values-eks-ephemery.yaml`, which starts at 50 GiB for
+Geth and 20 GiB for Lighthouse so one disposable generation does not inherit
+the permanent-network cost hypothesis.
 `standard` exists in `kind` and not on EKS; `ebs-gp3-encrypted` will exist on
 EKS and not in `kind`. Neither environment inherits the other's class, and the
 chart's `values.schema.json` rejects an empty `storageClassName` — which
@@ -199,8 +211,9 @@ behavior, and the following are explicitly out of its scope:
 - **Node root-volume sizing.** Terraform's business; unchanged by this adapter.
 - **RDS storage.** The slashing database is a separate failure domain with its
   own sizing, autoscaling ceiling, and backup posture.
-- **Filesystem and EBS dashboards** — utilization, growth rate, projected-full
-  time, IOPS, throughput, queue length, latency.
+- **Full EBS performance dashboards** — the Ephemery sync dashboard declares
+  PVC used/capacity evidence, but IOPS, throughput, queue length, latency, and
+  projected-full alerts still require an AWS metrics adapter.
 - **Runtime qualification**: expansion exercised without recreating a claim,
   stop/resume proving same-volume reattachment, snapshot-versus-resync
   economics, and whether 200/50/5 survives contact with a real sync.

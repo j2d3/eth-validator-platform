@@ -13,17 +13,24 @@ infrastructure-controllers
           |
           v
 infrastructure-configs
-          |
-          v
- signer-prerequisites  (suspended)
-          |
-          v
-        apps            (suspended)
+          +--------------------------+
+          |                          |
+          v                          v
+      node-apps          signer-infrastructure-configs
+       (suspended)                 (suspended)
+                                      |
+                                      v
+                           signer-prerequisites
+                                (suspended)
+                                      |
+                                      v
+                                    apps
+                                (suspended)
 ```
 
 This declaration is not runtime evidence. At publication time Flux has not been
-bootstrapped onto EKS, the gp3 StorageClass has not been persisted, and neither
-downstream suspension has been removed.
+bootstrapped onto EKS, the gp3 StorageClass has not been persisted, and none of
+the four downstream suspensions has been removed.
 
 ## Ownership boundary
 
@@ -34,7 +41,7 @@ downstream suspension has been removed.
 | Kubernetes controllers, configuration, signer, dashboards, pair releases | Flux | Reconciles reviewed Git state only |
 | Lifecycle request preparation | GitHub Actions | Opens reviewed Git changes; has no AWS credential, kubeconfig, or cluster writer |
 | Secret values | Restricted operator path to AWS Secrets Manager | Verifies only object/property presence; never prints values |
-| EKS adapter inputs | Trusted-local Terraform outputs -> `flux-system/aws-secret-store-role-arns` ConfigMap | Supplies non-secret engine/database/signing reader ARNs plus distinct Web3Signer runtime and migration Pod security-group IDs for Flux substitution; never stores credentials or secret values |
+| EKS adapter inputs | Trusted-local Terraform outputs -> `flux-system/aws-secret-store-role-arns` ConfigMap | Initially supplies only the non-secret engine reader ARN for common/node reconciliation; signer reader ARNs and distinct Web3Signer runtime/migration Pod security-group IDs are added only before the signer-only layer is resumed |
 
 ## 1. Preflight without mutation
 
@@ -68,12 +75,15 @@ make check
 kubectl kustomize clusters/dev >/dev/null
 kubectl kustomize platform/infrastructure/overlays/dev/controllers >/dev/null
 kubectl kustomize platform/infrastructure/configs/dev >/dev/null
+kubectl kustomize platform/infrastructure/configs/dev/signer >/dev/null
 kubectl kustomize platform/apps/prerequisites/dev >/dev/null
 kubectl kustomize platform/apps/dev >/dev/null
+kubectl kustomize platform/apps/nodes/dev >/dev/null
 ```
 
-Both `clusters/dev/signer-prerequisites.yaml` and `clusters/dev/apps.yaml` must
-contain `suspend: true`. The rendered assignment must contain
+`clusters/dev/node-apps.yaml`, `signer-infrastructure-configs.yaml`,
+`signer-prerequisites.yaml`, and `apps.yaml` must all contain `suspend: true`.
+The rendered assignment must contain
 `lifecycleState: stopped`, `validator.enabled: false`, and
 `slashingProtectionConfirmed: false`.
 
@@ -127,10 +137,10 @@ kubectl get nodes -l workload=system -o json | jq -e '
 ' >/dev/null
 ```
 
-If that check fails, stop. Do not unsuspend either signer layer; update the
+If that check fails, stop. Do not unsuspend a node or signer layer; update the
 reviewed Terraform/add-on contract first. These configuration and trunk-capacity
-checks are prerequisites, not runtime proof that either policy engine enforced
-a decision. Step 5 uses a matched allow/deny test against one policy-only target;
+checks are prerequisites, not runtime proof that either policy engine enforced a
+decision. Step 5 uses a matched allow/deny test against one policy-only target;
 Steps 6 and 7 separately prove that the selected Pods received branch ENIs with
 the exact Terraform security groups.
 
@@ -144,7 +154,7 @@ The EKS manifests contain references, never secret values:
 | Web3Signer database | Secrets Manager object `eth-validator-platform-dev/signing/web3signer-database`, JSON properties `host`, `port`, `database`, `username`, `password`; the EKS adapters project `database` to `dbname` for Flyway and retain `database` for Web3Signer |
 | External Secrets identity | Terraform associates the base `external_secrets_role_arn` with ServiceAccount `external-secrets`; its only target-role permissions are `sts:AssumeRole` and `sts:TagSession`, which EKS Pod Identity requires when its transitive workload tags cross the role chain. The non-secret `external_secrets_reader_role_arns` output supplies separate engine, database, and signing-key reader roles through the Flux substitution ConfigMap |
 | RDS network | Private endpoint resolves inside the `dev` VPC; TCP/5432 is admitted by both the Kubernetes egress policy and the dedicated runtime-or-migration Pod security-group path |
-| TLS | Both JDBC URLs require `sslmode=verify-full`; the RDS slice must also prove an AWS RDS CA trust path for both the Flyway and Web3Signer images (image trust store or an explicitly mounted CA bundle) before either signer suspension changes |
+| TLS | Both JDBC URLs require `sslmode=verify-full`; the RDS slice must also prove an AWS RDS CA trust path for both the Flyway and Web3Signer images (image trust store or an explicitly mounted CA bundle) before any signer suspension changes |
 
 The coordinated Terraform foundation must make the base role assume-only and
 create three scoped reader roles: the engine reader may read only the Engine
@@ -154,8 +164,9 @@ secret, grant only the database reader access to it, and declare the chosen AWS
 RDS CA trust mechanism before the signer-prerequisite suspension is removed.
 The database store is available in both `database` and `signing` because Flyway
 and Web3Signer consume the same database credential; its AWS role still cannot
-read a signing key. The signing-reader ARN is staged in the bootstrap ConfigMap,
-but no signing-key `ClusterSecretStore` is admitted by this non-signing slice.
+read a signing key. The signer-only layer declares a signing-key
+`ClusterSecretStore`, but no ExternalSecret consumes it and no key is loaded by
+this non-signing slice.
 `sslmode=verify-full` in desired state is necessary but is not evidence that
 either image trusts the selected RDS CA. Confirm metadata without reading
 secret values:
@@ -171,49 +182,34 @@ aws eks list-pod-identity-associations \
   --service-account external-secrets
 ```
 
-Before Flux can reconcile `infrastructure-configs`, stage the three non-secret
-scoped reader-role ARNs and two Pod security-group IDs from Terraform. Step 4
-materializes them after the Flux manifests create the `flux-system` namespace.
-This is an explicit, reviewed bootstrap input: it is not a secret, it is not
-committed to Git, and it is not the base Pod Identity role. Check that all three
-ARNs belong to the AWS account selected above and that their role names match
-the Terraform outputs; the command deliberately prints neither ARN,
-security-group ID, nor any secret value:
+Before Flux can reconcile the common `infrastructure-configs`, stage only the
+non-secret engine-reader ARN from Terraform. Step 4 materializes it after the
+Flux manifests create the `flux-system` namespace. Database/signing roles and
+Pod security-group IDs are signer-only inputs and are deliberately absent at
+this stage. This is an explicit reviewed bootstrap input: it is not a secret,
+it is not committed to Git, and it is not the base Pod Identity role. The
+command deliberately prints neither ARN nor any secret value:
 
 ```bash
 AWS_ACCOUNT_ID="$(aws sts get-caller-identity --query Account --output text)"
 READER_ROLES_JSON="$(terraform -chdir="$TF_ROOT" output -json external_secrets_reader_role_arns)"
 ENGINE_READER_ROLE_ARN="$(jq -er '.engine' <<<"$READER_ROLES_JSON")"
-DATABASE_READER_ROLE_ARN="$(jq -er '.database' <<<"$READER_ROLES_JSON")"
-SIGNING_READER_ROLE_ARN="$(jq -er '.signing' <<<"$READER_ROLES_JSON")"
-WEB3SIGNER_POD_SECURITY_GROUP_ID="$(terraform -chdir="$TF_ROOT" output -raw web3signer_pod_security_group_id)"
-WEB3SIGNER_MIGRATION_POD_SECURITY_GROUP_ID="$(terraform -chdir="$TF_ROOT" output -raw web3signer_migration_pod_security_group_id)"
-
-for role_arn in "$ENGINE_READER_ROLE_ARN" "$DATABASE_READER_ROLE_ARN" "$SIGNING_READER_ROLE_ARN"; do
-  case "$role_arn" in
-    "arn:aws:iam::${AWS_ACCOUNT_ID}:role/${CLUSTER_NAME}-eso-engine-reader"|"arn:aws:iam::${AWS_ACCOUNT_ID}:role/${CLUSTER_NAME}-eso-database-reader"|"arn:aws:iam::${AWS_ACCOUNT_ID}:role/${CLUSTER_NAME}-eso-signing-reader") ;;
-    *) echo "reader role ARN is outside the selected AWS account" >&2; exit 1 ;;
-  esac
-done
-
-for group_id in "$WEB3SIGNER_POD_SECURITY_GROUP_ID" "$WEB3SIGNER_MIGRATION_POD_SECURITY_GROUP_ID"; do
-  case "$group_id" in
-    sg-*) ;;
-    *) echo "Web3Signer Pod security-group output is not an EC2 security-group ID" >&2; exit 1 ;;
-  esac
-done
+case "$ENGINE_READER_ROLE_ARN" in
+  "arn:aws:iam::${AWS_ACCOUNT_ID}:role/${CLUSTER_NAME}-eso-engine-reader") ;;
+  *) echo "engine reader role ARN is outside the selected AWS account" >&2; exit 1 ;;
+esac
 ```
 
-Do not substitute the base `external_secrets_role_arn` output into a scoped
-reader field.
+Do not substitute the base `external_secrets_role_arn` output.
 
 `optional: false` on Flux `postBuild.substituteFrom` fails reconciliation when
-the ConfigMap is absent. This repository does not enable Flux's
-`StrictPostBuildSubstitutions` feature gate, so it does **not** claim that the
-same field rejects an absent key. Nor does substitution validate an ARN or
-security-group value. Step 5 therefore compares every applied role and group ID
-to the in-memory Terraform output before either signer layer may be unsuspended;
-the IAM/resource-policy checks remain a separate gate.
+the ConfigMap is absent. The EKS Flux overlay also enables
+`StrictPostBuildSubstitutions=true`, so a missing signer-only key fails the
+signer Kustomization before it can apply a partial store or security-group
+policy. The common layer references only the engine variable, so those absent
+signer keys cannot block node-only reconciliation. Substitution still does not
+validate an ARN or security-group value; the later signer admission stage
+compares every applied value to its in-memory Terraform output.
 
 Do not use `get-secret-value` in a transcript or CI job. A restricted bootstrap
 procedure must write a 32-byte Engine API JWT as JSON under `jwt.hex` without
@@ -259,10 +255,6 @@ kubectl wait --for=condition=Established \
 
 kubectl -n flux-system create configmap aws-secret-store-role-arns \
   --from-literal=EXTERNAL_SECRETS_ENGINE_READER_ROLE_ARN="$ENGINE_READER_ROLE_ARN" \
-  --from-literal=EXTERNAL_SECRETS_DATABASE_READER_ROLE_ARN="$DATABASE_READER_ROLE_ARN" \
-  --from-literal=EXTERNAL_SECRETS_SIGNING_READER_ROLE_ARN="$SIGNING_READER_ROLE_ARN" \
-  --from-literal=WEB3SIGNER_POD_SECURITY_GROUP_ID="$WEB3SIGNER_POD_SECURITY_GROUP_ID" \
-  --from-literal=WEB3SIGNER_MIGRATION_POD_SECURITY_GROUP_ID="$WEB3SIGNER_MIGRATION_POD_SECURITY_GROUP_ID" \
   --dry-run=client -o yaml | kubectl apply -f -
 kubectl -n flux-system annotate configmap aws-secret-store-role-arns \
   kustomize.toolkit.fluxcd.io/prune=disabled --overwrite
@@ -271,12 +263,7 @@ kubectl -n flux-system get configmap aws-secret-store-role-arns \
   -o jsonpath='{.metadata.annotations.kustomize\.toolkit\.fluxcd\.io/prune}{"\n"}'
 kubectl -n flux-system get configmap aws-secret-store-role-arns \
   -o json | jq -e '
-    .data |
-    has("EXTERNAL_SECRETS_ENGINE_READER_ROLE_ARN") and
-    has("EXTERNAL_SECRETS_DATABASE_READER_ROLE_ARN") and
-    has("EXTERNAL_SECRETS_SIGNING_READER_ROLE_ARN") and
-    has("WEB3SIGNER_POD_SECURITY_GROUP_ID") and
-    has("WEB3SIGNER_MIGRATION_POD_SECURITY_GROUP_ID")
+    (.data | keys) == ["EXTERNAL_SECRETS_ENGINE_READER_ROLE_ARN"]
   ' >/dev/null
 
 flux create secret git flux-system \
@@ -324,38 +311,25 @@ flux get sources git -A
 flux get kustomizations -A
 flux get helmreleases -A
 kubectl get storageclass ebs-gp3-encrypted
-kubectl get clustersecretstore aws-engine-secrets aws-database-secrets
-kubectl get securitygrouppolicy -n signing web3signer
-kubectl get securitygrouppolicy -n database web3signer-schema
+kubectl get clustersecretstore aws-engine-secrets
 kubectl get pods -n external-secrets
 kubectl get pods -n observability
 kubectl get pods,statefulsets,persistentvolumeclaims -n ethereum
 ```
 
-Rehydrate the Terraform output variables from Step 3 if this is a new shell,
-then compare the **applied** adapter values without printing them. This is the
-runtime guard against Flux's non-strict missing-key substitution behavior:
+Rehydrate the Terraform output variable from Step 3 if this is a new shell,
+then compare the **applied** common adapter without printing it:
 
 ```bash
 test "$(kubectl get clustersecretstore aws-engine-secrets -o jsonpath='{.spec.provider.aws.role}')" = \
   "$ENGINE_READER_ROLE_ARN"
-test "$(kubectl get clustersecretstore aws-database-secrets -o jsonpath='{.spec.provider.aws.role}')" = \
-  "$DATABASE_READER_ROLE_ARN"
-test "$(kubectl -n flux-system get configmap aws-secret-store-role-arns \
-  -o jsonpath='{.data.EXTERNAL_SECRETS_SIGNING_READER_ROLE_ARN}')" = \
-  "$SIGNING_READER_ROLE_ARN"
-test "$(kubectl -n signing get securitygrouppolicy web3signer \
-  -o jsonpath='{.spec.securityGroups.groupIds[0]}')" = \
-  "$WEB3SIGNER_POD_SECURITY_GROUP_ID"
-test "$(kubectl -n database get securitygrouppolicy web3signer-schema \
-  -o jsonpath='{.spec.securityGroups.groupIds[0]}')" = \
-  "$WEB3SIGNER_MIGRATION_POD_SECURITY_GROUP_ID"
 ```
 
 Expected after the first reconciliation:
 
 - `infrastructure-controllers` and `infrastructure-configs` are Ready;
-- `signer-prerequisites` and `apps` report suspended;
+- `node-apps`, `signer-infrastructure-configs`, `signer-prerequisites`, and
+  `apps` report suspended;
 - the encrypted gp3 class exists and is not the default;
 - Prometheus and Grafana run, while the explicitly local Loki/Alloy and
   CloudNativePG dashboard surfaces remain absent pending an AWS adapter;
@@ -403,7 +377,7 @@ kubectl delete namespace network-policy-probe --wait=true
 ```
 
 Both results are required: allowed must return the exact marker and denied must
-fail. Before either signer suspension changes, open and merge a reviewed,
+fail. Before any signer suspension changes, open and merge a reviewed,
 sanitized evidence note under `docs/evidence/` that records the UTC time, tested
 `main` commit, VPC CNI add-on version and four non-secret settings, three
 Deployment rollout results, allowed marker, nonzero denied status, and namespace
@@ -417,11 +391,74 @@ a workaround.
 
 ## 6. Admit the signer layers through separate reviewed commits
 
-Do not remove both suspensions in one change.
+Do not remove both suspensions in one change; there are now three signer
+suspensions, and each removal is its own reviewed commit.
 
-First, after the RDS/Secrets Manager/TLS/network/backup inputs above are proven,
-open a PR changing only `clusters/dev/signer-prerequisites.yaml` to
-`suspend: false`. After merge, verify:
+After the RDS/Secrets Manager/TLS/network/backup inputs above are proven,
+extend the bootstrap ConfigMap with the signer-only non-secret outputs. Do not
+print them or substitute the base Pod Identity role:
+
+```bash
+AWS_ACCOUNT_ID="$(aws sts get-caller-identity --query Account --output text)"
+READER_ROLES_JSON="$(terraform -chdir="$TF_ROOT" output -json external_secrets_reader_role_arns)"
+ENGINE_READER_ROLE_ARN="$(jq -er '.engine' <<<"$READER_ROLES_JSON")"
+DATABASE_READER_ROLE_ARN="$(jq -er '.database' <<<"$READER_ROLES_JSON")"
+SIGNING_READER_ROLE_ARN="$(jq -er '.signing' <<<"$READER_ROLES_JSON")"
+WEB3SIGNER_POD_SECURITY_GROUP_ID="$(terraform -chdir="$TF_ROOT" output -raw web3signer_pod_security_group_id)"
+WEB3SIGNER_MIGRATION_POD_SECURITY_GROUP_ID="$(terraform -chdir="$TF_ROOT" output -raw web3signer_migration_pod_security_group_id)"
+
+for role_arn in "$ENGINE_READER_ROLE_ARN" "$DATABASE_READER_ROLE_ARN" "$SIGNING_READER_ROLE_ARN"; do
+  case "$role_arn" in
+    "arn:aws:iam::${AWS_ACCOUNT_ID}:role/${CLUSTER_NAME}-eso-engine-reader"|"arn:aws:iam::${AWS_ACCOUNT_ID}:role/${CLUSTER_NAME}-eso-database-reader"|"arn:aws:iam::${AWS_ACCOUNT_ID}:role/${CLUSTER_NAME}-eso-signing-reader") ;;
+    *) echo "reader role ARN is outside the selected AWS account" >&2; exit 1 ;;
+  esac
+done
+
+for group_id in "$WEB3SIGNER_POD_SECURITY_GROUP_ID" "$WEB3SIGNER_MIGRATION_POD_SECURITY_GROUP_ID"; do
+  case "$group_id" in
+    sg-*) ;;
+    *) echo "Web3Signer Pod security-group output is not an EC2 security-group ID" >&2; exit 1 ;;
+  esac
+done
+
+kubectl -n flux-system create configmap aws-secret-store-role-arns \
+  --from-literal=EXTERNAL_SECRETS_ENGINE_READER_ROLE_ARN="$ENGINE_READER_ROLE_ARN" \
+  --from-literal=EXTERNAL_SECRETS_DATABASE_READER_ROLE_ARN="$DATABASE_READER_ROLE_ARN" \
+  --from-literal=EXTERNAL_SECRETS_SIGNING_READER_ROLE_ARN="$SIGNING_READER_ROLE_ARN" \
+  --from-literal=WEB3SIGNER_POD_SECURITY_GROUP_ID="$WEB3SIGNER_POD_SECURITY_GROUP_ID" \
+  --from-literal=WEB3SIGNER_MIGRATION_POD_SECURITY_GROUP_ID="$WEB3SIGNER_MIGRATION_POD_SECURITY_GROUP_ID" \
+  --dry-run=client -o yaml | kubectl apply -f -
+kubectl -n flux-system annotate configmap aws-secret-store-role-arns \
+  kustomize.toolkit.fluxcd.io/prune=disabled --overwrite
+```
+
+First open a PR changing only
+`clusters/dev/signer-infrastructure-configs.yaml` to `suspend: false`. With
+`StrictPostBuildSubstitutions=true`, any missing signer-only key fails this
+layer before a partial adapter is applied. After merge, verify every applied
+reference matches the Terraform output held in memory:
+
+```bash
+flux reconcile kustomization signer-infrastructure-configs --with-source
+kubectl get clustersecretstore aws-database-secrets aws-signing-secrets
+kubectl get securitygrouppolicy -n signing web3signer
+kubectl get securitygrouppolicy -n database web3signer-schema
+
+test "$(kubectl get clustersecretstore aws-database-secrets -o jsonpath='{.spec.provider.aws.role}')" = \
+  "$DATABASE_READER_ROLE_ARN"
+test "$(kubectl get clustersecretstore aws-signing-secrets -o jsonpath='{.spec.provider.aws.role}')" = \
+  "$SIGNING_READER_ROLE_ARN"
+test "$(kubectl -n signing get securitygrouppolicy web3signer \
+  -o jsonpath='{.spec.securityGroups.groupIds[0]}')" = \
+  "$WEB3SIGNER_POD_SECURITY_GROUP_ID"
+test "$(kubectl -n database get securitygrouppolicy web3signer-schema \
+  -o jsonpath='{.spec.securityGroups.groupIds[0]}')" = \
+  "$WEB3SIGNER_MIGRATION_POD_SECURITY_GROUP_ID"
+```
+
+Only then open a second PR changing
+`clusters/dev/signer-prerequisites.yaml` to `suspend: false`. After merge,
+verify:
 
 ```bash
 flux reconcile kustomization signer-prerequisites --with-source
@@ -457,7 +494,7 @@ If the Job ran but this assertion fails, leave `apps` suspended. A successful
 database connection is not a substitute for proving which network identity the
 Pod received.
 
-Only then open a second PR changing `clusters/dev/apps.yaml` to
+Only then open a third PR changing `clusters/dev/apps.yaml` to
 `suspend: false`. The committed assignment is still stopped and non-signing, so
 this admits Web3Signer with an empty key directory plus dashboards and retained
 PVC declarations—not validator duties. Verify zero loaded keys before any node
@@ -492,8 +529,8 @@ Flux bootstrap alone does not authorize a sync or a validator:
 - the Engine JWT JSON property exists and projects through
   `aws-engine-secrets`;
 - one zonal Ethereum node group is explicitly resumed in the intended PVC zone;
-- the Hoodi network adapter and checkpoint/genesis inputs are pinned and
-  rendered for the selected clients;
+- the generation-addressed Ephemery adapter and artifact/checkpoint inputs are
+  pinned and rendered for the selected clients;
 - inbound/outbound P2P behavior and its AWS security path are reviewed;
 - the non-signing lifecycle request is merged and Flux reports the pair Ready;
 - EL and CL report the correct network, healthy peer counts, decreasing sync
@@ -501,12 +538,18 @@ Flux bootstrap alone does not authorize a sync or a validator:
 - validator duties remain disabled until the separate key, slashing-history
   restore, doppelganger, uniqueness, clock, and activation gates pass.
 
+Use [`eks-ephemery-sync.md`](eks-ephemery-sync.md) for the exact node-only
+admission, P2P, identity, sustained-sync, stop, and same-AZ resume gates.
+
 ## 8. Pause and rollback
 
-To pause application reconciliation, merge `suspend: true` for `apps`; this does
-not itself stop already-created workloads. First merge the assignment to
-`stopped`, verify client Pods are absent, then suspend and scale the correct
-zonal Ethereum node group to zero through the guarded capacity runbook.
+To pause node reconciliation, first merge the assignment to `stopped`, verify
+client Pods and the P2P LoadBalancer are absent, then merge `suspend: true` for
+`node-apps` and scale the correct zonal Ethereum node group to zero through the
+guarded capacity runbook. Suspension alone does not stop already-created
+workloads. To pause the signer branch, stop any dependent duties first and then
+suspend `apps`; keep the prerequisite and infrastructure layers until their
+retained data/network interfaces have been inspected.
 
 If the signer prerequisite fails, leave `apps` suspended, inspect External
 Secrets/Flyway events and logs, correct the declared adapter, and reconcile

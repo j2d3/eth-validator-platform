@@ -37,15 +37,30 @@ spec:
         platform.galaxy-lab/network-identity: {{ .Values.networkProfile.identityFingerprint | quote }}
     spec:
       automountServiceAccountToken: false
-      terminationGracePeriodSeconds: 300
+      terminationGracePeriodSeconds: {{ .Values.availability.nodeTerminationGracePeriodSeconds }}
       securityContext:
+        runAsNonRoot: true
+        runAsUser: 1000
+        runAsGroup: 1000
         seccompProfile:
           type: RuntimeDefault
         fsGroup: 1000
+        fsGroupChangePolicy: OnRootMismatch
       nodeSelector:
         {{- toYaml .Values.nodeSelector | nindent 8 }}
       tolerations:
         {{- toYaml .Values.tolerations | nindent 8 }}
+      {{- if .Values.scheduling.preferSpot }}
+      affinity:
+        nodeAffinity:
+          preferredDuringSchedulingIgnoredDuringExecution:
+            - weight: 100
+              preference:
+                matchExpressions:
+                  - key: eks.amazonaws.com/capacityType
+                    operator: In
+                    values: [SPOT]
+      {{- end }}
       {{- if $artifactMode }}
       initContainers:
         - name: fetch-network-artifacts
@@ -145,6 +160,7 @@ spec:
           volumeMounts:
             - {name: execution-data, mountPath: /data}
             - {name: network-artifacts, mountPath: /network, readOnly: true}
+            - {name: execution-runtime, mountPath: /tmp}
       {{- end }}
       containers:
         - name: execution
@@ -198,14 +214,25 @@ spec:
             initialDelaySeconds: 30
             periodSeconds: 15
             failureThreshold: 20
+          startupProbe:
+            tcpSocket: {port: el-rpc}
+            periodSeconds: 10
+            failureThreshold: 90
+          livenessProbe:
+            tcpSocket: {port: el-rpc}
+            periodSeconds: 30
+            failureThreshold: 5
           resources:
             {{- toYaml .Values.resources.execution | nindent 12 }}
           securityContext:
+            runAsNonRoot: true
             allowPrivilegeEscalation: false
+            readOnlyRootFilesystem: true
             capabilities: {drop: [ALL]}
           volumeMounts:
             - {name: execution-data, mountPath: /data}
             - {name: engine-jwt, mountPath: /jwt, readOnly: true}
+            - {name: execution-runtime, mountPath: /tmp}
             {{- if $artifactMode }}
             - {name: network-artifacts, mountPath: /network, readOnly: true}
             {{- end }}
@@ -241,14 +268,25 @@ spec:
             initialDelaySeconds: 30
             periodSeconds: 15
             failureThreshold: 20
+          startupProbe:
+            tcpSocket: {port: cl-api}
+            periodSeconds: 10
+            failureThreshold: 90
+          livenessProbe:
+            tcpSocket: {port: cl-api}
+            periodSeconds: 30
+            failureThreshold: 5
           resources:
             {{- toYaml .Values.resources.consensus | nindent 12 }}
           securityContext:
+            runAsNonRoot: true
             allowPrivilegeEscalation: false
+            readOnlyRootFilesystem: true
             capabilities: {drop: [ALL]}
           volumeMounts:
             - {name: consensus-data, mountPath: /data}
             - {name: engine-jwt, mountPath: /jwt, readOnly: true}
+            - {name: consensus-runtime, mountPath: /tmp}
             {{- if $artifactMode }}
             - {name: network-artifacts, mountPath: /network, readOnly: true}
             {{- end }}
@@ -262,6 +300,12 @@ spec:
         - name: engine-jwt
           secret:
             secretName: {{ include "ethereum-node.fullname" . }}-engine-jwt
+        - name: execution-runtime
+          emptyDir:
+            sizeLimit: 256Mi
+        - name: consensus-runtime
+          emptyDir:
+            sizeLimit: 256Mi
         {{- if $artifactMode }}
         - name: network-artifacts
           emptyDir:

@@ -1,24 +1,25 @@
 apiVersion: kustomize.toolkit.fluxcd.io/v1
 kind: Kustomization
 metadata:
-  name: signer-prerequisites
+  name: node-apps
   namespace: flux-system
   labels:
     platform.galaxy-lab/environment: dev
 spec:
   dependsOn:
-    - name: signer-infrastructure-configs
+    - name: infrastructure-configs
   interval: 10m
   retryInterval: 1m
   timeout: 15m
   sourceRef:
     kind: GitRepository
     name: flux-system
-  path: ./platform/apps/prerequisites/dev
+  path: ./platform/apps/nodes/dev
   prune: true
   wait: true
-  # Fail closed until the separately reviewed RDS and credential adapter has
-  # supplied every runtime gate documented in the EKS Flux runbook.
+  # A reviewed change removes this suspension only after the Engine JWT,
+  # selected Ephemery generation, P2P cost/exposure, and zonal capacity gates
+  # in the sync runbook are satisfied. The assignment itself remains stopped.
   suspend: true
   commonMetadata:
     labels:

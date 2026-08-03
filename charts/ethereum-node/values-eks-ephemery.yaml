@@ -1,0 +1,59 @@
+# Ephemery node-only profile for the single EKS development environment.
+#
+# These claims are a bounded first-sync hypothesis for a chain that resets
+# roughly every four weeks. They are intentionally smaller than Hoodi's
+# permanent-network claims and can grow online; they cannot shrink. Runtime
+# usage and growth evidence must revise them before they become guidance.
+storageClassName: ebs-gp3-encrypted
+storage:
+  execution: 50Gi
+  consensus: 20Gi
+  validator: 5Gi
+
+# One public Network Load Balancer carries only Ethereum P2P traffic for this
+# one-pair lab. Kubernetes allocates valid NodePorts; fixed client port numbers
+# are retained only at the Service and container edges. JSON-RPC, Engine API,
+# beacon API, and metrics remain ClusterIP/NetworkPolicy bounded.
+p2p:
+  service:
+    enabled: true
+    type: LoadBalancer
+    annotations:
+      service.beta.kubernetes.io/aws-load-balancer-type: nlb
+      service.beta.kubernetes.io/aws-load-balancer-scheme: internet-facing
+    externalTrafficPolicy: Local
+    loadBalancerSourceRanges:
+      - 0.0.0.0/0
+
+# Prefer the already-bounded zonal Spot groups while retaining an on-demand
+# recovery path. The hard workload selector and taint/toleration still prevent
+# the pair from landing on system nodes.
+scheduling:
+  preferSpot: true
+
+# This slice has one non-signing replica, so a minAvailable=1 PDB would only
+# obstruct voluntary Spot draining without providing redundancy. AWS recommends
+# no more than 30 seconds of termination grace for EKS Spot workloads. Recovery
+# remains unqualified until the runbook exercise.
+availability:
+  nodeTerminationGracePeriodSeconds: 30
+  nodeDisruptionBudgetEnabled: false
+
+# Requests fit one 8-vCPU/64-GiB Ethereum worker with room for the node and CSI
+# daemons. CPU limits are bounded to the worker's nominal capacity; memory
+# limits leave substantial interruption/recovery headroom.
+resources:
+  execution:
+    requests:
+      cpu: "2"
+      memory: 8Gi
+    limits:
+      cpu: "5"
+      memory: 24Gi
+  consensus:
+    requests:
+      cpu: "2"
+      memory: 6Gi
+    limits:
+      cpu: "3"
+      memory: 16Gi
