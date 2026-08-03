@@ -35,14 +35,175 @@ releases, dashboards, validator assignments, or node-pair lifecycle state.
 | EKS | Restricted public plus private API; control-plane logs; access-entry input | Kubernetes 1.35 control plane created; the dedicated kubeconfig reached the restricted endpoint; post-apply Terraform plan reported no drift | Upgrade, API-throttling, access-role, and private-connectivity exercises |
 | Capacity | Two-node on-demand system group; three tainted, zonal, zero-minimum Ethereum groups; explicit ON_DEMAND/SPOT selector; at most one initially selected Ethereum node; Terraform hard bounds plus EKS-API desired-size ownership | The first baseline had two Ready `m7i.large` system nodes and one Ready `r7i.2xlarge` on-demand Ethereum node. The zonal/Spot replacement was then applied — `21 added, 2 changed, 7 destroyed` — leaving all four managed groups `ACTIVE` with no health issues: a two-node on-demand system group of Ready `m7i.large` nodes in `us-west-2b`/`us-west-2c`, and one Spot Ethereum group per AZ. The active `us-west-2a` group obtained a Ready `r8i.2xlarge` Spot node — the pool's first-preference type, so fallback is still unexercised. An EKS `UpdateNodegroupConfig` call then paused that group to zero; all three Ethereum groups now report `0/1`. Both the post-apply and post-pause plans reported no changes | Guarded EKS status/pause/resume command; Spot/FIS interruption test; same-AZ resume with a bound chain PVC; later Karpenter decision |
 | Add-ons and identity | VPC CNI, CoreDNS, kube-proxy, EKS Pod Identity agent, EBS CSI with a dedicated role | All five managed add-ons and their pods were Running; EBS CSI controller/node pods were fully Ready with zero restarts. The application `gp3` StorageClass was accepted by a server-side dry-run against this cluster, but it was not persisted, and no application PVC or EBS volume exists | AWS External Secrets `SecretStore`, Flux EKS overlay, and registration plus runtime qualification of the application EBS StorageClass — the class manifest itself is declared and unreconciled in [`platform/infrastructure/configs/dev`](../../../platform/infrastructure/configs/dev/README.md) |
-| Secrets | Empty Secrets Manager container for the EL/CL Engine JWT; read-only External Secrets role scoped to it | Secret container, role, policy, and Pod Identity association exist; no secret value was created | Restricted operator value bootstrap, signing-key containers/policies, rotation evidence |
-| Slashing database | Not declared | None | RDS PostgreSQL, subnet/security groups, credentials adapter, backups/PITR, restore and failover qualification |
+| Secrets | Empty Secrets Manager containers for the EL/CL Engine JWT, Web3Signer database application credential, and encrypted signing-key bundle; External Secrets Pod Identity may assume only secret-scoped reader roles | The Engine JWT container and original Pod Identity association exist; no secret value was created. The signing containers and role split in this branch are declared source only until a reviewed apply | Restricted operator bootstrap, AWS `SecretStore` adapters, signing-key import/rotation evidence |
+| Slashing database | Private Single-AZ RDS PostgreSQL 18; isolated database subnets; separate signer-Pod and schema-migration-Pod security-group paths; encrypted 20-GiB gp3 with a 100-GiB ceiling; seven-day PITR; deletion protection and final snapshot by default | None — no RDS, database subnets, workload Pod security groups, application database user, or application credential exists yet | Reviewed plan/apply, credential bootstrap, EKS adapters, migrations, backup/restore, outage, reconnection, and later Multi-AZ qualification |
 | Encryption | AWS-managed encryption is requested for node root volumes and Terraform state | Remote state controls were applied; every observed node root was encrypted gp3 at baseline 3,000 IOPS / 125 MiB/s, and after the replacement they measured 40 GiB per system node and 30 GiB per Ethereum node | Explicit KMS/AWS-managed-key decision for RDS, EBS application data, and Secrets Manager |
 | Public Ethereum networking | Not declared | None | P2P Service/NLB design, source ranges, discovery/TCP/UDP qualification |
 
 Local CloudNativePG, local-path volumes, and the Kubernetes External Secrets
 provider are contract-compatible development adapters; they are not evidence
 for RDS, EBS, IAM, KMS, or EKS behavior.
+
+## Web3Signer AWS data and secret boundary
+
+This root now declares the AWS half of the shared signer contract without
+claiming that the contract is live. The database is an RDS PostgreSQL instance
+outside EKS. It is not publicly accessible and its database subnets have their
+own route table with neither an internet-gateway nor NAT route. The subnet group
+spans all three selected Availability Zones so the topology can evolve later,
+but the first lab instance is intentionally Single-AZ and defaults to the first
+AZ.
+
+The initial cost profile is deliberately small: `db.t4g.micro`, 20 GiB of
+encrypted `gp3`, storage autoscaling capped at 100 GiB, no Performance Insights,
+no enhanced monitoring, and seven-day PostgreSQL log retention. A read-only AWS
+capability query on 2026-08-02 confirmed that PostgreSQL 18.4 was available in
+`us-west-2` and that `db.t4g.micro` supported `gp3` from 20 GiB. Terraform pins
+the PostgreSQL **major** (`18`), enables compatible automatic minor upgrades,
+and forbids automatic major upgrades. Availability and pricing must be checked
+again before each apply; the observation is evidence, not a future guarantee.
+
+### Network admission fails closed
+
+RDS port 5432 accepts exactly two distinct workload identities: the long-lived
+`web3signer_pod` group and the short-lived `web3signer_migration_pod` group. The
+EKS node security group is not admitted to the database: doing so would make
+every Pod colocated on a system node a potential network client. The migration
+group has only PostgreSQL and cluster-DNS egress; it does not inherit the
+signer's API/metrics ingress surface.
+
+The VPC CNI is declared with Security Groups for Pods and native NetworkPolicy
+enforcement enabled in `standard` mode, and the EKS cluster role receives only
+the AWS-managed resource-controller policy required for branch ENIs. Standard
+mode is the AWS-recommended compatibility mode when Pod security groups and
+NetworkPolicy are combined; signing admission remains a later, explicit gate.
+Before apply, resolve the installed VPC CNI version and verify every configured
+key against `aws eks describe-addon-configuration`. Enabling Pod ENIs or changing
+enforcing mode affects newly launched Pods; after the stopped-workload gate,
+recycle affected Pods and nodes and observe trunk/branch ENI attachment before
+crediting either security-group path as runtime evidence.
+
+Terraform outputs both workload security-group IDs; it does **not** attach
+either group. Later Flux-owned `SecurityGroupPolicy` resources must select the
+Web3Signer Pod in `signing` and the schema-migration Job in `database`
+independently. Until those adapters reconcile, neither principal can satisfy
+its RDS ingress rule. The AWS overlay must also patch each base NetworkPolicy's
+local CloudNativePG selector to allow PostgreSQL within the VPC CIDR. Both
+layers are required: Kubernetes NetworkPolicy selects each workload, while RDS
+admits only its distinct branch-ENI identity.
+
+The trusted Flux bootstrap maps the scalar outputs
+`web3signer_pod_security_group_id` and
+`web3signer_migration_pod_security_group_id` to ConfigMap keys
+`WEB3SIGNER_POD_SECURITY_GROUP_ID` and
+`WEB3SIGNER_MIGRATION_POD_SECURITY_GROUP_ID` respectively. Those identifiers
+are network references, not credentials.
+
+### Secret and IAM flow
+
+Terraform creates secret **containers**, never secret versions:
+
+- `.../ethereum/engine-jwt` for the pair-private Engine API JWT;
+- `.../signing/web3signer-database` for the restricted application connection
+  JSON (`host`, `port`, `database`, `username`, `password`); the EKS adapter
+  projects the canonical `database` property to target `dbname` only where a
+  Flyway/Web3Signer environment requires that alias; and
+- `.../signing/validator-keystore` for the first encrypted testnet keystore
+  bundle and its password.
+
+RDS generates its master password and stores it in an RDS-managed Secrets
+Manager secret. Terraform state receives the secret ARN, not the password. A
+restricted bootstrap still has to use that master identity to create a
+least-privilege `web3signer` application role and write the application
+connection JSON directly to its empty container. Validator onboarding likewise
+writes encrypted keystore material directly to its container. Neither procedure
+is implemented by this declaration and neither may pass a secret through a
+Terraform variable, plan, output value, shell argument, GitHub log, or Git.
+
+External Secrets has one Pod Identity base role with only `sts:AssumeRole`.
+Environment-specific AWS `SecretStore` resources later select one of three target
+roles:
+
+- the engine reader can read only the Engine JWT; and
+- the database reader can read only the Web3Signer application credential; and
+- the signing reader can read only the encrypted validator-keystore bundle.
+
+The `external_secrets_reader_role_arns` output exposes map fields `engine`,
+`database`, and `signing`. The trusted Flux bootstrap maps them to
+`EXTERNAL_SECRETS_ENGINE_READER_ROLE_ARN`,
+`EXTERNAL_SECRETS_DATABASE_READER_ROLE_ARN`, and
+`EXTERNAL_SECRETS_SIGNING_READER_ROLE_ARN`; a database store must never use the
+signing-key reader as a convenience alias.
+
+Web3Signer receives no Pod Identity association and no AWS API permission. It
+sees only Kubernetes Secrets materialized by External Secrets. The database
+credential may be projected into `database` and `signing` for the migration and
+signer consumers; the validator-keystore reader remains a separate signing-key
+boundary. The RDS master secret is granted to none of the reader roles.
+
+### Runtime gates still outstanding
+
+Do not describe the EKS signer path as ready until a reviewed plan/apply and all
+of these gates have evidence:
+
+1. the private RDS endpoint resolves only inside the VPC and rejects the EKS
+   node security group;
+2. separate `SecurityGroupPolicy` resources attach the signer group only to
+   Web3Signer and the migration group only to the Flyway Job; branch ENIs are
+   observed after the VPC CNI/node recycle, and DNS, probes, signer API,
+   metrics, and PostgreSQL work under the combined Pod-SG and NetworkPolicy
+   controls;
+3. restricted bootstrap creates a non-master application role and writes the
+   expected `host`, `port`, `database`, `username`, and `password` properties
+   without leaking values;
+4. AWS `SecretStore`/`ExternalSecret` resources assume the distinct engine,
+   database, and signing reader roles and project only each role's intended
+   material;
+5. the Flyway Job carries the migration Pod group and applies the exact
+   migrations shipped with the pinned Web3Signer image over
+   certificate-verified TLS, then Web3Signer becomes ready with zero keys;
+6. backup/PITR restore proves row continuity and a conflicting-signature test is
+   safely rejected before any funded identity is admitted; and
+7. RDS outage and reconnect exercises leave signing failed closed.
+
+### Pause, teardown, and cost semantics
+
+Scaling Ethereum workers to zero does not stop RDS, the EKS control plane,
+system nodes, NAT, Secrets Manager, CloudWatch logs, database storage, or backup
+storage. RDS may be stopped manually for a short lab pause, but AWS restarts a
+stopped DB instance after at most seven days. A stop therefore reduces instance
+hours temporarily; it is not a durable zero-cost state, and Terraform does not
+own the transient stopped/running state.
+
+Deletion protection is on by default. A destroy requires a separate reviewed
+change disabling it, and the default path requires a final snapshot while
+retaining automated backups for their retention window. The fixed final
+snapshot identifier must be checked for collision before a later destroy. An
+extended pause may eventually use snapshot → delete → restore, but that is not a
+safe cost control until the restore drill above is proven; a snapshot that has
+not passed Web3Signer continuity and rejection tests is not a signing authority.
+Secret recovery windows are seven days for the replaceable database-connection
+container and 30 days for the signing-key container.
+
+For a production-shaped evolution, enable Multi-AZ, independently size and load
+test the database, use customer-managed KMS keys with reviewed key policies,
+add database/event/storage/connection alarms, verify certificate hostname and
+chain (`sslmode=verify-full` plus the RDS CA bundle), exercise credential
+rotation, and partition signer/database cells by explicit failure-domain and
+economic-exposure policy. None of those claims is implied by this Single-AZ
+testnet declaration.
+
+Primary implementation contracts:
+
+- [Security Groups for Pods and NetworkPolicy][eks-sgpp]
+- [Temporary RDS stop/start behavior][rds-stop]
+- [RDS automated backups and point-in-time recovery][rds-backups]
+- [External Secrets AWS authentication and role assumption][eso-aws]
+
+[eks-sgpp]: https://docs.aws.amazon.com/eks/latest/best-practices/sgpp.html
+[rds-stop]: https://docs.aws.amazon.com/AmazonRDS/latest/UserGuide/USER_StopInstance.html
+[rds-backups]: https://docs.aws.amazon.com/AmazonRDS/latest/UserGuide/USER_WorkingWithAutomatedBackups.html
+[eso-aws]: https://external-secrets.io/latest/provider/aws-access/
 
 ## Trusted local plan/apply
 

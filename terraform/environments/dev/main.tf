@@ -30,6 +30,14 @@ module "vpc" {
   private_subnets = [for index, _ in local.azs : cidrsubnet(var.vpc_cidr, 4, index)]
   public_subnets  = [for index, _ in local.azs : cidrsubnet(var.vpc_cidr, 8, index + 128)]
   intra_subnets   = [for index, _ in local.azs : cidrsubnet(var.vpc_cidr, 8, index + 192)]
+  database_subnets = [
+    for index, _ in local.azs : cidrsubnet(var.vpc_cidr, 8, index + 224)
+  ]
+
+  database_subnet_group_name             = "${local.name}-postgresql"
+  create_database_subnet_route_table     = true
+  create_database_internet_gateway_route = false
+  create_database_nat_gateway_route      = false
 
   enable_nat_gateway     = true
   single_nat_gateway     = var.single_nat_gateway
@@ -48,6 +56,10 @@ module "vpc" {
 
   private_subnet_tags = {
     "kubernetes.io/role/internal-elb" = 1
+  }
+
+  database_subnet_tags = {
+    "platform.galaxy-lab/tier" = "data"
   }
 
   tags = local.tags
@@ -93,6 +105,12 @@ module "eks" {
   enabled_log_types                      = ["api", "audit", "authenticator", "controllerManager", "scheduler"]
   cloudwatch_log_group_retention_in_days = 30
 
+  # Security groups for Pods keep RDS admission scoped to the signer Pod ENI
+  # instead of every workload sharing a system node's security group.
+  iam_role_additional_policies = {
+    security_groups_for_pods = "arn:aws:iam::aws:policy/AmazonEKSVPCResourceController"
+  }
+
   addons = {
     coredns = {}
     eks-pod-identity-agent = {
@@ -101,6 +119,14 @@ module "eks" {
     kube-proxy = {}
     vpc-cni = {
       before_compute = true
+      configuration_values = jsonencode({
+        enableNetworkPolicy = "true"
+        env = {
+          ENABLE_POD_ENI                    = "true"
+          NETWORK_POLICY_ENFORCING_MODE     = "standard"
+          POD_SECURITY_GROUP_ENFORCING_MODE = "standard"
+        }
+      })
     }
     aws-ebs-csi-driver = {
       pod_identity_association = [{
@@ -209,14 +235,21 @@ resource "aws_iam_role" "external_secrets" {
 
 data "aws_iam_policy_document" "external_secrets" {
   statement {
-    sid       = "ReadEngineJwt"
-    effect    = "Allow"
-    actions   = ["secretsmanager:DescribeSecret", "secretsmanager:GetSecretValue"]
-    resources = [aws_secretsmanager_secret.engine_jwt.arn]
+    sid     = "AssumeSecretReaderRoles"
+    effect  = "Allow"
+    actions = ["sts:AssumeRole"]
+    resources = [
+      aws_iam_role.external_secrets_engine_reader.arn,
+      aws_iam_role.external_secrets_database_reader.arn,
+      aws_iam_role.external_secrets_signing_reader.arn,
+    ]
   }
 }
 
 resource "aws_iam_role_policy" "external_secrets" {
+  # Keep the applied inline-policy name stable so the permission transition is
+  # an in-place update. Its contents, not this legacy AWS identifier, define
+  # the current assume-role-only contract.
   name   = "read-engine-jwt"
   role   = aws_iam_role.external_secrets.id
   policy = data.aws_iam_policy_document.external_secrets.json
