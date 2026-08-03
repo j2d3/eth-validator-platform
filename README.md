@@ -167,6 +167,35 @@ One known asymmetry: Claude Code operates under an isolated `5u6r054` collaborat
 
 The human owns both accounts, retains override on every action, and is accountable for what the agents do as them.
 
+## Forking and adopting this project
+
+This repository is licensed under [Apache-2.0](LICENSE) and welcomes forks for study, adaptation, and reuse. It is not plug-and-play: some parts are tied to the reference deployment and a fork will need to replace them.
+
+**Governance and disclosure files you inherit:**
+
+- [`LICENSE`](LICENSE) — Apache-2.0, with an explicit patent grant appropriate for infrastructure patterns.
+- [`CODE_OF_CONDUCT.md`](CODE_OF_CONDUCT.md) — Contributor Covenant 2.1.
+- [`SECURITY.md`](SECURITY.md) — points at GitHub's private vulnerability-reporting flow so no personal email address is required. Enable *Private vulnerability reporting* under your fork's **Settings → Security** before publishing.
+- [`CONTRIBUTING.md`](CONTRIBUTING.md) — branch, PR, and review process; references the paired-reviewer merge wrapper.
+
+**Repository-identity substitutions:**
+
+- [`.github/CODEOWNERS`](.github/CODEOWNERS) references the maintainer accounts (`@j2d3` and `@5u6r054`). Replace with your own handle(s).
+- [`hack/merge-pr.sh`](hack/merge-pr.sh) hardcodes the two recognized accounts and their `users.noreply.github.com` emails; a single-maintainer fork can either remove the paired-reviewer check and rely on branch protection alone, or invite a real second collaborator and keep the model intact. The safety story is materially weaker with a single reviewer — that trade-off should be explicit.
+- Several docs contain absolute `github.com/j2d3/eth-validator-platform` links. Repository-relative links keep working automatically; the absolute ones need a search-and-replace.
+- The [operator portal's canonical origin](control-plane/portal/README.md#hosting-and-transport-boundary) is parameterized via `PORTAL_CANONICAL_ORIGIN`. Set it (build-time env var or Cloudflare Worker binding) to point at your own domain; the reference fallback (`g.j2d3.com`) applies only when unset.
+
+**AWS configuration:**
+
+- [`terraform/environments/dev/terraform.tfvars.example`](terraform/environments/dev/terraform.tfvars.example) shows the shape of the required variables. Copy to `terraform.tfvars` (Git-ignored), fill in your own AWS region, account context, and cost cap. Never commit real values.
+- No repository secrets are used by CI in this branch. If you later add Terraform apply automation or deployment workflows, they will need your own OIDC / secret bindings.
+
+**Known gaps for forkers** (tracked as follow-up work in this repo):
+
+- Dedicated bot GitHub identity for the second AI agent — the reference deployment currently doubles the maintainer's `j2d3` account as Codex's identity, which conflates the maintainer's audit trail with the agent's. Fixing this in a fork requires a dedicated third GitHub account for the second agent.
+
+**Single-maintainer variant:** the two-agent cross-review model in [COLLABORATION.md](COLLABORATION.md) is the reference design, not a requirement. A solo maintainer can use the same repository shape by simplifying `hack/merge-pr.sh` to skip the paired-reviewer check. Doing so is a real reduction in the safety story — a single reviewer misses more — but the invariants, CI, and Flux discipline still apply.
+
 ## Roadmap
 
 Phases are defined in PRD §18; each has an explicit exit criterion.
