@@ -1,10 +1,26 @@
 aws_region = "us-west-2"
 
-# Use your workstation /32 for local runs. GitHub Actions adds its current /32.
+# Use your trusted operator workstation /32. GitHub Actions has no AWS authority.
 cluster_public_access_cidrs = ["203.0.113.10/32"]
 
 # One NAT is a conscious lab cost optimization and an AZ-level egress dependency.
 single_nat_gateway = true
+
+# The three zero-minimum Ethereum groups are scoped to one AZ each. These inputs
+# select capacity only when the groups are first created. The pinned EKS module
+# intentionally ignores later desired-size edits; bounded pause/resume uses the
+# EKS scaling API after the GitOps stop gate. Do not resume in another AZ after
+# an EBS PVC binds without an explicit volume migration.
+ethereum_initial_active_az_index = 0
+ethereum_initial_desired_size    = 1
+
+# Keep the copy-paste path on demand. Change this reviewed operator input to
+# SPOT only for the explicit testnet interruption experiment.
+ethereum_capacity_type = "ON_DEMAND"
+
+# Disposable node roots only; chain databases use separate EBS CSI PVCs.
+system_root_volume_size_gib   = 40
+ethereum_root_volume_size_gib = 30
 
 # Add an operator role if the cluster creator should not be the only administrator.
 access_entries = {
