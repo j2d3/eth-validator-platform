@@ -22,6 +22,20 @@ ethereum_capacity_type = "ON_DEMAND"
 system_root_volume_size_gib   = 40
 ethereum_root_volume_size_gib = 30
 
+# The shared slashing-protection database is deliberately small and Single-AZ
+# for the testnet lab. PostgreSQL 18.4 and db.t4g.micro + 20-GiB gp3 were
+# observed as orderable in us-west-2 on 2026-08-02; Terraform pins the major so
+# AWS can apply compatible minor patches. The defaults retain seven days of
+# PITR and require deletion protection plus a final snapshot.
+rds_postgres_major_version    = "18"
+rds_instance_class            = "db.t4g.micro"
+rds_allocated_storage_gib     = 20
+rds_max_allocated_storage_gib = 100
+rds_backup_retention_days     = 7
+rds_log_retention_days        = 7
+rds_deletion_protection       = true
+rds_skip_final_snapshot       = false
+
 # Add an operator role if the cluster creator should not be the only administrator.
 access_entries = {
   # operator = {

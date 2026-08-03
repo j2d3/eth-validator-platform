@@ -135,6 +135,95 @@ variable "ethereum_root_volume_size_gib" {
   }
 }
 
+variable "rds_postgres_major_version" {
+  description = "RDS PostgreSQL major version. Minor updates remain AWS-managed; major upgrades require an explicit reviewed change."
+  type        = string
+  default     = "18"
+
+  validation {
+    condition     = can(regex("^[0-9]+$", var.rds_postgres_major_version))
+    error_message = "rds_postgres_major_version must be a numeric PostgreSQL major version such as 18."
+  }
+}
+
+variable "rds_instance_class" {
+  description = "Cost-aware RDS instance class for the shared testnet slashing database."
+  type        = string
+  default     = "db.t4g.micro"
+
+  validation {
+    condition     = startswith(var.rds_instance_class, "db.")
+    error_message = "rds_instance_class must be an RDS DB instance class beginning with db."
+  }
+}
+
+variable "rds_availability_zone_index" {
+  description = "Index into the three configured AZs for the Single-AZ lab database. The subnet group still spans all three AZs for a later Multi-AZ exercise."
+  type        = number
+  default     = 0
+
+  validation {
+    condition     = contains([0, 1, 2], var.rds_availability_zone_index)
+    error_message = "rds_availability_zone_index must be one of 0, 1, or 2."
+  }
+}
+
+variable "rds_allocated_storage_gib" {
+  description = "Initial encrypted gp3 storage for the Web3Signer slashing database."
+  type        = number
+  default     = 20
+
+  validation {
+    condition     = var.rds_allocated_storage_gib >= 20 && floor(var.rds_allocated_storage_gib) == var.rds_allocated_storage_gib
+    error_message = "RDS gp3 PostgreSQL storage must be an integer of at least 20 GiB."
+  }
+}
+
+variable "rds_max_allocated_storage_gib" {
+  description = "Autoscaling ceiling for RDS storage; a hard lab cost bound, not a target allocation."
+  type        = number
+  default     = 100
+
+  validation {
+    condition     = var.rds_max_allocated_storage_gib >= 20 && var.rds_max_allocated_storage_gib <= 200 && floor(var.rds_max_allocated_storage_gib) == var.rds_max_allocated_storage_gib
+    error_message = "rds_max_allocated_storage_gib must be an integer from 20 through 200 GiB."
+  }
+}
+
+variable "rds_backup_retention_days" {
+  description = "Automated-backup retention and point-in-time recovery window for slashing history."
+  type        = number
+  default     = 7
+
+  validation {
+    condition     = var.rds_backup_retention_days >= 7 && var.rds_backup_retention_days <= 35 && floor(var.rds_backup_retention_days) == var.rds_backup_retention_days
+    error_message = "Retain at least seven and at most 35 days of RDS automated backups."
+  }
+}
+
+variable "rds_log_retention_days" {
+  description = "CloudWatch retention for PostgreSQL engine logs."
+  type        = number
+  default     = 7
+
+  validation {
+    condition     = contains([1, 3, 5, 7, 14, 30, 60, 90], var.rds_log_retention_days)
+    error_message = "rds_log_retention_days must be an accepted CloudWatch retention period up to 90 days."
+  }
+}
+
+variable "rds_deletion_protection" {
+  description = "Protect the slashing database from deletion. Disable only through a separately reviewed destroy plan after signing is stopped and recovery is proven."
+  type        = bool
+  default     = true
+}
+
+variable "rds_skip_final_snapshot" {
+  description = "Skip the final slashing-database snapshot. False by default; setting true is a destructive, explicitly reviewed exception."
+  type        = bool
+  default     = false
+}
+
 variable "access_entries" {
   description = "EKS access entries. Prefer mapped IAM roles over permanent IAM users."
   type = map(object({
