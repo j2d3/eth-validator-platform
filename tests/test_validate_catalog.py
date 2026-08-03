@@ -12,18 +12,23 @@ class CatalogValidationTests(unittest.TestCase):
         self.documents = validate_catalog.load_yaml_documents()
         self.validators = validate_catalog.load_validators()
 
-    def document(self, kind: str) -> tuple[Path, dict]:
+    def document(self, kind: str, name: str | None = None) -> tuple[Path, dict]:
         for path, document in self.documents:
-            if document["kind"] == kind:
+            if document["kind"] == kind and (
+                name is None or document["metadata"]["name"] == name
+            ):
                 return path, copy.deepcopy(document)
-        self.fail(f"missing test fixture kind {kind}")
+        suffix = f" named {name}" if name is not None else ""
+        self.fail(f"missing test fixture kind {kind}{suffix}")
 
     def test_repository_catalog_is_valid(self) -> None:
         self.assertEqual(validate_catalog.schema_errors(self.documents, self.validators), [])
         self.assertEqual(validate_catalog.relational_errors(self.documents), [])
 
     def test_signing_requires_every_schema_gate(self) -> None:
-        path, assignment = self.document("ValidatorAssignment")
+        path, assignment = self.document(
+            "ValidatorAssignment", "assignment-synthetic-01"
+        )
         assignment["spec"]["lifecycle"] = "active"
         assignment["spec"]["signingEnabled"] = True
 
@@ -34,7 +39,9 @@ class CatalogValidationTests(unittest.TestCase):
         self.assertTrue(any("doppelgangerProtectionConfirmed" in error for error in errors))
 
     def test_active_assignment_requires_a_concrete_node_pair(self) -> None:
-        path, assignment = self.document("ValidatorAssignment")
+        path, assignment = self.document(
+            "ValidatorAssignment", "assignment-synthetic-01"
+        )
         assignment["spec"]["lifecycle"] = "active"
 
         errors = validate_catalog.schema_errors([(path, assignment)], self.validators)
@@ -44,7 +51,7 @@ class CatalogValidationTests(unittest.TestCase):
     def test_synthetic_identity_cannot_enable_validator_duties(self) -> None:
         documents = copy.deepcopy(self.documents)
         for _, assignment in documents:
-            if assignment["kind"] == "ValidatorAssignment":
+            if assignment.get("metadata", {}).get("name") == "assignment-synthetic-01":
                 assignment["spec"]["lifecycle"] = "active"
                 assignment["spec"]["signingEnabled"] = True
                 assignment["spec"]["nodePairRef"] = "pair-synthetic-01"
@@ -59,9 +66,11 @@ class CatalogValidationTests(unittest.TestCase):
 
     def test_stopping_assignment_still_owns_exclusivity(self) -> None:
         documents = copy.deepcopy(self.documents)
-        assignment_path, assignment = self.document("ValidatorAssignment")
+        assignment_path, assignment = self.document(
+            "ValidatorAssignment", "assignment-synthetic-01"
+        )
         for _, document in documents:
-            if document["kind"] == "ValidatorAssignment":
+            if document.get("metadata", {}).get("name") == "assignment-synthetic-01":
                 document["spec"]["lifecycle"] = "stopping"
         second = copy.deepcopy(assignment)
         second["metadata"]["name"] = "assignment-synthetic-02"
@@ -74,9 +83,11 @@ class CatalogValidationTests(unittest.TestCase):
 
     def test_live_node_pair_reference_is_exclusive(self) -> None:
         documents = copy.deepcopy(self.documents)
-        assignment_path, assignment = self.document("ValidatorAssignment")
+        assignment_path, assignment = self.document(
+            "ValidatorAssignment", "assignment-synthetic-01"
+        )
         for _, document in documents:
-            if document["kind"] == "ValidatorAssignment":
+            if document.get("metadata", {}).get("name") == "assignment-synthetic-01":
                 document["spec"].update(
                     {"lifecycle": "active", "nodePairRef": "pair-shared-by-mistake"}
                 )
@@ -89,7 +100,9 @@ class CatalogValidationTests(unittest.TestCase):
                 "nodePairRef": "pair-shared-by-mistake",
             }
         )
-        identity_path, identity = self.document("ValidatorIdentity")
+        identity_path, identity = self.document(
+            "ValidatorIdentity", "validator-synthetic-01"
+        )
         identity["metadata"]["name"] = "validator-synthetic-02"
         documents.extend([(identity_path, identity), (assignment_path, second)])
 
@@ -116,7 +129,7 @@ class CatalogValidationTests(unittest.TestCase):
         for _, document in documents:
             if document["kind"] == "Customer":
                 document["spec"]["lifecycle"] = "suspended"
-            elif document["kind"] == "ValidatorIdentity":
+            elif document.get("metadata", {}).get("name") == "validator-synthetic-01":
                 document["spec"].update(
                     {
                         "lifecycle": "registered",
@@ -125,7 +138,7 @@ class CatalogValidationTests(unittest.TestCase):
                         "signingSecretRef": "local-secret://validator-keystore",
                     }
                 )
-            elif document["kind"] == "ValidatorAssignment":
+            elif document.get("metadata", {}).get("name") == "assignment-synthetic-01":
                 document["spec"].update(
                     {
                         "lifecycle": "active",

@@ -1,16 +1,15 @@
 apiVersion: platform.galaxy-lab/v1alpha1
 kind: ValidatorAssignment
 metadata:
-  name: assignment-synthetic-01
+  name: assignment-ephemery-162-synthetic
 spec:
-  validatorRef: validator-synthetic-01
-  networkProfileRef: hoodi
+  validatorRef: validator-ephemery-162-synthetic
+  networkProfileRef: ephemery-162
   lifecycle: stopped
   serviceProfileRef: dedicated-geth-lighthouse
+  nodePairRef: pair-ephemery-162-synthetic
   signerRef: shared-web3signer
   signingEnabled: false
   safety:
-    slashingProtectionConfirmed: false
     doppelgangerProtectionConfirmed: false
-  maintenance:
-    reason: Initial local platform-smoke profile
+    slashingProtectionConfirmed: false

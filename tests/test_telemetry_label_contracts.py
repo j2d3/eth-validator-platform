@@ -14,6 +14,7 @@ from __future__ import annotations
 
 import json
 import re
+import subprocess
 import unittest
 from pathlib import Path
 
@@ -31,6 +32,9 @@ TELEMETRY_LABELS = (
     "environment",
     "lifecycle_state",
     "network",
+    "network_profile",
+    "network_generation",
+    "network_identity",
     "customer_id",
     "validator_id",
     "assignment_id",
@@ -43,6 +47,8 @@ TELEMETRY_LABELS = (
 EXPECTED_ALLOWLIST = {
     "pods": {
         "platform.galaxy-lab/network",
+        "platform.galaxy-lab/network-profile",
+        "platform.galaxy-lab/network-generation",
         "platform.galaxy-lab/customer-id",
         "platform.galaxy-lab/validator-id",
         "platform.galaxy-lab/assignment-id",
@@ -52,6 +58,8 @@ EXPECTED_ALLOWLIST = {
     },
     "persistentvolumeclaims": {
         "platform.galaxy-lab/network",
+        "platform.galaxy-lab/network-profile",
+        "platform.galaxy-lab/network-generation",
         "platform.galaxy-lab/customer-id",
         "platform.galaxy-lab/validator-id",
         "platform.galaxy-lab/assignment-id",
@@ -133,6 +141,41 @@ class ScrapeRelabelContractTests(unittest.TestCase):
         values = yaml.safe_load((CHART / "values.yaml").read_text(encoding="utf-8"))
         self.assertEqual(values["telemetry"]["cluster"], "kind-eth-validator-local")
         self.assertEqual(values["telemetry"]["environment"], "local")
+
+    def test_rendered_generation_relabel_value_is_a_string(self) -> None:
+        result = subprocess.run(
+            [
+                "helm",
+                "template",
+                "telemetry-type",
+                str(CHART),
+                "--namespace",
+                "ethereum",
+                "--set",
+                "lifecycleState=active",
+                "--set-string",
+                "networkProfile.generation=162",
+            ],
+            check=True,
+            capture_output=True,
+            text=True,
+        )
+        pod_monitors = [
+            document
+            for document in yaml.safe_load_all(result.stdout)
+            if document and document.get("kind") == "PodMonitor"
+        ]
+        self.assertTrue(pod_monitors)
+        replacements = [
+            relabel["replacement"]
+            for monitor in pod_monitors
+            for endpoint in monitor["spec"]["podMetricsEndpoints"]
+            for relabel in endpoint["relabelings"]
+            if relabel.get("targetLabel") == "network_generation"
+        ]
+        self.assertTrue(replacements)
+        self.assertTrue(all(isinstance(value, str) for value in replacements))
+        self.assertEqual(set(replacements), {"162"})
 
 
 class KubeStateMetricsAllowlistTests(unittest.TestCase):

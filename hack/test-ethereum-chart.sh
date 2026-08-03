@@ -12,6 +12,12 @@ helm template ethereum-node "${CHART}" --namespace ethereum \
 helm template ethereum-node "${CHART}" --namespace ethereum \
   --set lifecycleState=active \
   >"${temporary_directory}/active.yaml"
+python3 "${REPOSITORY_ROOT}/tools/render_local_assignments.py" \
+  --values-for assignment-ephemery-162-synthetic \
+  | helm template ephemery-162 "${CHART}" --namespace ethereum \
+      --values - \
+      --set lifecycleState=active \
+      >"${temporary_directory}/ephemery-162.yaml"
 helm template ethereum-node "${CHART}" --namespace ethereum \
   --set lifecycleState=active \
   --set validator.enabled=true \
@@ -38,11 +44,43 @@ fi
 grep -q 'platform.galaxy-lab/signing-enabled: "false"' "${temporary_directory}/stopped.yaml"
 
 grep -q '^kind: StatefulSet$' "${temporary_directory}/active.yaml"
+grep -q -- '--hoodi' "${temporary_directory}/active.yaml"
+grep -q -- '--network=hoodi' "${temporary_directory}/active.yaml"
+grep -q 'networkProfile: "hoodi"' "${temporary_directory}/active.yaml"
+grep -q 'networkGeneration: "permanent"' "${temporary_directory}/active.yaml"
+grep -q 'networkIdentity: "c7484b91cd367b3b99a8e6dbfc92fe637ee435fa8a4d55cc5904777bf0e574b2"' "${temporary_directory}/active.yaml"
 grep -q 'path: /debug/metrics/prometheus' "${temporary_directory}/active.yaml"
 grep -q 'record: validator_platform_consensus_slot_lag' "${temporary_directory}/active.yaml"
 grep -q '@sha256:' "${temporary_directory}/active.yaml"
 if grep -q '^kind: Deployment$' "${temporary_directory}/active.yaml"; then
   printf 'Non-signing active profile unexpectedly renders a validator client.\n' >&2
+  exit 1
+fi
+
+grep -q '^kind: StatefulSet$' "${temporary_directory}/ephemery-162.yaml"
+grep -q 'name: fetch-network-artifacts' "${temporary_directory}/ephemery-162.yaml"
+grep -q 'name: verify-network-artifacts' "${temporary_directory}/ephemery-162.yaml"
+grep -q 'name: initialize-geth-genesis' "${temporary_directory}/ephemery-162.yaml"
+grep -q '478ca7181212f2d87137c337e854befbed8aacde8bee8f64d6ca7e28967ee2fb' "${temporary_directory}/ephemery-162.yaml"
+grep -q -- '--networkid=39438162' "${temporary_directory}/ephemery-162.yaml"
+grep -q -- '--testnet-dir=/network/files' "${temporary_directory}/ephemery-162.yaml"
+grep -q -- '--checkpoint-sync-url=https://checkpoint-sync.ephemery.ethpandaops.io/' "${temporary_directory}/ephemery-162.yaml"
+grep -q 'command: \[lighthouse\]' "${temporary_directory}/ephemery-162.yaml"
+grep -q 'deposit_contract_block.txt' "${temporary_directory}/ephemery-162.yaml"
+grep -q 'pair-ephemery-162-sy-eaa1dc641654bfe3-1607eeafd183-execution' "${temporary_directory}/ephemery-162.yaml"
+grep -q 'pair-ephemery-162-sy-eaa1dc641654bfe3-1607eeafd183-consensus' "${temporary_directory}/ephemery-162.yaml"
+if grep -Eq -- '--hoodi|--network=ephemery|^kind: Deployment$' "${temporary_directory}/ephemery-162.yaml"; then
+  printf 'Ephemery node render inherited a built-in network flag or enabled validator duties.\n' >&2
+  exit 1
+fi
+if python3 "${REPOSITORY_ROOT}/tools/render_local_assignments.py" \
+  --values-for assignment-ephemery-162-synthetic \
+  | helm template ephemery-162 "${CHART}" --namespace ethereum \
+      --values - \
+      --set lifecycleState=active \
+      --set validator.enabled=true \
+      >"${temporary_directory}/unsafe-ephemery.yaml" 2>/dev/null; then
+  printf 'Ephemery rendered validator duties before signer binding was qualified.\n' >&2
   exit 1
 fi
 
@@ -86,4 +124,4 @@ if helm template ethereum-node "${CHART}" --namespace ethereum \
   exit 1
 fi
 
-printf 'Validated stopped, active non-signing, signing, EKS storage, and unsafe chart profiles.\n'
+printf 'Validated stopped, Hoodi, Ephemery non-signing, signing, EKS storage, and unsafe chart profiles.\n'

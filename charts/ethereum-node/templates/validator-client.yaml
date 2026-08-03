@@ -1,4 +1,7 @@
 {{- if and (eq .Values.lifecycleState "active") .Values.validator.enabled }}
+{{- if eq .Values.networkProfile.clients.lighthouse.mode "artifact-bundle" -}}
+{{- fail "validator duties are not qualified for artifact-bundle network profiles" -}}
+{{- end -}}
 {{- if not .Values.validator.slashingProtectionConfirmed -}}
 {{- fail "validator.slashingProtectionConfirmed must be true before validator duties can start" -}}
 {{- end -}}
@@ -38,6 +41,8 @@ spec:
         {{- include "ethereum-node.selectorLabels" . | nindent 8 }}
         {{- include "ethereum-node.identityLabels" . | nindent 8 }}
         platform.galaxy-lab/component: validator
+      annotations:
+        platform.galaxy-lab/network-identity: {{ .Values.networkProfile.identityFingerprint | quote }}
     spec:
       automountServiceAccountToken: false
       terminationGracePeriodSeconds: 60
@@ -63,9 +68,10 @@ spec:
         - name: validator
           image: {{ .Values.validatorClient.image }}
           imagePullPolicy: {{ .Values.imagePullPolicy }}
+          command: [lighthouse]
           args:
             - vc
-            - --network={{ .Values.network }}
+            - {{ printf "--network=%s" .Values.networkProfile.clients.lighthouse.network | quote }}
             - --beacon-nodes=http://{{ include "ethereum-node.fullname" . }}:5052
             - --validators-dir=/validator-data
             - --suggested-fee-recipient={{ .Values.validator.feeRecipient }}
@@ -89,5 +95,5 @@ spec:
             name: {{ include "ethereum-node.fullname" . }}-validator-config
         - name: validator-data
           persistentVolumeClaim:
-            claimName: {{ include "ethereum-node.fullname" . }}-validator
+            claimName: {{ include "ethereum-node.validatorPvcName" . }}
 {{- end }}

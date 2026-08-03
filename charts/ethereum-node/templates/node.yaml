@@ -1,6 +1,15 @@
 {{- if eq .Values.lifecycleState "active" }}
 {{- $execution := index .Values.executionClients .Values.executionClient -}}
 {{- $consensus := index .Values.consensusClients .Values.consensusClient -}}
+{{- $gethAdapter := .Values.networkProfile.clients.geth -}}
+{{- $lighthouseAdapter := .Values.networkProfile.clients.lighthouse -}}
+{{- if ne $gethAdapter.mode $lighthouseAdapter.mode -}}
+{{- fail "Geth and Lighthouse network adapter modes must match" -}}
+{{- end -}}
+{{- $artifactMode := eq $gethAdapter.mode "artifact-bundle" -}}
+{{- if and $artifactMode .Values.validator.enabled -}}
+{{- fail "validator duties are not qualified for artifact-bundle network profiles" -}}
+{{- end -}}
 apiVersion: apps/v1
 kind: StatefulSet
 metadata:
@@ -25,6 +34,7 @@ spec:
         platform.galaxy-lab/component: node
       annotations:
         prometheus.io/scrape: "true"
+        platform.galaxy-lab/network-identity: {{ .Values.networkProfile.identityFingerprint | quote }}
     spec:
       automountServiceAccountToken: false
       terminationGracePeriodSeconds: 300
@@ -36,14 +46,147 @@ spec:
         {{- toYaml .Values.nodeSelector | nindent 8 }}
       tolerations:
         {{- toYaml .Values.tolerations | nindent 8 }}
+      {{- if $artifactMode }}
+      initContainers:
+        - name: fetch-network-artifacts
+          image: {{ .Values.networkArtifactLoader.downloadImage }}
+          imagePullPolicy: {{ .Values.imagePullPolicy }}
+          command: [curl]
+          args:
+            - --fail
+            - --location
+            - --proto
+            - =https
+            - --tlsv1.2
+            - --retry
+            - "3"
+            - --retry-all-errors
+            - --connect-timeout
+            - "15"
+            - --max-time
+            - "120"
+            - --max-filesize
+            - "16777216"
+            - --output
+            - /network/testnet-all.tar.gz
+            - {{ .Values.networkProfile.artifactBundle.url | quote }}
+          securityContext:
+            runAsNonRoot: true
+            runAsUser: 101
+            runAsGroup: 102
+            allowPrivilegeEscalation: false
+            readOnlyRootFilesystem: true
+            capabilities: {drop: [ALL]}
+          volumeMounts:
+            - {name: network-artifacts, mountPath: /network}
+        - name: verify-network-artifacts
+          image: {{ .Values.networkArtifactLoader.verifyImage }}
+          imagePullPolicy: {{ .Values.imagePullPolicy }}
+          command: [/bin/sh, -ec]
+          args:
+            - |
+              set -eu
+              printf '%s  %s\n' {{ .Values.networkProfile.artifactBundle.sha256 | quote }} /network/testnet-all.tar.gz | sha256sum -c -
+              mkdir -p /network/files
+              tar -xzf /network/testnet-all.tar.gz -C /network/files \
+              {{- range $path := .Values.networkProfile.artifactBundle.files }}
+                {{ $path | quote }} \
+              {{- end }}
+              ;
+              {{- range $path := .Values.networkProfile.artifactBundle.files }}
+              test -s {{ printf "/network/files/%s" $path | quote }}
+              {{- end }}
+              printf '%s\n' {{ .Values.networkProfile.identityFingerprint | quote }} > /network/.verified-identity
+          securityContext:
+            runAsNonRoot: true
+            runAsUser: 1000
+            runAsGroup: 1000
+            allowPrivilegeEscalation: false
+            readOnlyRootFilesystem: true
+            capabilities: {drop: [ALL]}
+          volumeMounts:
+            - {name: network-artifacts, mountPath: /network}
+        - name: initialize-geth-genesis
+          image: {{ $execution.image }}
+          imagePullPolicy: {{ .Values.imagePullPolicy }}
+          command: [/bin/sh, -ec]
+          args:
+            - |
+              set -eu
+              marker=/data/.platform-network-identity
+              expected={{ .Values.networkProfile.identityFingerprint | quote }}
+              test "$(cat /network/.verified-identity)" = "$expected"
+              if [ -f "$marker" ]; then
+                test "$(cat "$marker")" = "$expected" || {
+                  echo "execution PVC belongs to another network identity" >&2
+                  exit 1
+                }
+                test -d /data/geth || {
+                  echo "execution PVC marker exists without initialized Geth data" >&2
+                  exit 1
+                }
+                exit 0
+              fi
+              for entry in /data/.[!.]* /data/..?* /data/*; do
+                [ -e "$entry" ] || continue
+                [ "$entry" = /data/lost+found ] && continue
+                echo "refusing to initialize an unmarked non-empty execution PVC" >&2
+                exit 1
+              done
+              geth init --datadir=/data {{ printf "/network/files/%s" .Values.networkProfile.artifactBundle.files.executionGenesis | quote }}
+              printf '%s\n' "$expected" > "$marker"
+          securityContext:
+            runAsNonRoot: true
+            runAsUser: 1000
+            runAsGroup: 1000
+            allowPrivilegeEscalation: false
+            readOnlyRootFilesystem: true
+            capabilities: {drop: [ALL]}
+          volumeMounts:
+            - {name: execution-data, mountPath: /data}
+            - {name: network-artifacts, mountPath: /network, readOnly: true}
+      {{- end }}
       containers:
         - name: execution
           image: {{ $execution.image }}
           imagePullPolicy: {{ .Values.imagePullPolicy }}
+          {{- if $artifactMode }}
+          command: [/bin/sh, -ec]
           args:
-            {{- range $execution.args }}
-            - {{ tpl . $ | quote }}
-            {{- end }}
+            - |
+              set -eu
+              bootnodes="$(tr '\n' ',' < {{ printf "/network/files/%s" .Values.networkProfile.artifactBundle.files.executionBootnodes }})"
+              bootnodes="${bootnodes%,}"
+              test -n "$bootnodes"
+              exec geth \
+                --networkid={{ printf "%.0f" .Values.networkProfile.identity.executionNetworkId }} \
+                --bootnodes="$bootnodes" \
+                --datadir=/data \
+                --http \
+                --http.addr=0.0.0.0 \
+                --http.api=eth,net,web3 \
+                --authrpc.addr=0.0.0.0 \
+                --authrpc.port=8551 \
+                --authrpc.vhosts='*' \
+                --authrpc.jwtsecret=/jwt/jwt.hex \
+                --metrics \
+                --metrics.addr=0.0.0.0 \
+                --metrics.port=6060
+          {{- else }}
+          args:
+            - {{ printf "--%s" $gethAdapter.network | quote }}
+            - --datadir=/data
+            - --http
+            - --http.addr=0.0.0.0
+            - --http.api=eth,net,web3
+            - --authrpc.addr=0.0.0.0
+            - --authrpc.port=8551
+            - --authrpc.vhosts=*
+            - --authrpc.jwtsecret=/jwt/jwt.hex
+            - --metrics
+            - --metrics.addr=0.0.0.0
+            - --metrics.port=6060
+          {{- end }}
           ports:
             - {name: el-rpc, containerPort: 8545, protocol: TCP}
             - {name: el-engine, containerPort: 8551, protocol: TCP}
@@ -63,13 +206,30 @@ spec:
           volumeMounts:
             - {name: execution-data, mountPath: /data}
             - {name: engine-jwt, mountPath: /jwt, readOnly: true}
+            {{- if $artifactMode }}
+            - {name: network-artifacts, mountPath: /network, readOnly: true}
+            {{- end }}
         - name: consensus
           image: {{ $consensus.image }}
           imagePullPolicy: {{ .Values.imagePullPolicy }}
+          command: [lighthouse]
           args:
-            {{- range $consensus.args }}
-            - {{ tpl . $ | quote }}
+            - bn
+            {{- if $artifactMode }}
+            - {{ printf "--testnet-dir=/network/files" | quote }}
+            - {{ printf "--checkpoint-sync-url=%s" .Values.networkProfile.checkpointSync.primaryUrl | quote }}
+            {{- else }}
+            - {{ printf "--network=%s" $lighthouseAdapter.network | quote }}
             {{- end }}
+            - --datadir=/data
+            - --execution-endpoint=http://127.0.0.1:8551
+            - --execution-jwt=/jwt/jwt.hex
+            - --http
+            - --http-address=0.0.0.0
+            - --http-port=5052
+            - --metrics
+            - --metrics-address=0.0.0.0
+            - --metrics-port=8008
           ports:
             - {name: cl-api, containerPort: 5052, protocol: TCP}
             - {name: cl-p2p-tcp, containerPort: 9000, protocol: TCP}
@@ -89,14 +249,22 @@ spec:
           volumeMounts:
             - {name: consensus-data, mountPath: /data}
             - {name: engine-jwt, mountPath: /jwt, readOnly: true}
+            {{- if $artifactMode }}
+            - {name: network-artifacts, mountPath: /network, readOnly: true}
+            {{- end }}
       volumes:
         - name: execution-data
           persistentVolumeClaim:
-            claimName: {{ include "ethereum-node.fullname" . }}-execution
+            claimName: {{ include "ethereum-node.executionPvcName" . }}
         - name: consensus-data
           persistentVolumeClaim:
-            claimName: {{ include "ethereum-node.fullname" . }}-consensus
+            claimName: {{ include "ethereum-node.consensusPvcName" . }}
         - name: engine-jwt
           secret:
             secretName: {{ include "ethereum-node.fullname" . }}-engine-jwt
+        {{- if $artifactMode }}
+        - name: network-artifacts
+          emptyDir:
+            sizeLimit: 32Mi
+        {{- end }}
 {{- end }}

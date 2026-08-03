@@ -3,7 +3,8 @@
   "type": "object",
   "required": [
     "lifecycleState",
-    "network",
+    "networkProfile",
+    "networkArtifactLoader",
     "executionClient",
     "consensusClient",
     "identity",
@@ -22,12 +23,84 @@
         "archived"
       ]
     },
-    "network": {
-      "type": "string",
-      "enum": [
-        "sepolia",
-        "hoodi"
+    "networkProfile": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["name", "family", "generation", "resetPolicy", "identityFingerprint", "identity", "clients"],
+      "properties": {
+        "name": {"type": "string", "pattern": "^[a-z][a-z0-9-]{2,62}$"},
+        "family": {"type": "string", "pattern": "^[a-z][a-z0-9-]{2,31}$"},
+        "generation": {"type": "string", "pattern": "^[a-z0-9][a-z0-9.-]{0,62}$"},
+        "resetPolicy": {"enum": ["persistent", "replace-data"]},
+        "identityFingerprint": {"type": "string", "pattern": "^[0-9a-f]{64}$"},
+        "identity": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["executionChainId", "executionNetworkId", "executionGenesisHash", "consensusGenesisValidatorsRoot", "genesisForkVersion", "consensusGenesisTime"],
+          "properties": {
+            "executionChainId": {"type": "integer", "minimum": 1},
+            "executionNetworkId": {"type": "integer", "minimum": 1},
+            "executionGenesisHash": {"type": "string", "pattern": "^0x[0-9a-fA-F]{64}$"},
+            "consensusGenesisValidatorsRoot": {"type": "string", "pattern": "^0x[0-9a-fA-F]{64}$"},
+            "genesisForkVersion": {"type": "string", "pattern": "^0x[0-9a-fA-F]{8}$"},
+            "consensusGenesisTime": {"type": "integer", "minimum": 0}
+          }
+        },
+        "clients": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["geth", "lighthouse"],
+          "properties": {
+            "geth": {"$ref": "#/$defs/networkAdapter"},
+            "lighthouse": {"$ref": "#/$defs/networkAdapter"}
+          }
+        },
+        "artifactBundle": {"$ref": "#/$defs/artifactBundle"},
+        "checkpointSync": {"$ref": "#/$defs/checkpointSync"}
+      },
+      "allOf": [
+        {
+          "if": {
+            "properties": {
+              "clients": {
+                "properties": {
+                  "geth": {"properties": {"mode": {"const": "artifact-bundle"}}}
+                }
+              }
+            }
+          },
+          "then": {
+            "required": ["artifactBundle", "checkpointSync"],
+            "properties": {
+              "resetPolicy": {"const": "replace-data"},
+              "clients": {
+                "properties": {
+                  "lighthouse": {"$ref": "#/$defs/artifactNetworkAdapter"}
+                }
+              }
+            }
+          },
+          "else": {
+            "properties": {
+              "resetPolicy": {"const": "persistent"},
+              "clients": {
+                "properties": {
+                  "lighthouse": {"$ref": "#/$defs/builtinNetworkAdapter"}
+                }
+              }
+            }
+          }
+        }
       ]
+    },
+    "networkArtifactLoader": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["downloadImage", "verifyImage"],
+      "properties": {
+        "downloadImage": {"type": "string", "pattern": "@sha256:[0-9a-f]{64}$"},
+        "verifyImage": {"type": "string", "pattern": "@sha256:[0-9a-f]{64}$"}
+      }
     },
     "executionClient": {
       "const": "geth"
@@ -140,6 +213,118 @@
         "endpoint": {
           "type": "string",
           "pattern": "^https?://"
+        }
+      }
+    }
+  },
+  "allOf": [
+    {
+      "if": {
+        "properties": {
+          "networkProfile": {
+            "properties": {
+              "clients": {
+                "properties": {
+                  "geth": {"properties": {"mode": {"const": "artifact-bundle"}}}
+                }
+              }
+            }
+          }
+        }
+      },
+      "then": {
+        "properties": {
+          "validator": {
+            "properties": {
+              "enabled": {"const": false}
+            }
+          }
+        }
+      }
+    }
+  ],
+  "$defs": {
+    "builtinNetworkAdapter": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["mode", "network"],
+      "properties": {
+        "mode": {"const": "builtin"},
+        "network": {"enum": ["sepolia", "hoodi"]}
+      }
+    },
+    "artifactNetworkAdapter": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["mode"],
+      "properties": {
+        "mode": {"const": "artifact-bundle"}
+      }
+    },
+    "networkAdapter": {
+      "oneOf": [
+        {"$ref": "#/$defs/builtinNetworkAdapter"},
+        {"$ref": "#/$defs/artifactNetworkAdapter"}
+      ]
+    },
+    "bundlePath": {
+      "type": "string",
+      "pattern": "^[A-Za-z0-9][A-Za-z0-9._/-]*$"
+    },
+    "artifactBundle": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["url", "sha256", "files"],
+      "properties": {
+        "url": {"type": "string", "pattern": "^https://[^?#]+$"},
+        "sha256": {"type": "string", "pattern": "^[0-9a-f]{64}$"},
+        "files": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "executionGenesis",
+            "consensusConfig",
+            "consensusGenesis",
+            "consensusGenesisValidatorsRoot",
+            "executionBootnodes",
+            "executionBootnode",
+            "consensusBootnodes",
+            "consensusBootnodesText",
+            "nodeVariables",
+            "depositContract",
+            "depositContractBlock",
+            "depositContractBlockHash",
+            "retentionVariables"
+          ],
+          "properties": {
+            "executionGenesis": {"$ref": "#/$defs/bundlePath"},
+            "consensusConfig": {"$ref": "#/$defs/bundlePath"},
+            "consensusGenesis": {"$ref": "#/$defs/bundlePath"},
+            "consensusGenesisValidatorsRoot": {"$ref": "#/$defs/bundlePath"},
+            "executionBootnodes": {"$ref": "#/$defs/bundlePath"},
+            "executionBootnode": {"$ref": "#/$defs/bundlePath"},
+            "consensusBootnodes": {"$ref": "#/$defs/bundlePath"},
+            "consensusBootnodesText": {"$ref": "#/$defs/bundlePath"},
+            "nodeVariables": {"$ref": "#/$defs/bundlePath"},
+            "depositContract": {"$ref": "#/$defs/bundlePath"},
+            "depositContractBlock": {"$ref": "#/$defs/bundlePath"},
+            "depositContractBlockHash": {"$ref": "#/$defs/bundlePath"},
+            "retentionVariables": {"$ref": "#/$defs/bundlePath"}
+          }
+        }
+      }
+    },
+    "checkpointSync": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["primaryUrl", "verificationUrls"],
+      "properties": {
+        "primaryUrl": {"type": "string", "pattern": "^https://[^?#]+$"},
+        "verificationUrls": {
+          "type": "array",
+          "minItems": 1,
+          "uniqueItems": true,
+          "items": {"type": "string", "pattern": "^https://[^?#]+$"}
         }
       }
     }

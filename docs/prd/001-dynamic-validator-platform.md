@@ -215,6 +215,7 @@ It links the business request to the pull request, commit, Flux reconciliation, 
 | **Identity** | An Ethereum validator public key plus an immutable reference to encrypted signing material. |
 | **Assignment** | The exclusive mapping that authorizes an identity to use a validator-client deployment and node-pair target. |
 | **Service profile** | An approved bundle of client, isolation, resource, storage, observability, and maintenance policy exposed to Customer Service. |
+| **Network profile** | A reviewed, immutable binding among network family/generation, chain and genesis identity, deposit metadata, and typed client/signer adapters. |
 | **Pair type** | One execution client and one consensus client combination. |
 | **Pair instance** | A deployed or retained realization of a pair type for a network and validator assignment. |
 | **Validator client** | The duty/signing component associated with the chosen consensus client. |
@@ -266,6 +267,8 @@ erDiagram
     CUSTOMER ||--o{ SERVICE_REQUEST : submits
     VALIDATOR_IDENTITY ||--o{ VALIDATOR_ASSIGNMENT : has_history
     VALIDATOR_ASSIGNMENT }o--|| SERVICE_PROFILE : selects
+    VALIDATOR_IDENTITY }o--|| NETWORK_PROFILE : bound_to
+    VALIDATOR_ASSIGNMENT }o--|| NETWORK_PROFILE : must_match
     VALIDATOR_ASSIGNMENT }o--|| NODE_PAIR_INSTANCE : targets
     NODE_PAIR_INSTANCE }o--|| PAIR_TYPE : implements
     SERVICE_REQUEST }o--|| VALIDATOR_IDENTITY : may_affect
@@ -281,7 +284,7 @@ erDiagram
       string validator_id PK
       string customer_id FK
       string public_key
-      string network
+      string network_profile_ref
       string secret_ref
     }
     VALIDATOR_ASSIGNMENT {
@@ -290,12 +293,22 @@ erDiagram
       string lifecycle_state
       string node_pair_ref
       string service_profile_ref
+      string network_profile_ref
     }
     NODE_PAIR_INSTANCE {
       string pair_instance_id PK
       string pair_type_ref
       string isolation_mode
       string capacity_cell
+    }
+    NETWORK_PROFILE {
+      string network_profile_id PK
+      string family
+      string generation
+      int execution_chain_id
+      string execution_genesis_hash
+      string consensus_genesis_validators_root
+      string artifact_digest
     }
 ```
 
@@ -304,6 +317,7 @@ The boundaries are intentional:
 - a **customer owns validator identities**;
 - an identity has at most one active assignment but retains assignment history;
 - an assignment selects a controlled service profile rather than arbitrary container flags;
+- identity and assignment references to the network profile must match; a resetting network creates a new generation-addressed profile rather than mutating an old profile in place;
 - a node pair can be dedicated to one assignment or shared by multiple compatible assignments;
 - a customer may receive dedicated node/signing capacity as a service-tier policy without changing the identity model;
 - customer records contain opaque IDs and operational metadata; systems of record for PII, contracts, billing, and support cases remain external and are referenced by ID only.
@@ -742,7 +756,7 @@ metadata:
   name: validator-01
 spec:
   customerRef: customer-acme
-  network: hoodi
+  networkProfileRef: hoodi
   publicKey: "0x..."
   signingSecretRef: aws-sm://validator-platform/hoodi/validator-01
 ---
@@ -752,6 +766,7 @@ metadata:
   name: assignment-validator-01
 spec:
   validatorRef: validator-01
+  networkProfileRef: hoodi
   lifecycle: active
   serviceProfileRef: dedicated-geth-lighthouse
   nodePairRef: pair-validator-01

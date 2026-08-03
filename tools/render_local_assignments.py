@@ -12,6 +12,7 @@ from __future__ import annotations
 
 import argparse
 import hashlib
+import json
 import sys
 from pathlib import Path
 from typing import Any
@@ -33,6 +34,24 @@ SUPPORTED_CONSENSUS_CLIENTS = {"lighthouse"}
 
 class ProjectionError(ValueError):
     """Catalog state cannot be represented by the current local adapter."""
+
+
+def network_identity_fingerprint(profile: dict[str, Any]) -> str:
+    """Hash the immutable chain identity and distribution provenance.
+
+    Operator endpoints are deliberately excluded: rotating a checkpoint URL
+    does not create a new chain. A generation or artifact digest change does.
+    """
+
+    spec = profile["spec"]
+    immutable = {
+        "family": spec["family"],
+        "generation": spec["generation"],
+        "identity": spec["identity"],
+        "artifactSha256": spec.get("artifactBundle", {}).get("sha256"),
+    }
+    payload = json.dumps(immutable, sort_keys=True, separators=(",", ":"))
+    return hashlib.sha256(payload.encode("utf-8")).hexdigest()
 
 
 def default_node_pair_ref(validator_ref: str) -> str:
@@ -106,6 +125,7 @@ def build_release(
 
     validator_name = spec["validatorRef"]
     profile_name = spec["serviceProfileRef"]
+    network_profile_name = spec["networkProfileRef"]
     try:
         identity = catalog["ValidatorIdentity"][validator_name]
     except KeyError as error:
@@ -117,6 +137,13 @@ def build_release(
     except KeyError as error:
         raise ProjectionError(
             f"ValidatorAssignment/{assignment_name}: unknown serviceProfileRef {profile_name!r}"
+        ) from error
+    try:
+        network_profile = catalog["NetworkProfile"][network_profile_name]
+    except KeyError as error:
+        raise ProjectionError(
+            f"ValidatorAssignment/{assignment_name}: unknown networkProfileRef "
+            f"{network_profile_name!r}"
         ) from error
 
     execution_client = profile["spec"]["executionClient"]
@@ -131,6 +158,38 @@ def build_release(
         )
 
     identity_spec = identity["spec"]
+    if identity_spec["networkProfileRef"] != network_profile_name:
+        raise ProjectionError(
+            f"ValidatorAssignment/{assignment_name}: networkProfileRef "
+            f"{network_profile_name!r} does not match ValidatorIdentity/{validator_name} "
+            f"binding {identity_spec['networkProfileRef']!r}"
+        )
+
+    network_spec = network_profile["spec"]
+    geth_network = network_spec["clients"]["geth"]
+    lighthouse_network = network_spec["clients"]["lighthouse"]
+    if geth_network["mode"] != lighthouse_network["mode"]:
+        raise ProjectionError(
+            f"NetworkProfile/{network_profile_name}: Geth and Lighthouse adapter "
+            "modes must match"
+        )
+    adapter_mode = geth_network["mode"]
+    if adapter_mode == "artifact-bundle" and network_spec["resetPolicy"] != "replace-data":
+        raise ProjectionError(
+            f"NetworkProfile/{network_profile_name}: artifact adapter requires "
+            "resetPolicy 'replace-data'"
+        )
+    if adapter_mode == "artifact-bundle" and "checkpointSync" not in network_spec:
+        raise ProjectionError(
+            f"NetworkProfile/{network_profile_name}: artifact adapter requires "
+            "checkpointSync"
+        )
+    if adapter_mode not in {"builtin", "artifact-bundle"}:
+        raise ProjectionError(
+            f"NetworkProfile/{network_profile_name}: unsupported runtime adapter "
+            f"{adapter_mode!r}"
+        )
+
     customer_name = identity_spec["customerRef"]
     if customer_name not in catalog.get("Customer", {}):
         raise ProjectionError(
@@ -147,6 +206,31 @@ def build_release(
     # same stable identity the lifecycle transition will persist so the first
     # activation does not rename resources or replace chain-data PVCs.
     node_pair_name = node_pair_name or default_node_pair_ref(validator_name)
+
+    runtime_geth_adapter = dict(geth_network)
+    runtime_lighthouse_adapter = dict(lighthouse_network)
+    if adapter_mode == "artifact-bundle":
+        # Helm recursively merges maps with chart defaults. Explicit nulls
+        # remove the built-in network selectors so an artifact profile cannot
+        # inherit `hoodi` from values.yaml while changing only its mode.
+        runtime_geth_adapter["network"] = None
+        runtime_lighthouse_adapter["network"] = None
+
+    network_values = {
+        "name": network_profile_name,
+        "family": network_spec["family"],
+        "generation": network_spec["generation"],
+        "resetPolicy": network_spec["resetPolicy"],
+        "identityFingerprint": network_identity_fingerprint(network_profile),
+        "identity": network_spec["identity"],
+        "clients": {
+            "geth": runtime_geth_adapter,
+            "lighthouse": runtime_lighthouse_adapter,
+        },
+    }
+    if adapter_mode == "artifact-bundle":
+        network_values["artifactBundle"] = network_spec["artifactBundle"]
+        network_values["checkpointSync"] = network_spec["checkpointSync"]
 
     return {
         "apiVersion": "helm.toolkit.fluxcd.io/v2",
@@ -192,7 +276,7 @@ def build_release(
             "values": {
                 "fullnameOverride": node_pair_name,
                 "lifecycleState": runtime_lifecycle,
-                "network": identity_spec["network"],
+                "networkProfile": network_values,
                 "executionClient": execution_client,
                 "consensusClient": consensus_client,
                 "telemetry": {
@@ -272,10 +356,16 @@ def projection_errors(
 
 def parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument(
+    output_mode = parser.add_mutually_exclusive_group()
+    output_mode.add_argument(
         "--check",
         action="store_true",
         help="fail when committed generated files differ instead of writing them",
+    )
+    output_mode.add_argument(
+        "--values-for",
+        metavar="ASSIGNMENT",
+        help="print the projected Helm values for one assignment without writing files",
     )
     return parser.parse_args()
 
@@ -283,7 +373,12 @@ def parse_args() -> argparse.Namespace:
 def main() -> int:
     args = parse_args()
     try:
-        files = rendered_files(load_catalog())
+        catalog = load_catalog()
+        if args.values_for:
+            release = build_release(args.values_for, catalog)
+            print(yaml.safe_dump(release["spec"]["values"], sort_keys=False, width=120), end="")
+            return 0
+        files = rendered_files(catalog)
     except ProjectionError as error:
         print(f"ERROR: {error}", file=sys.stderr)
         return 1

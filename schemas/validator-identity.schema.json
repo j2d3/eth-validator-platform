@@ -19,10 +19,10 @@
     "spec": {
       "type": "object",
       "additionalProperties": false,
-      "required": ["customerRef", "network", "lifecycle", "synthetic"],
+      "required": ["customerRef", "networkProfileRef", "lifecycle", "synthetic"],
       "properties": {
         "customerRef": {"type": "string", "pattern": "^[a-z][a-z0-9-]{2,62}$"},
-        "network": {"enum": ["hoodi", "sepolia"]},
+        "networkProfileRef": {"type": "string", "pattern": "^[a-z][a-z0-9-]{2,62}$"},
         "lifecycle": {"enum": ["draft", "registered", "retired"]},
         "synthetic": {"type": "boolean"},
         "publicKey": {"type": "string", "pattern": "^0x[0-9a-fA-F]{96}$"},

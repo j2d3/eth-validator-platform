@@ -3,7 +3,9 @@
 {{- end -}}
 
 {{- define "ethereum-node.identityLabels" -}}
-platform.galaxy-lab/network: {{ .Values.network }}
+platform.galaxy-lab/network: {{ .Values.networkProfile.family }}
+platform.galaxy-lab/network-profile: {{ .Values.networkProfile.name }}
+platform.galaxy-lab/network-generation: {{ .Values.networkProfile.generation | quote }}
 platform.galaxy-lab/execution-client: {{ .Values.executionClient }}
 platform.galaxy-lab/consensus-client: {{ .Values.consensusClient }}
 platform.galaxy-lab/customer-id: {{ .Values.identity.customerId }}
@@ -34,6 +36,38 @@ app.kubernetes.io/instance: {{ .Release.Name }}
 {{- end -}}
 
 {{/*
+Resetting networks never reuse chain-data PVC identity across generations. The
+immutable profile fingerprint is part of each PVC name as well as its
+annotation. Persistent networks retain the original names unchanged.
+*/}}
+{{- define "ethereum-node.executionPvcName" -}}
+{{- if eq .Values.networkProfile.resetPolicy "replace-data" -}}
+{{- $pairName := include "ethereum-node.fullname" . -}}
+{{- printf "%s-%s-%s-execution" ($pairName | trunc 20 | trimSuffix "-") (sha256sum $pairName | trunc 16) (.Values.networkProfile.identityFingerprint | trunc 12) | trunc 63 | trimSuffix "-" -}}
+{{- else -}}
+{{- printf "%s-execution" (include "ethereum-node.fullname" .) | trunc 63 | trimSuffix "-" -}}
+{{- end -}}
+{{- end -}}
+
+{{- define "ethereum-node.consensusPvcName" -}}
+{{- if eq .Values.networkProfile.resetPolicy "replace-data" -}}
+{{- $pairName := include "ethereum-node.fullname" . -}}
+{{- printf "%s-%s-%s-consensus" ($pairName | trunc 20 | trimSuffix "-") (sha256sum $pairName | trunc 16) (.Values.networkProfile.identityFingerprint | trunc 12) | trunc 63 | trimSuffix "-" -}}
+{{- else -}}
+{{- printf "%s-consensus" (include "ethereum-node.fullname" .) | trunc 63 | trimSuffix "-" -}}
+{{- end -}}
+{{- end -}}
+
+{{- define "ethereum-node.validatorPvcName" -}}
+{{- if eq .Values.networkProfile.resetPolicy "replace-data" -}}
+{{- $pairName := include "ethereum-node.fullname" . -}}
+{{- printf "%s-%s-%s-validator" ($pairName | trunc 20 | trimSuffix "-") (sha256sum $pairName | trunc 16) (.Values.networkProfile.identityFingerprint | trunc 12) | trunc 63 | trimSuffix "-" -}}
+{{- else -}}
+{{- printf "%s-validator" (include "ethereum-node.fullname" .) | trunc 63 | trimSuffix "-" -}}
+{{- end -}}
+{{- end -}}
+
+{{/*
 The scrape-time telemetry contract. Every label here is attached to every
 series the pair exposes, and every recording rule retains all of them through
 its aggregation, so a normalized series can always be traced back to one
@@ -43,7 +77,7 @@ labels are applied on remote-write and federation, not to locally queried
 series, so they cannot be selected on in a local dashboard query.
 */}}
 {{- define "ethereum-node.telemetryLabels" -}}
-cluster, environment, lifecycle_state, network, customer_id, validator_id, assignment_id, execution_client, consensus_client
+cluster, environment, lifecycle_state, network, network_profile, network_generation, network_identity, customer_id, validator_id, assignment_id, execution_client, consensus_client
 {{- end -}}
 
 {{- define "ethereum-node.metricRelabelings" -}}
@@ -63,8 +97,17 @@ cluster, environment, lifecycle_state, network, customer_id, validator_id, assig
   replacement: {{ .root.Values.lifecycleState }}
   targetLabel: lifecycle_state
 - action: replace
-  replacement: {{ .root.Values.network }}
+  replacement: {{ .root.Values.networkProfile.family }}
   targetLabel: network
+- action: replace
+  replacement: {{ .root.Values.networkProfile.name }}
+  targetLabel: network_profile
+- action: replace
+  replacement: {{ .root.Values.networkProfile.generation | quote }}
+  targetLabel: network_generation
+- action: replace
+  replacement: {{ .root.Values.networkProfile.identityFingerprint }}
+  targetLabel: network_identity
 - action: replace
   replacement: {{ .root.Values.executionClient }}
   targetLabel: execution_client

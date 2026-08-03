@@ -92,5 +92,5 @@ spec:
     # --metric-labels-allowlist=pods=[...],persistentvolumeclaims=[...].
     kube-state-metrics:
       metricLabelsAllowlist:
-        - pods=[platform.galaxy-lab/network,platform.galaxy-lab/customer-id,platform.galaxy-lab/validator-id,platform.galaxy-lab/assignment-id,platform.galaxy-lab/execution-client,platform.galaxy-lab/consensus-client,platform.galaxy-lab/component]
-        - persistentvolumeclaims=[platform.galaxy-lab/network,platform.galaxy-lab/customer-id,platform.galaxy-lab/validator-id,platform.galaxy-lab/assignment-id]
+        - pods=[platform.galaxy-lab/network,platform.galaxy-lab/network-profile,platform.galaxy-lab/network-generation,platform.galaxy-lab/customer-id,platform.galaxy-lab/validator-id,platform.galaxy-lab/assignment-id,platform.galaxy-lab/execution-client,platform.galaxy-lab/consensus-client,platform.galaxy-lab/component]
+        - persistentvolumeclaims=[platform.galaxy-lab/network,platform.galaxy-lab/network-profile,platform.galaxy-lab/network-generation,platform.galaxy-lab/customer-id,platform.galaxy-lab/validator-id,platform.galaxy-lab/assignment-id]
