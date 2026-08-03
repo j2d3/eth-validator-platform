@@ -82,8 +82,11 @@ test("rejects a URL with a fragment", () => {
 });
 
 test("rejects a syntactically invalid URL", () => {
+  // Avoid whitespace here; a value like "not a url" would be rejected by the
+  // earlier ASCII-whitespace guard before URL parsing runs. Use an input that
+  // survives that check but still fails `new URL()`.
   assert.throws(
-    () => assertCanonicalOrigin("not a url"),
+    () => assertCanonicalOrigin("not-a-url"),
     /not a valid URL/i,
   );
 });
@@ -103,5 +106,80 @@ test("rejects a non-string value", () => {
   assert.throws(
     () => assertCanonicalOrigin(undefined),
     /non-empty string/i,
+  );
+});
+
+// Adversarial regression tests for the whitespace/backslash bypass that
+// slipped past the earlier raw-port check.
+
+test("rejects leading whitespace (which WHATWG would trim before parsing)", () => {
+  assert.throws(
+    () => assertCanonicalOrigin(" https://portal.example.org"),
+    /must not contain ASCII control characters, whitespace, or backslashes/i,
+  );
+});
+
+test("rejects trailing whitespace (which WHATWG would trim before parsing)", () => {
+  assert.throws(
+    () => assertCanonicalOrigin("https://portal.example.org "),
+    /must not contain ASCII control characters, whitespace, or backslashes/i,
+  );
+});
+
+test("rejects leading whitespace hiding an explicit :443", () => {
+  assert.throws(
+    () => assertCanonicalOrigin(" https://portal.example.org:443"),
+    /must not contain ASCII control characters, whitespace, or backslashes/i,
+  );
+});
+
+test("rejects trailing whitespace hiding an explicit :443", () => {
+  assert.throws(
+    () => assertCanonicalOrigin("https://portal.example.org:443 "),
+    /must not contain ASCII control characters, whitespace, or backslashes/i,
+  );
+});
+
+test("rejects an embedded newline in the raw input", () => {
+  assert.throws(
+    () => assertCanonicalOrigin("https://portal.example.org\n"),
+    /must not contain ASCII control characters, whitespace, or backslashes/i,
+  );
+});
+
+test("rejects a tab in the raw input", () => {
+  assert.throws(
+    () => assertCanonicalOrigin("https://portal.example.org\t"),
+    /must not contain ASCII control characters, whitespace, or backslashes/i,
+  );
+});
+
+test("rejects a trailing backslash (which WHATWG would parse as '/')", () => {
+  assert.throws(
+    () => assertCanonicalOrigin("https://portal.example.org\\"),
+    /must not contain ASCII control characters, whitespace, or backslashes/i,
+  );
+});
+
+test("rejects a trailing backslash hiding an explicit :443", () => {
+  assert.throws(
+    () => assertCanonicalOrigin("https://portal.example.org:443\\"),
+    /must not contain ASCII control characters, whitespace, or backslashes/i,
+  );
+});
+
+test("rejects a NUL character in the raw input", () => {
+  assert.throws(
+    () => assertCanonicalOrigin("https://portal.example.org\x00"),
+    /must not contain ASCII control characters, whitespace, or backslashes/i,
+  );
+});
+
+test("rejects mixed-case scheme even if it parses (belt-and-braces raw==origin check)", () => {
+  // `new URL('HTTPS://foo.com')` normalizes scheme to lowercase; the raw
+  // input no longer equals the normalized origin, so the final check catches it.
+  assert.throws(
+    () => assertCanonicalOrigin("HTTPS://portal.example.org"),
+    /must be exactly the normalized origin/i,
   );
 });

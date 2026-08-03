@@ -30,6 +30,18 @@ export function assertCanonicalOrigin(raw) {
     );
   }
 
+  // Fail fast on ASCII control characters (\x00–\x1f, \x7f), any whitespace
+  // (including tab, LF, CR), and backslashes. WHATWG URL parsing tolerates
+  // leading/trailing C0-whitespace trimming and treats `\` as `/`; tolerating
+  // those here would let inputs such as `" https://foo:443"` or
+  // `"https://foo:443\\"` bypass the raw port check by normalizing away
+  // the offending characters after parsing.
+  if (/[\x00-\x20\x7f\\]/.test(raw)) {
+    throw new Error(
+      "PORTAL_CANONICAL_ORIGIN must not contain ASCII control characters, whitespace, or backslashes",
+    );
+  }
+
   // Reject explicit ports (including :443) by inspecting the raw string
   // before URL parsing — WHATWG URL normalization strips default ports so
   // `new URL('https://foo.com:443').origin` returns `https://foo.com`.
@@ -83,6 +95,17 @@ export function assertCanonicalOrigin(raw) {
   if (parsed.hash !== "") {
     throw new Error(
       "PORTAL_CANONICAL_ORIGIN must not include a fragment",
+    );
+  }
+
+  // Belt-and-braces: the raw input must exactly equal the normalized origin
+  // (with at most one literal trailing '/'). This catches any bypass form
+  // WHATWG parsing would otherwise silently normalize away — mixed-case
+  // scheme, credential-only-in-userinfo weirdness, trailing dots on the
+  // hostname, etc. — that the individual checks above might miss.
+  if (raw !== parsed.origin && raw !== parsed.origin + "/") {
+    throw new Error(
+      `PORTAL_CANONICAL_ORIGIN must be exactly the normalized origin (${parsed.origin}) or with a single literal trailing '/'; got ${JSON.stringify(raw)}`,
     );
   }
 
