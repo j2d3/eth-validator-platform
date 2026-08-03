@@ -66,6 +66,15 @@ output "web3signer_migration_pod_security_group_id" {
   value       = aws_security_group.web3signer_migration_pod.id
 }
 
+output "portal_ecr_repository" {
+  description = "Trusted-operator coordinates for the project-owned portal image repository."
+  value = {
+    name = aws_ecr_repository.portal.name
+    url  = aws_ecr_repository.portal.repository_url
+    arn  = aws_ecr_repository.portal.arn
+  }
+}
+
 output "ethereum_node_groups_by_az" {
   description = "Zonal Ethereum managed-node-group names and hard capacity bounds. Query EKS for live desired size; the pinned module intentionally ignores that field after creation."
   value = {
