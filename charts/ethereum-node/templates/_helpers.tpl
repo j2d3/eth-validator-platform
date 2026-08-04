@@ -80,6 +80,108 @@ series, so they cannot be selected on in a local dashboard query.
 cluster, environment, lifecycle_state, network, network_profile, network_generation, network_identity, customer_id, validator_id, assignment_id, execution_client, consensus_client
 {{- end -}}
 
+{{/*
+Execution-client adapters.
+
+Each supported EL contributes four values through these helpers:
+  - dataDirMarker   — the sentinel directory name inside /data that proves
+                      this PVC belongs to an initialized instance of THIS
+                      client (not another). Used to fail-fast on cross-client
+                      PVC misattachment.
+  - initCommand     — the shell script body run by the initialize-<el>-genesis
+                      init container, with `set -eu`, PVC-marker fencing, and
+                      the client's native genesis-import invocation.
+  - runCommand      — the shell script body run by the execution container.
+                      Reads the digest-verified bootnodes file and execs the
+                      client with EL-specific flags for chain-id, data dir,
+                      HTTP RPC, Engine API JWT, and metrics.
+
+These helpers exist so a second EL adapter can plug in through the same
+StatefulSet template without duplicating the init/runtime plumbing (PVC
+namespacing, JWT mount, network artifact layout, security context).
+*/}}
+{{- define "ethereum-node.executionInitCommand" -}}
+{{- $client := .Values.executionClient -}}
+{{- if eq $client "geth" -}}
+{{- include "ethereum-node.gethInitCommand" . -}}
+{{- else -}}
+{{- fail (printf "no init-command adapter for executionClient=%q" $client) -}}
+{{- end -}}
+{{- end -}}
+
+{{- define "ethereum-node.executionRunCommand" -}}
+{{- $client := .Values.executionClient -}}
+{{- if eq $client "geth" -}}
+{{- include "ethereum-node.gethRunCommand" . -}}
+{{- else -}}
+{{- fail (printf "no run-command adapter for executionClient=%q" $client) -}}
+{{- end -}}
+{{- end -}}
+
+{{- define "ethereum-node.executionDataDirMarker" -}}
+{{- $client := .Values.executionClient -}}
+{{- if eq $client "geth" -}}geth
+{{- else -}}
+{{- fail (printf "no dataDirMarker for executionClient=%q" $client) -}}
+{{- end -}}
+{{- end -}}
+
+{{/*
+Geth-specific adapters. These are the exact shell scripts previously inlined
+in templates/node.yaml — extracted verbatim so this refactor is a pure
+extraction and the rendered chart is byte-identical to the pre-refactor
+output. Future EL adapters (reth, nethermind, besu, erigon) add their own
+helpers alongside these and register above.
+*/}}
+{{- define "ethereum-node.gethInitCommand" -}}
+set -eu
+marker=/data/.platform-network-identity
+expected={{ .Values.networkProfile.identityFingerprint | quote }}
+test "$(cat /network/.verified-identity)" = "$expected"
+if [ -f "$marker" ]; then
+  test "$(cat "$marker")" = "$expected" || {
+    echo "execution PVC belongs to another network identity" >&2
+    exit 1
+  }
+  test -d /data/{{ include "ethereum-node.executionDataDirMarker" . }} || {
+    echo "execution PVC marker exists without initialized Geth data" >&2
+    exit 1
+  }
+  exit 0
+fi
+for entry in /data/.[!.]* /data/..?* /data/*; do
+  [ -e "$entry" ] || continue
+  [ "$entry" = /data/lost+found ] && continue
+  echo "refusing to initialize an unmarked non-empty execution PVC" >&2
+  exit 1
+done
+geth init --datadir=/data {{ printf "/network/files/%s" .Values.networkProfile.artifactBundle.files.executionGenesis | quote }}
+printf '%s\n' "$expected" > "$marker"
+{{- end -}}
+
+{{- define "ethereum-node.gethRunCommand" -}}
+{{- $execution := index .Values.executionClients .Values.executionClient -}}
+set -eu
+bootnodes="$(tr '\n' ',' < {{ printf "/network/files/%s" .Values.networkProfile.artifactBundle.files.executionBootnodes }})"
+bootnodes="${bootnodes%,}"
+test -n "$bootnodes"
+exec geth \
+  --networkid={{ printf "%.0f" .Values.networkProfile.identity.executionNetworkId }} \
+  --bootnodes="$bootnodes" \
+  --syncmode={{ $execution.syncMode }} \
+  --datadir=/data \
+  --http \
+  --http.addr=0.0.0.0 \
+  --http.api=eth,net,web3 \
+  --authrpc.addr=0.0.0.0 \
+  --authrpc.port=8551 \
+  --authrpc.vhosts='*' \
+  --authrpc.jwtsecret=/jwt/jwt.hex \
+  --metrics \
+  --metrics.addr=0.0.0.0 \
+  --metrics.port=6060
+{{- end -}}
+
 {{- define "ethereum-node.metricRelabelings" -}}
 - action: replace
   replacement: ethereum-validator

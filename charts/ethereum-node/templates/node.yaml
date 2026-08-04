@@ -121,35 +121,13 @@ spec:
             capabilities: {drop: [ALL]}
           volumeMounts:
             - {name: network-artifacts, mountPath: /network}
-        - name: initialize-geth-genesis
+        - name: {{ printf "initialize-%s-genesis" .Values.executionClient }}
           image: {{ $execution.image }}
           imagePullPolicy: {{ .Values.imagePullPolicy }}
           command: [/bin/sh, -ec]
           args:
             - |
-              set -eu
-              marker=/data/.platform-network-identity
-              expected={{ .Values.networkProfile.identityFingerprint | quote }}
-              test "$(cat /network/.verified-identity)" = "$expected"
-              if [ -f "$marker" ]; then
-                test "$(cat "$marker")" = "$expected" || {
-                  echo "execution PVC belongs to another network identity" >&2
-                  exit 1
-                }
-                test -d /data/geth || {
-                  echo "execution PVC marker exists without initialized Geth data" >&2
-                  exit 1
-                }
-                exit 0
-              fi
-              for entry in /data/.[!.]* /data/..?* /data/*; do
-                [ -e "$entry" ] || continue
-                [ "$entry" = /data/lost+found ] && continue
-                echo "refusing to initialize an unmarked non-empty execution PVC" >&2
-                exit 1
-              done
-              geth init --datadir=/data {{ printf "/network/files/%s" .Values.networkProfile.artifactBundle.files.executionGenesis | quote }}
-              printf '%s\n' "$expected" > "$marker"
+{{ include "ethereum-node.executionInitCommand" . | indent 14 }}
           securityContext:
             runAsNonRoot: true
             runAsUser: 1000
@@ -170,25 +148,7 @@ spec:
           command: [/bin/sh, -ec]
           args:
             - |
-              set -eu
-              bootnodes="$(tr '\n' ',' < {{ printf "/network/files/%s" .Values.networkProfile.artifactBundle.files.executionBootnodes }})"
-              bootnodes="${bootnodes%,}"
-              test -n "$bootnodes"
-              exec geth \
-                --networkid={{ printf "%.0f" .Values.networkProfile.identity.executionNetworkId }} \
-                --bootnodes="$bootnodes" \
-                --syncmode={{ $execution.syncMode }} \
-                --datadir=/data \
-                --http \
-                --http.addr=0.0.0.0 \
-                --http.api=eth,net,web3 \
-                --authrpc.addr=0.0.0.0 \
-                --authrpc.port=8551 \
-                --authrpc.vhosts='*' \
-                --authrpc.jwtsecret=/jwt/jwt.hex \
-                --metrics \
-                --metrics.addr=0.0.0.0 \
-                --metrics.port=6060
+{{ include "ethereum-node.executionRunCommand" . | indent 14 }}
           {{- else }}
           args:
             - {{ printf "--%s" $gethAdapter.network | quote }}
