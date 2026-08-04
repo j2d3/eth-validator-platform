@@ -135,7 +135,10 @@ class EksFluxEntrypointTests(unittest.TestCase):
         # test_eks_ephemery_sync_contracts.
         self.assertIn("suspend", self.layers["node-apps"]["spec"])
         self.assertFalse(self.layers["node-apps"]["spec"]["suspend"])
-        self.assertTrue(self.layers["signer-infrastructure-configs"]["spec"]["suspend"])
+        # The non-workload signer adapter has been reviewed-unsuspended after
+        # its five Terraform-derived inputs and the EKS NetworkPolicy evidence
+        # were qualified. Workload-bearing signer layers remain suspended.
+        self.assertFalse(self.layers["signer-infrastructure-configs"]["spec"]["suspend"])
         self.assertTrue(self.layers["signer-prerequisites"]["spec"]["suspend"])
         self.assertTrue(self.layers["apps"]["spec"]["suspend"])
 

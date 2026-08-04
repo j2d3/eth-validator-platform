@@ -1,8 +1,7 @@
 # EKS development-cluster entrypoint
 
 This directory is the Flux reconciliation root for the single EKS `dev`
-environment. It is committed but has not been bootstrapped onto the live
-cluster. Follow
+environment. It is bootstrapped on the live cluster. Follow
 [`docs/runbooks/eks-flux-bootstrap.md`](../../docs/runbooks/eks-flux-bootstrap.md)
 from a trusted workstation; GitHub Actions has no cluster or AWS deployment
 credential.
@@ -18,7 +17,7 @@ infrastructure-configs
           |                          |
           v                          v
       node-apps          signer-infrastructure-configs
-       (suspended)                 (suspended)
+       (active)                    (active)
                                       |
                                       v
                            signer-prerequisites
@@ -29,14 +28,13 @@ infrastructure-configs
                                 (suspended)
 ```
 
-Controllers and the common Engine-JWT/storage configuration may reconcile
-without launching an Ethereum client or requiring any RDS/signer input. The
-node branch and every signer layer remain suspended
-until the RDS credential, network, TLS, backup, and migration gates in the
-runbook are proven. The later RDS slice must supply or prove the AWS RDS CA
-trust path; this slice only commits the fail-closed `sslmode=verify-full`
-requirement. Removing either suspension is deployment authorization and
-must be a separate reviewed Git change.
+Controllers, common Engine-JWT/storage configuration, the stopped node branch,
+and the signer infrastructure adapter reconcile continuously. The adapter adds
+only scoped SecretStores and Pod security-group policies; it does not launch a
+signer or migration workload. `signer-prerequisites` and `apps` remain
+suspended until the database credential, TLS, migration, empty-keystore, and
+runtime gates in the runbook are proven. Removing either remaining suspension
+is deployment authorization and must be a separate reviewed Git change.
 
 The three scoped reader-role ARNs are non-secret Terraform outputs, but they are
 account-specific and therefore are not committed here. The trusted local
@@ -53,8 +51,8 @@ ACM certificate ARN from the DNS Terraform root. It is non-secret but
 account-specific, uses the same prune-disabled bootstrap-input boundary, and
 must exist before ingress-nginx reconciliation.
 
-Before the separately suspended `signer-infrastructure-configs` layer is
-resumed, the operator adds the database/signing reader fields and distinct
+Before the `signer-infrastructure-configs` layer is admitted, the operator adds
+the database/signing reader fields and distinct
 non-secret
 `WEB3SIGNER_POD_SECURITY_GROUP_ID` and
 `WEB3SIGNER_MIGRATION_POD_SECURITY_GROUP_ID` values used by exact-selector AWS

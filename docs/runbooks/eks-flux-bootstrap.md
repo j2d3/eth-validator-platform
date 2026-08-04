@@ -17,7 +17,7 @@ infrastructure-configs
           |                          |
           v                          v
       node-apps          signer-infrastructure-configs
-       (suspended)                 (suspended)
+       (active)                    (active)
                                       |
                                       v
                            signer-prerequisites
@@ -28,9 +28,9 @@ infrastructure-configs
                                 (suspended)
 ```
 
-This declaration is not runtime evidence. At publication time Flux has not been
-bootstrapped onto EKS, the gp3 StorageClass has not been persisted, and none of
-the four downstream suspensions has been removed.
+The cluster is bootstrapped and the node and signer-infrastructure branches are
+admitted. The node assignment remains stopped. `signer-prerequisites` and
+`apps` remain suspended, so no migration or signer workload exists yet.
 
 ## Ownership boundary
 
@@ -82,8 +82,9 @@ kubectl kustomize platform/apps/dev >/dev/null
 kubectl kustomize platform/apps/nodes/dev >/dev/null
 ```
 
-`clusters/dev/node-apps.yaml`, `signer-infrastructure-configs.yaml`,
-`signer-prerequisites.yaml`, and `apps.yaml` must all contain `suspend: true`.
+`clusters/dev/node-apps.yaml` and `signer-infrastructure-configs.yaml` must
+contain `suspend: false`; `signer-prerequisites.yaml` and `apps.yaml` must
+contain `suspend: true`.
 The rendered assignment must contain
 `lifecycleState: stopped`, `validator.enabled: false`, and
 `slashingProtectionConfirmed: false`.
