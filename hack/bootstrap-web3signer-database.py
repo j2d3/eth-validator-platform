@@ -269,6 +269,29 @@ def apply_bootstrap_resources(
     run(["kubectl", "apply", "-f", "-"], input_text=rendered)
 
 
+def parse_branch_eni_id(annotation: str) -> str:
+    try:
+        value = json.loads(annotation)
+    except json.JSONDecodeError as error:
+        raise BootstrapError("database bootstrap Pod branch-ENI annotation is not JSON") from error
+
+    # EKS VPC Resource Controller serializes the Pod ENI annotation as an
+    # array, even when the Pod has the expected single branch interface.
+    if isinstance(value, list):
+        if len(value) != 1 or not isinstance(value[0], dict):
+            raise BootstrapError(
+                "database bootstrap Pod must have exactly one branch-ENI record"
+            )
+        value = value[0]
+    if not isinstance(value, dict):
+        raise BootstrapError("database bootstrap Pod branch-ENI annotation is invalid")
+
+    eni_id = value.get("eniId") or value.get("eniID")
+    if not isinstance(eni_id, str) or not eni_id.startswith("eni-"):
+        raise BootstrapError("database bootstrap Pod branch-ENI annotation is invalid")
+    return eni_id
+
+
 def wait_and_verify_job(expected_group: str) -> None:
     wait = run(
         [
@@ -295,10 +318,7 @@ def wait_and_verify_job(expected_group: str) -> None:
     eni_value = annotations.get("vpc.amazonaws.com/pod-eni")
     if not eni_value:
         raise BootstrapError("database bootstrap Pod has no branch-ENI annotation")
-    eni_data = json.loads(eni_value)
-    eni_id = eni_data.get("eniId") or eni_data.get("eniID")
-    if not isinstance(eni_id, str) or not eni_id.startswith("eni-"):
-        raise BootstrapError("database bootstrap Pod branch-ENI annotation is invalid")
+    eni_id = parse_branch_eni_id(eni_value)
 
     response = aws_json(
         ["ec2", "describe-network-interfaces", "--network-interface-ids", eni_id]

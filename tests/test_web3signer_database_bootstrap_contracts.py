@@ -139,6 +139,27 @@ class Web3SignerDatabaseBootstrapContracts(unittest.TestCase):
                 with self.assertRaises(self.bootstrap.BootstrapError):
                     self.bootstrap.load_master_secret("secret-arn", database)
 
+    def test_branch_eni_annotation_accepts_the_observed_single_record_array(self) -> None:
+        annotation = json.dumps([{"eniId": "eni-0123456789abcdef0"}])
+        self.assertEqual(
+            self.bootstrap.parse_branch_eni_id(annotation),
+            "eni-0123456789abcdef0",
+        )
+
+    def test_branch_eni_annotation_rejects_ambiguous_or_malformed_shapes(self) -> None:
+        invalid = (
+            "not-json",
+            json.dumps([]),
+            json.dumps([{"eniId": "eni-one"}, {"eniId": "eni-two"}]),
+            json.dumps(["eni-0123456789abcdef0"]),
+            json.dumps({}),
+            json.dumps("eni-0123456789abcdef0"),
+        )
+        for annotation in invalid:
+            with self.subTest(annotation=annotation):
+                with self.assertRaises(self.bootstrap.BootstrapError):
+                    self.bootstrap.parse_branch_eni_id(annotation)
+
 
 if __name__ == "__main__":
     unittest.main()
