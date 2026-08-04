@@ -1,4 +1,21 @@
 {{- if and (eq .Values.lifecycleState "active") .Values.monitoring.enabled }}
+{{- $telemetryLabels := include "ethereum-node.telemetryLabels" . -}}
+{{- /*
+Each EL and CL adapter provides a `metrics:` map naming the Prometheus series
+that client exposes for a fixed set of concepts (peers, head_block, head_slot,
+etc.). The recording rules below build `validator_platform_execution_*` and
+`validator_platform_consensus_*` normalizations by taking an `or` union of the
+per-client aggregations, each filtered by the `execution_client` /
+`consensus_client` label so exactly one client's metric contributes per pair.
+
+Adding a new EL or CL adapter with a `metrics:` block populates the union
+automatically — no PrometheusRule edit required. Metric names that turn out
+to be wrong for a given client render as an empty series for that pair, not a
+render error; the operator verifies each client's names against a live Pod's
+/metrics output.
+*/}}
+{{- $execClients := .Values.executionClients -}}
+{{- $consClients := .Values.consensusClients -}}
 apiVersion: monitoring.coreos.com/v1
 kind: PrometheusRule
 metadata:
@@ -11,29 +28,106 @@ spec:
       interval: 30s
       rules:
         - record: validator_platform_pair_target_up
-          expr: max by ({{ include "ethereum-node.telemetryLabels" . }}, component) (up{platform="ethereum-validator"})
+          expr: max by ({{ $telemetryLabels }}, component) (up{platform="ethereum-validator"})
+
+        {{- /* Execution-layer normalizations. Union across every registered EL. */}}
         - record: validator_platform_execution_peers
-          expr: max by ({{ include "ethereum-node.telemetryLabels" . }}) (p2p_peers{platform="ethereum-validator",component="execution"})
+          expr: >-
+            {{- $exprs := list -}}
+            {{- range $client, $spec := $execClients -}}
+            {{- $one := printf "max by (%s) (%s{platform=\"ethereum-validator\",component=\"execution\",execution_client=\"%s\"})" $telemetryLabels $spec.metrics.peers $client -}}
+            {{- $exprs = append $exprs $one -}}
+            {{- end }}
+            {{ join " or " $exprs }}
         - record: validator_platform_execution_head_block
-          expr: max by ({{ include "ethereum-node.telemetryLabels" . }}) (chain_head_block{platform="ethereum-validator",component="execution"})
+          expr: >-
+            {{- $exprs := list -}}
+            {{- range $client, $spec := $execClients -}}
+            {{- $one := printf "max by (%s) (%s{platform=\"ethereum-validator\",component=\"execution\",execution_client=\"%s\"})" $telemetryLabels $spec.metrics.headBlock $client -}}
+            {{- $exprs = append $exprs $one -}}
+            {{- end }}
+            {{ join " or " $exprs }}
+        {{- /*
+        head_header + internal_sync_distance skip clients that don't declare
+        `headHeader`. Reth's staged pipeline doesn't surface a downloaded-
+        header-frontier gauge distinct from canonical-chain height, so mapping
+        both concepts to the same series would publish sync_distance=0
+        regardless of actual sync state. Per PRD §12.5, missing telemetry is
+        unsupported/not collected, not zero. Clients without headHeader are
+        omitted from both series entirely.
+        */}}
+        {{- $headerClients := dict -}}
+        {{- range $client, $spec := $execClients -}}
+        {{- if hasKey $spec.metrics "headHeader" -}}
+        {{- $_ := set $headerClients $client $spec -}}
+        {{- end -}}
+        {{- end }}
+        {{- if $headerClients }}
         - record: validator_platform_execution_head_header
-          expr: max by ({{ include "ethereum-node.telemetryLabels" . }}) (chain_head_header{platform="ethereum-validator",component="execution"})
+          expr: >-
+            {{- $exprs := list -}}
+            {{- range $client, $spec := $headerClients -}}
+            {{- $one := printf "max by (%s) (%s{platform=\"ethereum-validator\",component=\"execution\",execution_client=\"%s\"})" $telemetryLabels $spec.metrics.headHeader $client -}}
+            {{- $exprs = append $exprs $one -}}
+            {{- end }}
+            {{ join " or " $exprs }}
         - record: validator_platform_execution_internal_sync_distance
-          expr: clamp_min(max by ({{ include "ethereum-node.telemetryLabels" . }}) (chain_head_header{platform="ethereum-validator",component="execution"}) - max by ({{ include "ethereum-node.telemetryLabels" . }}) (chain_head_block{platform="ethereum-validator",component="execution"}), 0)
+          expr: >-
+            {{- $exprs := list -}}
+            {{- range $client, $spec := $headerClients -}}
+            {{- $one := printf "clamp_min(max by (%s) (%s{platform=\"ethereum-validator\",component=\"execution\",execution_client=\"%s\"}) - max by (%s) (%s{platform=\"ethereum-validator\",component=\"execution\",execution_client=\"%s\"}), 0)" $telemetryLabels $spec.metrics.headHeader $client $telemetryLabels $spec.metrics.headBlock $client -}}
+            {{- $exprs = append $exprs $one -}}
+            {{- end }}
+            {{ join " or " $exprs }}
+        {{- end }}
         - record: validator_platform_execution_head_changes_15m
-          expr: max by ({{ include "ethereum-node.telemetryLabels" . }}) (changes(chain_head_block{platform="ethereum-validator",component="execution"}[15m]))
+          expr: >-
+            {{- $exprs := list -}}
+            {{- range $client, $spec := $execClients -}}
+            {{- $one := printf "max by (%s) (changes(%s{platform=\"ethereum-validator\",component=\"execution\",execution_client=\"%s\"}[15m]))" $telemetryLabels $spec.metrics.headBlock $client -}}
+            {{- $exprs = append $exprs $one -}}
+            {{- end }}
+            {{ join " or " $exprs }}
+
+        {{- /* Consensus-layer normalizations. Union across every registered CL. */}}
         - record: validator_platform_consensus_peers
-          expr: sum by ({{ include "ethereum-node.telemetryLabels" . }}) (sync_peers_per_status{platform="ethereum-validator",component="consensus"})
+          expr: >-
+            {{- $exprs := list -}}
+            {{- range $client, $spec := $consClients -}}
+            {{- $one := printf "sum by (%s) (%s{platform=\"ethereum-validator\",component=\"consensus\",consensus_client=\"%s\"})" $telemetryLabels $spec.metrics.peers $client -}}
+            {{- $exprs = append $exprs $one -}}
+            {{- end }}
+            {{ join " or " $exprs }}
         - record: validator_platform_consensus_head_changes_15m
-          expr: max by ({{ include "ethereum-node.telemetryLabels" . }}) (changes(beacon_head_state_slot{platform="ethereum-validator",component="consensus"}[15m]))
+          expr: >-
+            {{- $exprs := list -}}
+            {{- range $client, $spec := $consClients -}}
+            {{- $one := printf "max by (%s) (changes(%s{platform=\"ethereum-validator\",component=\"consensus\",consensus_client=\"%s\"}[15m]))" $telemetryLabels $spec.metrics.headSlot $client -}}
+            {{- $exprs = append $exprs $one -}}
+            {{- end }}
+            {{ join " or " $exprs }}
         - record: validator_platform_consensus_slot_lag
-          expr: clamp_min(max by ({{ include "ethereum-node.telemetryLabels" . }}) (slotclock_present_slot{platform="ethereum-validator",component="consensus"}) - max by ({{ include "ethereum-node.telemetryLabels" . }}) (beacon_head_state_slot{platform="ethereum-validator",component="consensus"}), 0)
+          expr: >-
+            {{- $exprs := list -}}
+            {{- range $client, $spec := $consClients -}}
+            {{- $one := printf "clamp_min(max by (%s) (%s{platform=\"ethereum-validator\",component=\"consensus\",consensus_client=\"%s\"}) - max by (%s) (%s{platform=\"ethereum-validator\",component=\"consensus\",consensus_client=\"%s\"}), 0)" $telemetryLabels $spec.metrics.presentSlot $client $telemetryLabels $spec.metrics.headSlot $client -}}
+            {{- $exprs = append $exprs $one -}}
+            {{- end }}
+            {{ join " or " $exprs }}
         - record: validator_platform_consensus_finality_lag_epochs
-          expr: clamp_min(max by ({{ include "ethereum-node.telemetryLabels" . }}) (slotclock_present_epoch{platform="ethereum-validator",component="consensus"}) - max by ({{ include "ethereum-node.telemetryLabels" . }}) (beacon_head_state_finalized_epoch{platform="ethereum-validator",component="consensus"}), 0)
+          expr: >-
+            {{- $exprs := list -}}
+            {{- range $client, $spec := $consClients -}}
+            {{- $one := printf "clamp_min(max by (%s) (%s{platform=\"ethereum-validator\",component=\"consensus\",consensus_client=\"%s\"}) - max by (%s) (%s{platform=\"ethereum-validator\",component=\"consensus\",consensus_client=\"%s\"}), 0)" $telemetryLabels $spec.metrics.presentEpoch $client $telemetryLabels $spec.metrics.finalizedEpoch $client -}}
+            {{- $exprs = append $exprs $one -}}
+            {{- end }}
+            {{ join " or " $exprs }}
+
+        {{- /* Validator-client + process-generic (client-agnostic) rules. */}}
         - record: validator_platform_validator_enabled
-          expr: max by ({{ include "ethereum-node.telemetryLabels" . }}) (validator_enabled_count{platform="ethereum-validator",component="validator"})
+          expr: max by ({{ $telemetryLabels }}) (validator_enabled_count{platform="ethereum-validator",component="validator"})
         - record: validator_platform_process_cpu_cores
-          expr: sum by ({{ include "ethereum-node.telemetryLabels" . }}, component) (rate(process_cpu_seconds_total{platform="ethereum-validator"}[5m]))
+          expr: sum by ({{ $telemetryLabels }}, component) (rate(process_cpu_seconds_total{platform="ethereum-validator"}[5m]))
         - record: validator_platform_process_resident_memory_bytes
-          expr: sum by ({{ include "ethereum-node.telemetryLabels" . }}, component) (process_resident_memory_bytes{platform="ethereum-validator"})
+          expr: sum by ({{ $telemetryLabels }}, component) (process_resident_memory_bytes{platform="ethereum-validator"})
 {{- end }}

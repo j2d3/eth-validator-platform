@@ -119,13 +119,29 @@ class ScrapeRelabelContractTests(unittest.TestCase):
     def test_every_recording_rule_retains_the_full_label_set(self) -> None:
         aggregations = re.findall(r"\b(?:max|sum|min|count|avg) by \(([^)]*)\)", self.rules)
         self.assertTrue(aggregations, "expected aggregating recording rules")
+        # The template lifted the shared label set into a `$telemetryLabels`
+        # local so per-client recording rules could reuse it inside `printf`
+        # loops (`%s` positional in each per-client union clause). Accept
+        # either the direct include or the variable that captures it exactly
+        # once at the top of the template.
+        accepted = (
+            'include "ethereum-node.telemetryLabels"',
+            "$telemetryLabels",
+            "%s",  # positional placeholder in printf-generated per-client clauses
+        )
         for clause in aggregations:
             with self.subTest(clause=clause.strip()[:60]):
-                self.assertIn(
-                    'include "ethereum-node.telemetryLabels"',
-                    clause,
+                self.assertTrue(
+                    any(marker in clause for marker in accepted),
                     "aggregations must retain the shared telemetry label set",
                 )
+        # Belt-and-braces: the template must set $telemetryLabels from the
+        # canonical include exactly once, so the `%s` positional and the
+        # `$telemetryLabels` variable both trace back to the shared label set.
+        self.assertRegex(
+            self.rules,
+            r'\$telemetryLabels\s*:=\s*include\s+"ethereum-node\.telemetryLabels"',
+        )
 
     def test_telemetry_label_helper_lists_every_label(self) -> None:
         body = self.helpers.split('define "ethereum-node.telemetryLabels" -}}', 1)[1]

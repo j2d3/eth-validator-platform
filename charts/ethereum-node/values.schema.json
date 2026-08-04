@@ -8,6 +8,7 @@
     "executionClient",
     "consensusClient",
     "executionClients",
+    "consensusClients",
     "identity",
     "telemetry",
     "storageClassName",
@@ -138,18 +139,35 @@
       "properties": {
         "geth": {
           "type": "object",
-          "required": ["image", "syncMode"],
+          "required": ["image", "syncMode", "metrics"],
           "properties": {
             "image": {"type": "string", "pattern": "@sha256:[0-9a-f]{64}$"},
-            "syncMode": {"enum": ["snap", "full"]}
+            "syncMode": {"enum": ["snap", "full"]},
+            "metrics": {"$ref": "#/$defs/executionMetricsMap"}
           }
         },
         "reth": {
           "type": "object",
-          "required": ["image"],
+          "required": ["image", "metrics"],
           "additionalProperties": false,
           "properties": {
-            "image": {"type": "string", "pattern": "@sha256:[0-9a-f]{64}$"}
+            "image": {"type": "string", "pattern": "@sha256:[0-9a-f]{64}$"},
+            "metrics": {"$ref": "#/$defs/executionMetricsMap"}
+          }
+        }
+      }
+    },
+    "consensusClients": {
+      "type": "object",
+      "required": ["lighthouse"],
+      "properties": {
+        "lighthouse": {
+          "type": "object",
+          "required": ["image", "metrics"],
+          "additionalProperties": false,
+          "properties": {
+            "image": {"type": "string", "pattern": "@sha256:[0-9a-f]{64}$"},
+            "metrics": {"$ref": "#/$defs/consensusMetricsMap"}
           }
         }
       }
@@ -370,6 +388,33 @@
         {"$ref": "#/$defs/builtinNetworkAdapter"},
         {"$ref": "#/$defs/artifactNetworkAdapter"}
       ]
+    },
+    "prometheusMetricName": {
+      "type": "string",
+      "pattern": "^[a-zA-Z_:][a-zA-Z0-9_:]*$"
+    },
+    "executionMetricsMap": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["headBlock", "peers"],
+      "description": "headBlock and peers are required for every EL. headHeader is optional: only clients that expose a separately-observed downloaded-header-frontier gauge (distinct from canonical-chain height) should declare it. Clients that do not declare headHeader are omitted from both the validator_platform_execution_head_header union and the derived validator_platform_execution_internal_sync_distance rule, so those series are not published for those clients — matching PRD §12.5's 'missing telemetry is unsupported/not collected, not zero' contract.",
+      "properties": {
+        "headBlock": {"$ref": "#/$defs/prometheusMetricName"},
+        "headHeader": {"$ref": "#/$defs/prometheusMetricName"},
+        "peers": {"$ref": "#/$defs/prometheusMetricName"}
+      }
+    },
+    "consensusMetricsMap": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["headSlot", "presentSlot", "presentEpoch", "finalizedEpoch", "peers"],
+      "properties": {
+        "headSlot": {"$ref": "#/$defs/prometheusMetricName"},
+        "presentSlot": {"$ref": "#/$defs/prometheusMetricName"},
+        "presentEpoch": {"$ref": "#/$defs/prometheusMetricName"},
+        "finalizedEpoch": {"$ref": "#/$defs/prometheusMetricName"},
+        "peers": {"$ref": "#/$defs/prometheusMetricName"}
+      }
     },
     "bundlePath": {
       "type": "string",
