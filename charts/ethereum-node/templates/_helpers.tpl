@@ -104,6 +104,8 @@ namespacing, JWT mount, network artifact layout, security context).
 {{- $client := .Values.executionClient -}}
 {{- if eq $client "geth" -}}
 {{- include "ethereum-node.gethInitCommand" . -}}
+{{- else if eq $client "reth" -}}
+{{- include "ethereum-node.rethInitCommand" . -}}
 {{- else -}}
 {{- fail (printf "no init-command adapter for executionClient=%q" $client) -}}
 {{- end -}}
@@ -113,6 +115,8 @@ namespacing, JWT mount, network artifact layout, security context).
 {{- $client := .Values.executionClient -}}
 {{- if eq $client "geth" -}}
 {{- include "ethereum-node.gethRunCommand" . -}}
+{{- else if eq $client "reth" -}}
+{{- include "ethereum-node.rethRunCommand" . -}}
 {{- else -}}
 {{- fail (printf "no run-command adapter for executionClient=%q" $client) -}}
 {{- end -}}
@@ -121,9 +125,25 @@ namespacing, JWT mount, network artifact layout, security context).
 {{- define "ethereum-node.executionDataDirMarker" -}}
 {{- $client := .Values.executionClient -}}
 {{- if eq $client "geth" -}}geth
+{{- else if eq $client "reth" -}}db
 {{- else -}}
 {{- fail (printf "no dataDirMarker for executionClient=%q" $client) -}}
 {{- end -}}
+{{- end -}}
+
+{{/*
+The network-profile adapter for the currently selected execution client.
+Every EL adapter dictionary has the same shape (`mode` plus optionally
+`network`), so callers can read `.mode` and `.network` without knowing
+which client is active.
+*/}}
+{{- define "ethereum-node.executionAdapter" -}}
+{{- $client := .Values.executionClient -}}
+{{- $adapter := index .Values.networkProfile.clients $client -}}
+{{- if not $adapter -}}
+{{- fail (printf "networkProfile.clients.%s is required when executionClient=%q" $client $client) -}}
+{{- end -}}
+{{- toYaml $adapter -}}
 {{- end -}}
 
 {{/*
@@ -157,6 +177,61 @@ for entry in /data/.[!.]* /data/..?* /data/*; do
 done
 geth init --datadir=/data {{ printf "/network/files/%s" .Values.networkProfile.artifactBundle.files.executionGenesis | quote }}
 printf '%s\n' "$expected" > "$marker"
+{{- end -}}
+
+{{/*
+Reth-specific adapters. Reth's genesis format is Geth-compatible so the same
+digest-verified genesis.json bootstraps both clients; init writes state under
+/data/db/ (not /data/geth/). Reth accepts the same comma-delimited bootnode
+enode list as Geth. Metrics bind to :6060 to keep the chart's PodMonitor and
+PrometheusRule contract identical across EL adapters — the exposed metric
+names differ (recording-rule work tracked in #86), but the port and scrape
+shape do not. Reth has no `--syncmode` flag; its pipelined-staged sync is
+always full-derivation, so nothing analogous to Geth's syncMode belongs here.
+*/}}
+{{- define "ethereum-node.rethInitCommand" -}}
+set -eu
+marker=/data/.platform-network-identity
+expected={{ .Values.networkProfile.identityFingerprint | quote }}
+test "$(cat /network/.verified-identity)" = "$expected"
+if [ -f "$marker" ]; then
+  test "$(cat "$marker")" = "$expected" || {
+    echo "execution PVC belongs to another network identity" >&2
+    exit 1
+  }
+  test -d /data/{{ include "ethereum-node.executionDataDirMarker" . }} || {
+    echo "execution PVC marker exists without initialized Reth data" >&2
+    exit 1
+  }
+  exit 0
+fi
+for entry in /data/.[!.]* /data/..?* /data/*; do
+  [ -e "$entry" ] || continue
+  [ "$entry" = /data/lost+found ] && continue
+  echo "refusing to initialize an unmarked non-empty execution PVC" >&2
+  exit 1
+done
+reth init --chain {{ printf "/network/files/%s" .Values.networkProfile.artifactBundle.files.executionGenesis | quote }} --datadir /data
+printf '%s\n' "$expected" > "$marker"
+{{- end -}}
+
+{{- define "ethereum-node.rethRunCommand" -}}
+set -eu
+bootnodes="$(tr '\n' ',' < {{ printf "/network/files/%s" .Values.networkProfile.artifactBundle.files.executionBootnodes }})"
+bootnodes="${bootnodes%,}"
+test -n "$bootnodes"
+exec reth node \
+  --chain {{ printf "/network/files/%s" .Values.networkProfile.artifactBundle.files.executionGenesis | quote }} \
+  --datadir /data \
+  --bootnodes "$bootnodes" \
+  --http \
+  --http.addr 0.0.0.0 \
+  --http.port 8545 \
+  --http.api eth,net,web3 \
+  --authrpc.addr 0.0.0.0 \
+  --authrpc.port 8551 \
+  --authrpc.jwtsecret /jwt/jwt.hex \
+  --metrics 0.0.0.0:6060
 {{- end -}}
 
 {{- define "ethereum-node.gethRunCommand" -}}
