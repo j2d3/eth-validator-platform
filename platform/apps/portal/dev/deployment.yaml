@@ -1,0 +1,81 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: portal-status-api
+  namespace: portal-system
+  labels:
+    app.kubernetes.io/name: portal-status-api
+    app.kubernetes.io/component: read-model
+    app.kubernetes.io/part-of: ethereum-validator-platform
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: portal-status-api
+  template:
+    metadata:
+      labels:
+        app.kubernetes.io/name: portal-status-api
+        app.kubernetes.io/component: read-model
+        app.kubernetes.io/part-of: ethereum-validator-platform
+    spec:
+      automountServiceAccountToken: false
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 65532
+        runAsGroup: 65532
+        seccompProfile:
+          type: RuntimeDefault
+      containers:
+        - name: status-api
+          image: python@sha256:399babc8b49529dabfd9c922f2b5eea81d611e4512e3ed250d75bd2e7683f4b0
+          imagePullPolicy: IfNotPresent
+          command: [/usr/local/bin/python, /app/server.py]
+          env:
+            - name: PROMETHEUS_URL
+              value: http://prometheus-operated.observability.svc.cluster.local:9090
+            - name: ALLOWED_ORIGIN
+              value: https://g.j2d3.com
+            - name: CLUSTER_NAME
+              value: eth-validator-platform-dev
+            - name: ENVIRONMENT
+              value: dev
+          ports:
+            - name: http
+              containerPort: 8080
+              protocol: TCP
+          readinessProbe:
+            httpGet:
+              path: /readyz
+              port: http
+            periodSeconds: 10
+            timeoutSeconds: 3
+            failureThreshold: 3
+          livenessProbe:
+            httpGet:
+              path: /healthz
+              port: http
+            periodSeconds: 20
+            timeoutSeconds: 2
+            failureThreshold: 3
+          resources:
+            requests:
+              cpu: 20m
+              memory: 32Mi
+            limits:
+              cpu: 100m
+              memory: 96Mi
+          securityContext:
+            allowPrivilegeEscalation: false
+            readOnlyRootFilesystem: true
+            capabilities:
+              drop: [ALL]
+          volumeMounts:
+            - name: source
+              mountPath: /app
+              readOnly: true
+      volumes:
+        - name: source
+          configMap:
+            name: portal-status-api-source
+            defaultMode: 0444

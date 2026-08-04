@@ -22,6 +22,7 @@ SIGNER_CONFIGS = CONFIGS / "signer"
 PREREQUISITES = ROOT / "platform" / "apps" / "prerequisites" / "dev"
 APPS = ROOT / "platform" / "apps" / "dev"
 NODE_APPS = ROOT / "platform" / "apps" / "nodes" / "dev"
+PORTAL_APPS = ROOT / "platform" / "apps" / "portal" / "dev"
 WORKFLOWS = ROOT / ".github" / "workflows"
 RUNBOOK = ROOT / "docs" / "runbooks" / "eks-flux-bootstrap.md"
 NETWORK_POLICY_PROBE = ROOT / "hack" / "qualification" / "eks-network-policy-probe.yaml"
@@ -97,6 +98,7 @@ class EksFluxEntrypointTests(unittest.TestCase):
             for name in (
                 "infrastructure-controllers",
                 "infrastructure-configs",
+                "portal-observability",
                 "node-apps",
                 "signer-infrastructure-configs",
                 "signer-prerequisites",
@@ -111,6 +113,7 @@ class EksFluxEntrypointTests(unittest.TestCase):
         }
         self.assertEqual(dependencies["infrastructure-controllers"], [])
         self.assertEqual(dependencies["infrastructure-configs"], ["infrastructure-controllers"])
+        self.assertEqual(dependencies["portal-observability"], ["infrastructure-configs"])
         self.assertEqual(dependencies["node-apps"], ["infrastructure-configs"])
         self.assertEqual(
             dependencies["signer-infrastructure-configs"],
@@ -124,6 +127,7 @@ class EksFluxEntrypointTests(unittest.TestCase):
 
         self.assertNotIn("suspend", self.layers["infrastructure-controllers"]["spec"])
         self.assertNotIn("suspend", self.layers["infrastructure-configs"]["spec"])
+        self.assertNotIn("suspend", self.layers["portal-observability"]["spec"])
         # node-apps has been reviewed-unsuspended to admit the stopped
         # HelmRelease per docs/runbooks/eks-ephemery-sync.md §4. The
         # HelmRelease itself remains lifecycleState=stopped and non-signing;
@@ -174,6 +178,13 @@ class EksFluxEntrypointTests(unittest.TestCase):
             runbook.index(
                 "kubectl -n flux-system create configmap aws-secret-store-role-arns"
             ),
+        )
+
+    def test_controller_layer_requires_the_exact_ingress_certificate_input(self) -> None:
+        post_build = self.layers["infrastructure-controllers"]["spec"]["postBuild"]
+        self.assertEqual(
+            post_build["substituteFrom"],
+            [{"kind": "ConfigMap", "name": "aws-ingress-inputs", "optional": False}],
         )
 
     def test_common_config_needs_only_engine_input_and_signer_branch_fails_closed(self) -> None:
@@ -238,7 +249,10 @@ class EksFluxEntrypointTests(unittest.TestCase):
 
     def test_application_namespaces_start_with_default_deny(self) -> None:
         policies = load_all(CONFIGS / "default-deny.yaml")
-        self.assertEqual({policy["metadata"]["namespace"] for policy in policies}, {"database", "signing", "ethereum"})
+        self.assertEqual(
+            {policy["metadata"]["namespace"] for policy in policies},
+            {"database", "signing", "portal-system", "ethereum"},
+        )
         for policy in policies:
             self.assertEqual(policy["spec"]["podSelector"], {})
             self.assertEqual(set(policy["spec"]["policyTypes"]), {"Ingress", "Egress"})
@@ -247,6 +261,7 @@ class EksFluxEntrypointTests(unittest.TestCase):
         expected = {
             "infrastructure-controllers": "./platform/infrastructure/overlays/dev/controllers",
             "infrastructure-configs": "./platform/infrastructure/configs/dev",
+            "portal-observability": "./platform/apps/portal/dev",
             "node-apps": "./platform/apps/nodes/dev",
             "signer-infrastructure-configs": "./platform/infrastructure/configs/dev/signer",
             "signer-prerequisites": "./platform/apps/prerequisites/dev",

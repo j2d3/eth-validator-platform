@@ -45,6 +45,9 @@ TELEMETRY_LABELS = (
 # Object labels kube-state-metrics may expose, keyed by plural resource name.
 # Intentionally minimal: only what the two joins need.
 EXPECTED_ALLOWLIST = {
+    "nodes": {
+        "eks.amazonaws.com/nodegroup",
+    },
     "pods": {
         "platform.galaxy-lab/network",
         "platform.galaxy-lab/network-profile",
@@ -191,8 +194,8 @@ class KubeStateMetricsAllowlistTests(unittest.TestCase):
             with self.subTest(entry=entry[:40]):
                 self.assertRegex(entry, r"^[a-z]+=\[[^\]]+\]$", "entries are resource=[label,...]")
 
-    def test_allowlist_covers_both_join_resources(self) -> None:
-        """Restarts key on the Pod and volume stats on the PVC — both are required."""
+    def test_allowlist_covers_declared_join_resources(self) -> None:
+        """Node groups, Pod restarts, and PVC volume stats need controlled joins."""
         resources = {entry.split("=", 1)[0] for entry in self.allowlist}
         self.assertEqual(resources, set(EXPECTED_ALLOWLIST))
 
