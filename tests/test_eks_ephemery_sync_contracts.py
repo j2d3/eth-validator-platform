@@ -100,6 +100,22 @@ class EksEphemeryRenderTests(unittest.TestCase):
             text,
         )
 
+        network_volume = next(
+            volume
+            for volume in validator["spec"]["template"]["spec"]["volumes"]
+            if volume["name"] == "validator-network"
+        )
+        self.assertEqual(
+            network_volume["configMap"]["items"],
+            [
+                {"key": "config.yaml", "path": "config.yaml"},
+                {
+                    "key": "deposit_contract_block.txt",
+                    "path": "deposit_contract_block.txt",
+                },
+            ],
+        )
+
         external_secrets = self.by_kind["ExternalSecret"]
         self.assertEqual(len(external_secrets), 1)
         self.assertEqual(
@@ -329,6 +345,15 @@ class EksEphemeryFluxAndTelemetryTests(unittest.TestCase):
             text=True,
         ).stdout
         documents = load_documents(rendered)
+        network_config = next(
+            document
+            for document in documents
+            if document["kind"] == "ConfigMap"
+            and document["metadata"]["name"]
+            == "web3signer-network-config-ephemery-162"
+        )
+        self.assertEqual(network_config["metadata"]["namespace"], "ethereum")
+        self.assertEqual(network_config["data"]["deposit_contract_block.txt"], "0\n")
         releases = [
             document for document in documents if document["kind"] == "HelmRelease"
         ]

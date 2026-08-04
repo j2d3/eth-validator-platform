@@ -135,5 +135,7 @@ spec:
             items:
               - key: config.yaml
                 path: config.yaml
+              - key: deposit_contract_block.txt
+                path: deposit_contract_block.txt
         {{- end }}
 {{- end }}
