@@ -3,15 +3,16 @@ kind: ValidatorAssignment
 metadata:
   name: assignment-ephemery-162-synthetic-reth
 spec:
-  validatorRef: validator-ephemery-162-synthetic-reth
+  validatorRef: validator-ephemery-162-02
   networkProfileRef: ephemery-162
   lifecycle: active
   serviceProfileRef: dedicated-reth-lighthouse
   nodePairRef: pair-ephemery-162-synthetic-reth
   signerRef: shared-web3signer
-  signingEnabled: false
+  signingEnabled: true
+  feeRecipient: "0x26c31E06d6D4CEd468704b62Cb6c2F897D997576"
   safety:
-    slashingProtectionConfirmed: false
-    doppelgangerProtectionConfirmed: false
+    slashingProtectionConfirmed: true
+    doppelgangerProtectionConfirmed: true
   maintenance:
-    reason: Activate the non-signing Reth and Lighthouse client pair for live Ephemery sync qualification; keep it running.
+    reason: Enable the independently deposited Ephemery validator through the qualified shared signer and synced Reth plus Lighthouse pair.
