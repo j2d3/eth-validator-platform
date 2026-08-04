@@ -6,6 +6,19 @@ resources:
   - profile.yaml
   - validator-keystore-secret.yaml
 
+configMapGenerator:
+  # Web3Signer accepts a local consensus-spec configuration file for custom
+  # networks. Supplying the generation-pinned file prevents its predefined
+  # Ephemery profile from fetching bootnodes at startup; the signer remains
+  # inside its DNS + RDS-only egress boundary.
+  - name: web3signer-network-config-ephemery-162
+    options:
+      # The name is already generation-specific. JSON6902-added volume
+      # references are not rewritten to Kustomize hash-suffixed names.
+      disableNameSuffixHash: true
+    files:
+      - config.yaml=network-configs/ephemery-162.yaml
+
 patches:
   - path: signer-telemetry-patch.yaml
   - target:
@@ -46,7 +59,7 @@ patches:
         value: --slashing-protection-db-url=jdbc:postgresql://$(DB_HOST):$(DB_PORT)/$(DB_NAME)?sslmode=verify-full&sslrootcert=/var/run/aws-rds-ca/rds-ca.pem
       - op: replace
         path: /spec/template/spec/containers/0/args/9
-        value: --network=ephemery
+        value: --network=/var/run/web3signer/network/config.yaml
       - op: add
         path: /spec/template/spec/securityContext/fsGroup
         value: 999
@@ -77,11 +90,23 @@ patches:
           mountPath: /var/run/aws-rds-ca
           readOnly: true
       - op: add
+        path: /spec/template/spec/containers/0/volumeMounts/-
+        value:
+          name: network-config
+          mountPath: /var/run/web3signer/network
+          readOnly: true
+      - op: add
         path: /spec/template/spec/volumes/-
         value:
           name: aws-rds-ca
           configMap:
             name: aws-rds-ca
+      - op: add
+        path: /spec/template/spec/volumes/-
+        value:
+          name: network-config
+          configMap:
+            name: web3signer-network-config-ephemery-162
   - target:
       version: v1
       kind: ConfigMap
