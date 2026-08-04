@@ -183,10 +183,20 @@ def load_master_secret(secret_id: str, database: dict[str, object]) -> dict[str,
         raise BootstrapError("RDS master secret has an unexpected shape")
     if value.get("username") != "web3signer_admin":
         raise BootstrapError("RDS master username does not match the Terraform contract")
-    if value.get("host") != database["address"]:
+    # An RDS-managed master secret is a credential boundary, not the database
+    # connection contract. The observed AWS-managed JSON contains only
+    # ``username`` and ``password``; the current endpoint and port come from
+    # Terraform's applied DB-instance outputs. If AWS later adds routing fields,
+    # still reject a disagreement rather than silently preferring either source.
+    if "host" in value and value["host"] != database["address"]:
         raise BootstrapError("RDS master-secret host does not match Terraform")
-    if int(value.get("port", 0)) != int(database["port"]):
-        raise BootstrapError("RDS master-secret port does not match Terraform")
+    if "port" in value:
+        try:
+            observed_port = int(value["port"])
+        except (TypeError, ValueError) as error:
+            raise BootstrapError("RDS master-secret port is invalid") from error
+        if observed_port != int(database["port"]):
+            raise BootstrapError("RDS master-secret port does not match Terraform")
     password = value.get("password")
     if not isinstance(password, str) or len(password) < 20:
         raise BootstrapError("RDS master password is absent or unexpectedly short")

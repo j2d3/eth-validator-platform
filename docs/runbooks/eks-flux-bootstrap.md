@@ -487,6 +487,11 @@ it cannot rotate a credential implicitly. It reads the RDS-managed master
 credential only into process memory, creates one temporary Kubernetes Secret,
 and runs the committed qualification Job through the migration Pod's branch
 ENI. PostgreSQL TLS uses `verify-full` and the digest-pinned AWS RDS CA bundle.
+The AWS-managed master secret supplies only the master username and password;
+the applied Terraform DB-instance output remains authoritative for the current
+endpoint, port, and database name. If AWS supplies optional `host` or `port`
+fields, the tool requires them to match Terraform rather than choosing between
+conflicting routing sources.
 The Job creates or updates only a `web3signer` login with no superuser,
 database-creation, role-creation, or replication authority. It then writes the
 five-field application JSON to the existing Secrets Manager container and

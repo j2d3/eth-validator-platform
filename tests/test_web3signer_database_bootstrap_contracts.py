@@ -2,9 +2,13 @@
 
 from __future__ import annotations
 
+import json
 import re
 import unittest
+from importlib import util
 from pathlib import Path
+from subprocess import CompletedProcess
+from unittest.mock import patch
 
 import yaml
 
@@ -23,6 +27,10 @@ class Web3SignerDatabaseBootstrapContracts(unittest.TestCase):
             "${WEB3SIGNER_DATABASE_VPC_CIDR}", "10.42.0.0/16"
         )))
         cls.by_kind = {document["kind"]: document for document in cls.documents}
+        spec = util.spec_from_file_location("web3signer_database_bootstrap", SCRIPT)
+        assert spec and spec.loader
+        cls.bootstrap = util.module_from_spec(spec)
+        spec.loader.exec_module(cls.bootstrap)
 
     def test_fixture_is_one_exact_job_and_network_policy(self) -> None:
         self.assertEqual(set(self.by_kind), {"Job", "NetworkPolicy"})
@@ -95,6 +103,32 @@ class Web3SignerDatabaseBootstrapContracts(unittest.TestCase):
         self.assertIn('"secret", RESOURCE_NAME', self.script)
         self.assertIn('"configmap", CA_CONFIGMAP', self.script)
         self.assertNotIn("--all", self.script)
+
+    def test_rds_managed_master_secret_may_be_credentials_only(self) -> None:
+        observed = {"username": "web3signer_admin", "password": "x" * 32}
+        with patch.object(
+            self.bootstrap,
+            "run",
+            return_value=CompletedProcess([], 0, stdout=json.dumps(observed)),
+        ):
+            result = self.bootstrap.load_master_secret(
+                "secret-arn", {"address": "db.example", "port": 5432}
+            )
+        self.assertEqual(result, observed)
+
+    def test_optional_master_secret_routing_fields_must_match_terraform(self) -> None:
+        base = {"username": "web3signer_admin", "password": "x" * 32}
+        database = {"address": "db.example", "port": 5432}
+        for override in ({"host": "stale.example"}, {"port": 6432}, {"port": "bad"}):
+            with self.subTest(override=override), patch.object(
+                self.bootstrap,
+                "run",
+                return_value=CompletedProcess(
+                    [], 0, stdout=json.dumps(base | override)
+                ),
+            ):
+                with self.assertRaises(self.bootstrap.BootstrapError):
+                    self.bootstrap.load_master_secret("secret-arn", database)
 
 
 if __name__ == "__main__":
