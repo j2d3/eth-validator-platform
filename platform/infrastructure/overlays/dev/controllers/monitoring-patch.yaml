@@ -15,13 +15,16 @@ spec:
           root_url: https://ops.g.j2d3.com/grafana
           serve_from_sub_path: true
         # Anonymous read access for the demo. This is a non-financial
-        # Ethereum testnet lab; the dashboards show cluster health, sync
-        # progress, and pair state — the same shape of information the
-        # public repo already discloses. A viewer sees dashboards read-only
-        # (Viewer role, no write); the admin login still gates dashboard
-        # editing, datasource changes, plugin install, and every other
-        # write action. A production instance would front Grafana with
-        # OIDC/SSO instead (issue #71).
+        # Ethereum testnet lab; nothing under this datasource is secret.
+        # The Viewer role is not a per-dashboard grant — OSS Grafana lets
+        # a Viewer issue arbitrary PromQL against every organization
+        # datasource, so this configuration exposes the full cluster
+        # Prometheus query surface to unauthenticated callers, not only
+        # the pre-built panels. Accepted as a deliberate demo tradeoff and
+        # documented in docs/runbooks/operations-ingress.md. Writes remain
+        # gated by the admin login (dashboard edits, datasource changes,
+        # plugin install). A production instance would front Grafana with
+        # OIDC/SSO and a query-scoped datasource instead.
         auth.anonymous:
           enabled: true
           org_name: Main Org.

@@ -168,8 +168,10 @@ class OperationsIngressTests(unittest.TestCase):
         # Anonymous read access is enabled for the demo. The chart values
         # explicitly cap it to the Viewer role: no dashboard editing,
         # datasource changes, or plugin install available without the admin
-        # login. A production instance would replace this with OIDC/SSO
-        # (issue #71).
+        # login. The Viewer role does grant arbitrary PromQL against the
+        # cluster datasource — that broader public read surface is
+        # deliberately accepted and documented in the operations-ingress
+        # runbook.
         patch = yaml.safe_load(MONITORING_PATCH.read_text(encoding="utf-8"))
         config = patch["spec"]["values"]["grafana"]["grafana.ini"]
         self.assertEqual(
@@ -182,7 +184,20 @@ class OperationsIngressTests(unittest.TestCase):
         anon = config["auth.anonymous"]
         self.assertTrue(anon["enabled"])
         self.assertEqual(anon["org_role"], "Viewer")
+        self.assertTrue(anon["hide_version"])
         self.assertEqual(config["security"]["cookie_secure"], True)
+        self.assertEqual(config["security"]["cookie_samesite"], "lax")
+        self.assertTrue(config["security"]["disable_gravatar"])
+
+    def test_public_read_surface_is_documented_in_the_runbook(self) -> None:
+        # Drift check: if anonymous Viewer is enabled but the runbook stops
+        # documenting the arbitrary-PromQL exposure, the demo tradeoff is no
+        # longer explicit and the guardrail is lost.
+        runbook = RUNBOOK.read_text(encoding="utf-8")
+        self.assertIn("Public read surface (Grafana)", runbook)
+        self.assertIn("arbitrary PromQL", runbook)
+        self.assertIn("/grafana/api/datasources/proxy", runbook)
+        self.assertIn("not appropriate", runbook)
 
 
 if __name__ == "__main__":
