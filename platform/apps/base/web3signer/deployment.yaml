@@ -40,6 +40,11 @@ spec:
             - --metrics-enabled=true
             - --metrics-host=0.0.0.0
             - --metrics-port=9001
+            # Prometheus scrapes the Pod IP, whose dynamic Host header cannot
+            # be enumerated. This applies only to the metrics listener; the
+            # signing API keeps its explicit service-host allowlist, and the
+            # NetworkPolicy admits port 9001 only from observability.
+            - --metrics-host-allowlist=*
             - --key-store-path=/var/run/web3signer/keys
             - eth2
             - --network=hoodi

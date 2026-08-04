@@ -540,11 +540,17 @@ class EksApplicationSafetyTests(unittest.TestCase):
         documents = render_all(APPS)
         deployment = object_named(documents, "Deployment", "web3signer")
         pod = deployment["spec"]["template"]["spec"]
+        args = pod["containers"][0]["args"]
         key_store = next(
             volume for volume in pod["volumes"] if volume["name"] == "key-store"
         )
 
         self.assertEqual(key_store, {"name": "key-store", "emptyDir": {}})
+        self.assertIn("--metrics-host-allowlist=*", args)
+        self.assertEqual(
+            next(arg for arg in args if arg.startswith("--http-host-allowlist=")),
+            "--http-host-allowlist=web3signer,web3signer.signing.svc,web3signer.signing.svc.cluster.local",
+        )
         self.assertNotIn("validator-keystore", yaml.safe_dump_all(documents))
         self.assertFalse(
             load_one(APPS / "profile.yaml")["data"]["signingEnabled"]
