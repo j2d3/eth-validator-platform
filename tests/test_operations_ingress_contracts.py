@@ -164,7 +164,12 @@ class OperationsIngressTests(unittest.TestCase):
             grafana_rule["http"]["paths"][0]["pathType"], "Prefix"
         )
 
-    def test_grafana_uses_https_subpath_and_keeps_anonymous_access_off(self) -> None:
+    def test_grafana_uses_https_subpath_and_grants_only_viewer_role_to_anonymous(self) -> None:
+        # Anonymous read access is enabled for the demo. The chart values
+        # explicitly cap it to the Viewer role: no dashboard editing,
+        # datasource changes, or plugin install available without the admin
+        # login. A production instance would replace this with OIDC/SSO
+        # (issue #71).
         patch = yaml.safe_load(MONITORING_PATCH.read_text(encoding="utf-8"))
         config = patch["spec"]["values"]["grafana"]["grafana.ini"]
         self.assertEqual(
@@ -174,7 +179,9 @@ class OperationsIngressTests(unittest.TestCase):
                 "serve_from_sub_path": True,
             },
         )
-        self.assertEqual(config["auth.anonymous"]["enabled"], False)
+        anon = config["auth.anonymous"]
+        self.assertTrue(anon["enabled"])
+        self.assertEqual(anon["org_role"], "Viewer")
         self.assertEqual(config["security"]["cookie_secure"], True)
 
 

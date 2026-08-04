@@ -14,8 +14,20 @@ spec:
         server:
           root_url: https://ops.g.j2d3.com/grafana
           serve_from_sub_path: true
+        # Anonymous read access for the demo. This is a non-financial
+        # Ethereum testnet lab; the dashboards show cluster health, sync
+        # progress, and pair state — the same shape of information the
+        # public repo already discloses. A viewer sees dashboards read-only
+        # (Viewer role, no write); the admin login still gates dashboard
+        # editing, datasource changes, plugin install, and every other
+        # write action. A production instance would front Grafana with
+        # OIDC/SSO instead (issue #71).
         auth.anonymous:
-          enabled: false
+          enabled: true
+          org_name: Main Org.
+          org_role: Viewer
+          hide_version: true
         security:
           cookie_secure: true
           cookie_samesite: lax
+          disable_gravatar: true
