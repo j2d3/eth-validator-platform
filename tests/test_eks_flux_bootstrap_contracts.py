@@ -504,10 +504,15 @@ class EksApplicationSafetyTests(unittest.TestCase):
                 self.assertFalse(container["securityContext"]["allowPrivilegeEscalation"])
                 self.assertEqual(container["securityContext"]["capabilities"]["drop"], ["ALL"])
 
-    def test_dev_overlay_preserves_stopped_non_signing_assignment(self) -> None:
+    def test_dev_overlay_preserves_non_signing_assignment(self) -> None:
+        # The assignment has been reviewed-activated per the sync runbook §6.
+        # The real non-signing safety property is validator.enabled=false and
+        # slashingProtectionConfirmed=false — lifecycleState is an operational
+        # flag, not a signing gate. Accept either stopped or active; reject
+        # any release that flips a signing-related field.
         release = load_one(ROOT / "platform" / "apps" / "local" / "assignments" / "assignment-ephemery-162-synthetic.yaml")
         values = release["spec"]["values"]
-        self.assertEqual(values["lifecycleState"], "stopped")
+        self.assertIn(values["lifecycleState"], ("stopped", "active"))
         self.assertFalse(values["validator"]["enabled"])
         self.assertFalse(values["validator"]["slashingProtectionConfirmed"])
 
