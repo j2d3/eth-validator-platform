@@ -2,6 +2,9 @@ apiVersion: kustomize.config.k8s.io/v1beta1
 kind: Kustomization
 resources:
   - ../../../controllers
+  - ingress-nginx-namespace.yaml
+  - ingress-nginx-repository.yaml
+  - ingress-nginx.yaml
 
 patches:
   - path: monitoring-patch.yaml

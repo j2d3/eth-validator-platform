@@ -18,7 +18,7 @@ class PortalDnsContracts(unittest.TestCase):
         self.readme = (DNS_ROOT / "README.md").read_text(encoding="utf-8")
 
     def test_exact_hostname_has_no_wildcard(self) -> None:
-        self.assertIn('portal_hostname  = "g.j2d3.com"', self.main)
+        self.assertRegex(self.main, r'portal_hostname\s+= "g\.j2d3\.com"')
         self.assertNotIn("*.j2d3.com", self.main)
         self.assertNotIn("*.j2d3.com", self.readme)
 
@@ -87,10 +87,10 @@ class PortalDnsContracts(unittest.TestCase):
     def test_docs_keep_dns_and_tls_evidence_distinct(self) -> None:
         normalized = " ".join(self.readme.split())
         for statement in (
-            "Terraform owns Route 53 only",
+            "Terraform owns Route 53 and the exact",
             "DNS propagation is not certificate evidence",
-            "There is no wildcard record",
-            "whose SAN covers the exact hostname",
+            "There is no wildcard record, certificate",
+            "certificate whose SAN covers that exact hostname",
         ):
             with self.subTest(statement=statement):
                 self.assertIn(statement, normalized)

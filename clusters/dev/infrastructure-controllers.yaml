@@ -15,6 +15,11 @@ spec:
   path: ./platform/infrastructure/overlays/dev/controllers
   prune: true
   wait: true
+  postBuild:
+    substituteFrom:
+      - kind: ConfigMap
+        name: aws-ingress-inputs
+        optional: false
   commonMetadata:
     labels:
       platform.galaxy-lab/environment: dev

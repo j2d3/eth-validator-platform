@@ -52,3 +52,6 @@ render \
 render \
   "${REPOSITORY_ROOT}/platform/infrastructure/controllers/logging-alloy.yaml" \
   "https://grafana.github.io/helm-charts"
+render \
+  "${REPOSITORY_ROOT}/platform/infrastructure/overlays/dev/controllers/ingress-nginx.yaml" \
+  "https://kubernetes.github.io/ingress-nginx"

@@ -180,6 +180,13 @@ class EksFluxEntrypointTests(unittest.TestCase):
             ),
         )
 
+    def test_controller_layer_requires_the_exact_ingress_certificate_input(self) -> None:
+        post_build = self.layers["infrastructure-controllers"]["spec"]["postBuild"]
+        self.assertEqual(
+            post_build["substituteFrom"],
+            [{"kind": "ConfigMap", "name": "aws-ingress-inputs", "optional": False}],
+        )
+
     def test_common_config_needs_only_engine_input_and_signer_branch_fails_closed(self) -> None:
         common = yaml.safe_dump_all(render_all(CONFIGS))
         signer = yaml.safe_dump_all(render_all(SIGNER_CONFIGS))
