@@ -5,7 +5,7 @@ metadata:
 spec:
   validatorRef: validator-ephemery-162-synthetic-reth
   networkProfileRef: ephemery-162
-  lifecycle: stopped
+  lifecycle: active
   serviceProfileRef: dedicated-reth-lighthouse
   nodePairRef: pair-ephemery-162-synthetic-reth
   signerRef: shared-web3signer
@@ -13,3 +13,5 @@ spec:
   safety:
     slashingProtectionConfirmed: false
     doppelgangerProtectionConfirmed: false
+  maintenance:
+    reason: Activate the non-signing Reth and Lighthouse client pair for live Ephemery sync qualification; keep it running.
