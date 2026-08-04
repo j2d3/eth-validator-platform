@@ -5,7 +5,7 @@ metadata:
 spec:
   validatorRef: validator-ephemery-162-synthetic
   networkProfileRef: ephemery-162
-  lifecycle: stopped
+  lifecycle: active
   serviceProfileRef: dedicated-geth-lighthouse
   nodePairRef: pair-ephemery-162-synthetic
   signerRef: shared-web3signer
@@ -14,5 +14,5 @@ spec:
     slashingProtectionConfirmed: false
     doppelgangerProtectionConfirmed: false
   maintenance:
-    reason: Retained Lighthouse database refuses checkpoint sync and its head is stalled; replace only the disposable consensus
-      claim, then reactivate.
+    reason: Reactivate with a fresh Lighthouse consensus claim after the retained database refused checkpoint sync; keep the
+      pair running.
