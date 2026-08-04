@@ -10,3 +10,12 @@ spec:
       # logging design. Add an AWS logging adapter after retention, object
       # storage, and ingestion cost have been reviewed.
       additionalDataSources: []
+      grafana.ini:
+        server:
+          root_url: https://ops.g.j2d3.com/grafana
+          serve_from_sub_path: true
+        auth.anonymous:
+          enabled: false
+        security:
+          cookie_secure: true
+          cookie_samesite: lax

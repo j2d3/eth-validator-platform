@@ -261,6 +261,27 @@ h1 {
   font-size: 0.86rem;
 }
 
+.status-table tbody small {
+  display: block;
+  margin-top: 4px;
+  color: var(--muted);
+  font-family: var(--font-geist-mono), monospace;
+  font-size: 0.68rem;
+  font-weight: 400;
+}
+
+.pair-table {
+  min-width: 1120px;
+}
+
+.telemetry-message {
+  margin: 0 0 24px;
+  padding: 24px;
+  color: var(--muted);
+  font-family: var(--font-geist-mono), monospace;
+  font-size: 0.82rem;
+}
+
 .status {
   display: inline-flex;
   align-items: center;

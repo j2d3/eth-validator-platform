@@ -1,10 +1,9 @@
+import LiveStatus from "../components/live-status";
 import {
-  componentStatuses,
-  observedAt,
-  observedRevision,
+  grafanaBase,
+  grafanaDashboards,
   repository,
   resources,
-  summary,
 } from "../lib/portal-registry";
 
 export default function Home() {
@@ -25,21 +24,15 @@ export default function Home() {
           >
             Specification
           </a>
-          <a href={`${repository}/tree/main/docs/runbooks`}>Runbooks</a>
+          <a href={grafanaBase}>Grafana</a>
         </nav>
       </header>
 
       <main id="main">
         <section className="environment-heading" aria-labelledby="page-title">
           <div>
-            <p className="context">Development environment · AWS us-west-2</p>
+            <p className="context">Development · EKS · AWS us-west-2</p>
             <h1 id="page-title">Environment status</h1>
-            <p className="observation">
-              Observed {observedAt} · revision{" "}
-              <a href={`${repository}/commit/${observedRevision}`}>
-                {observedRevision.slice(0, 7)}
-              </a>
-            </p>
           </div>
           <div className="signing-state" aria-label="Signing disabled">
             <span>Signing</span>
@@ -47,51 +40,26 @@ export default function Home() {
           </div>
         </section>
 
-        <section className="summary-grid" aria-label="Environment summary">
-          {summary.map((item) => (
-            <article className="summary-item" key={item.label}>
-              <span className="summary-item__label">{item.label}</span>
-              <strong>{item.value}</strong>
-              <span className={`detail detail--${item.tone}`}>
-                {item.detail}
-              </span>
-            </article>
-          ))}
-        </section>
+        <LiveStatus />
 
-        <section className="panel" aria-labelledby="components-title">
+        <section className="panel" aria-labelledby="dashboards-title">
           <div className="panel-heading">
-            <h2 id="components-title">Components</h2>
-            <span>Last observed {observedAt}</span>
+            <h2 id="dashboards-title">Grafana dashboards</h2>
           </div>
-          <div className="status-table-wrap">
-            <table className="status-table">
-              <thead>
-                <tr>
-                  <th scope="col">Component</th>
-                  <th scope="col">Status</th>
-                  <th scope="col">Details</th>
-                  <th scope="col">Source</th>
-                </tr>
-              </thead>
-              <tbody>
-                {componentStatuses.map((item) => (
-                  <tr key={item.component}>
-                    <th scope="row">{item.component}</th>
-                    <td>
-                      <span className={`status status--${item.tone}`}>
-                        <i aria-hidden="true" />
-                        {item.status}
-                      </span>
-                    </td>
-                    <td>{item.detail}</td>
-                    <td>
-                      <a href={item.href}>{item.linkLabel}</a>
-                    </td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
+          <div className="resource-list">
+            {grafanaDashboards.map((dashboard) => (
+              <a
+                className="resource-link"
+                href={dashboard.href}
+                key={dashboard.name}
+              >
+                <span>
+                  <strong>{dashboard.name}</strong>
+                  <small>{dashboard.description}</small>
+                </span>
+                <span aria-hidden="true">↗</span>
+              </a>
+            ))}
           </div>
         </section>
 

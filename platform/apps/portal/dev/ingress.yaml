@@ -1,0 +1,24 @@
+apiVersion: networking.k8s.io/v1
+kind: Ingress
+metadata:
+  name: portal-status-api
+  namespace: portal-system
+  labels:
+    app.kubernetes.io/name: portal-status-api
+    app.kubernetes.io/part-of: ethereum-validator-platform
+  annotations:
+    nginx.ingress.kubernetes.io/rewrite-target: /v1/status
+    nginx.ingress.kubernetes.io/ssl-redirect: "false"
+spec:
+  ingressClassName: nginx
+  rules:
+    - host: ops.g.j2d3.com
+      http:
+        paths:
+          - path: /api/status
+            pathType: Exact
+            backend:
+              service:
+                name: portal-status-api
+                port:
+                  name: http

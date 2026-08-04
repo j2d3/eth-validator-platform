@@ -56,10 +56,10 @@ test("server-renders the environment status page", async () => {
   );
   assert.match(html, /name="twitter:card" content="summary_large_image"/i);
   assert.match(html, /Environment status/);
-  assert.match(html, /System nodes/);
-  assert.match(html, /Ethereum nodes/);
+  assert.match(html, /Loading live status/);
+  assert.match(html, /Kubernetes and node dashboards/);
   assert.match(html, /Signing<\/span><strong>Disabled/);
-  assert.match(html, /Geth \+ Lighthouse/);
+  assert.match(html, /Client-pair sync/);
   assert.match(html, /Project links/);
   assert.equal(
     response.headers.get("strict-transport-security"),
@@ -150,7 +150,9 @@ test("renders only functional navigation", async () => {
 
     const destination = new URL(href);
     assert.equal(destination.protocol, "https:");
-    assert.equal(destination.hostname, "github.com");
+    if (destination.hostname === "github.com") continue;
+    assert.equal(destination.hostname, "ops.g.j2d3.com");
+    assert.match(destination.pathname, /^\/grafana(?:\/|$)/);
   }
 
   assert.doesNotMatch(html, /<button\b|role="button"/i);
@@ -166,7 +168,7 @@ test("source links point to tracked repository paths", async () => {
     ...registry.matchAll(/\$\{repository\}\/(?:blob|tree)\/main\/([^`]+)`/g),
   ].map((match) => match[1]);
 
-  assert.ok(linkedPaths.length >= 8);
+  assert.ok(linkedPaths.length >= 7);
   for (const linkedPath of linkedPaths) {
     await access(new URL(`../../../${linkedPath}`, import.meta.url));
   }
@@ -212,6 +214,22 @@ test("keeps private endpoints and identifiers out of portal source", async () =>
     registry,
     /validatorPublicKey|secretRef|secretKeyRef|keystore/i,
   );
+});
+
+test("live status uses the exact public adapter and polls without controls", async () => {
+  const [component, registry] = await Promise.all([
+    readFile(new URL("../components/live-status.tsx", import.meta.url), "utf8"),
+    readFile(new URL("../lib/portal-registry.ts", import.meta.url), "utf8"),
+  ]);
+
+  assert.match(registry, /statusEndpoint\s*=\s*`\$\{operationsOrigin\}\/api\/status`/);
+  assert.match(registry, /operationsOrigin\s*=\s*"https:\/\/ops\.g\.j2d3\.com"/);
+  assert.match(component, /POLL_INTERVAL_MS\s*=\s*15_000/);
+  assert.match(component, /fetch\(statusEndpoint/);
+  assert.match(component, /cache:\s*"no-store"/);
+  assert.match(component, /window\.setInterval\(load,\s*POLL_INTERVAL_MS\)/);
+  assert.doesNotMatch(component, /<button\b|role="button"/i);
+  assert.doesNotMatch(component, /customer|validatorPublicKey|secretRef|keystore/i);
 });
 
 test("Worker imports the shared canonical origin", async () => {

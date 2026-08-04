@@ -10,9 +10,8 @@ This ingress creates:
 
 The NLB has an hourly and capacity-unit charge for as long as its Kubernetes
 Service exists. ACM public certificates have no separate certificate charge.
-No application route is added in this change; an HTTPS request reaches the
-controller's normal 404 response until the reviewed API and Grafana Ingress
-objects are applied.
+The reviewed Ingress objects expose only `/api/status` and `/grafana` on the
+exact operations hostname.
 
 ## 1. Create and validate the certificate
 
@@ -86,9 +85,18 @@ dig +short ops.g.j2d3.com CNAME
 curl --silent --show-error --head https://ops.g.j2d3.com/
 ```
 
-Before application routes exist, a valid TLS connection followed by an nginx
-404 is expected. Certificate failure, plaintext application traffic, a
-different SAN, or a non-AWS DNS target is a failed qualification.
+Verify the two configured routes and confirm an unrelated path remains absent:
+
+```bash
+curl --fail --silent https://ops.g.j2d3.com/api/status | jq '.source'
+curl --silent --show-error --head https://ops.g.j2d3.com/grafana/
+test "$(curl --silent --output /dev/null --write-out '%{http_code}' \
+  https://ops.g.j2d3.com/not-configured)" = "404"
+```
+
+Certificate failure, plaintext application traffic, a different SAN, an
+anonymous Grafana dashboard response, or a non-AWS DNS target is a failed
+qualification.
 
 ## Pause or removal
 

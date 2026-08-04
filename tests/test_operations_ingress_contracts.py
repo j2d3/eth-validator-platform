@@ -15,6 +15,9 @@ DEV_CONTROLLERS = ROOT / "platform" / "infrastructure" / "overlays" / "dev" / "c
 CLUSTER = ROOT / "clusters" / "dev"
 RUNBOOK = ROOT / "docs" / "runbooks" / "operations-ingress.md"
 BOOTSTRAP = ROOT / "docs" / "runbooks" / "eks-flux-bootstrap.md"
+STATUS_INGRESS = ROOT / "platform" / "apps" / "portal" / "dev" / "ingress.yaml"
+GRAFANA_INGRESS = DEV_CONTROLLERS / "grafana-ingress.yaml"
+MONITORING_PATCH = DEV_CONTROLLERS / "monitoring-patch.yaml"
 
 
 class OperationsDnsTests(unittest.TestCase):
@@ -131,6 +134,48 @@ class OperationsIngressTests(unittest.TestCase):
             "ingress-nginx.yaml",
         ):
             self.assertIn(resource, overlay)
+
+    def test_status_and_grafana_use_only_reviewed_exact_paths(self) -> None:
+        status = yaml.safe_load(STATUS_INGRESS.read_text(encoding="utf-8"))
+        grafana = yaml.safe_load(GRAFANA_INGRESS.read_text(encoding="utf-8"))
+        status_rule = status["spec"]["rules"][0]
+        grafana_rule = grafana["spec"]["rules"][0]
+        self.assertEqual(status_rule["host"], "ops.g.j2d3.com")
+        self.assertEqual(grafana_rule["host"], "ops.g.j2d3.com")
+        self.assertEqual(
+            status_rule["http"]["paths"],
+            [
+                {
+                    "path": "/api/status",
+                    "pathType": "Exact",
+                    "backend": {
+                        "service": {
+                            "name": "portal-status-api",
+                            "port": {"name": "http"},
+                        }
+                    },
+                }
+            ],
+        )
+        self.assertEqual(
+            grafana_rule["http"]["paths"][0]["path"], "/grafana"
+        )
+        self.assertEqual(
+            grafana_rule["http"]["paths"][0]["pathType"], "Prefix"
+        )
+
+    def test_grafana_uses_https_subpath_and_keeps_anonymous_access_off(self) -> None:
+        patch = yaml.safe_load(MONITORING_PATCH.read_text(encoding="utf-8"))
+        config = patch["spec"]["values"]["grafana"]["grafana.ini"]
+        self.assertEqual(
+            config["server"],
+            {
+                "root_url": "https://ops.g.j2d3.com/grafana",
+                "serve_from_sub_path": True,
+            },
+        )
+        self.assertEqual(config["auth.anonymous"]["enabled"], False)
+        self.assertEqual(config["security"]["cookie_secure"], True)
 
 
 if __name__ == "__main__":

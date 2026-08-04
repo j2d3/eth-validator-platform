@@ -7,9 +7,11 @@ public-safe JSON snapshot for the project portal. It does not accept PromQL,
 Kubernetes object names, customer identifiers, validator identifiers, public
 keys, or credentials from callers.
 
-The first deployment is a ClusterIP service in `portal-system`. There is no
-public ingress in this slice. A Grafana URL is `null` until a tested HTTPS
-Grafana endpoint is configured.
+The adapter remains a ClusterIP service in `portal-system`. In EKS,
+ingress-nginx exposes only `https://ops.g.j2d3.com/api/status`; the exact path
+is rewritten to `/v1/status`. Grafana is served separately under
+`https://ops.g.j2d3.com/grafana` with its login enabled and anonymous access
+disabled.
 
 The adapter uses the Prometheus Operator's headless `prometheus-operated`
 Service so AWS VPC CNI NetworkPolicy evaluates the selected Prometheus Pod IP
@@ -61,9 +63,15 @@ Confirm the response contains no customer ID, validator ID, network identity,
 public key, Secret value, Pod IP, node IP, or AWS account ID before exposing
 the API beyond the cluster.
 
-## HTTPS and Grafana follow-up
+## HTTPS qualification
 
-The exposure change is separate from this deployment. It will use one exact
-HTTPS operations hostname and route the curated API and Grafana under distinct
-paths. The portal must hide both links until DNS, certificate validation,
-authentication, and direct HTTPS probes succeed.
+After the operations ingress and Terraform-owned DNS record are ready:
+
+```bash
+curl --fail --silent https://ops.g.j2d3.com/api/status | jq '.source'
+curl --silent --show-error --head https://ops.g.j2d3.com/grafana/
+```
+
+The API must return the same public-safe schema observed through the private
+port-forward. Grafana must redirect to its `/grafana/login` path over HTTPS;
+an anonymous dashboard response is a failed qualification.

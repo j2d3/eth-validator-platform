@@ -18,6 +18,10 @@ import yaml
 
 REPOSITORY_ROOT = Path(__file__).resolve().parents[1]
 LOCAL_APPS = REPOSITORY_ROOT / "platform" / "apps" / "local"
+EKS_NODE_APPS = REPOSITORY_ROOT / "platform" / "apps" / "nodes" / "dev"
+PORTAL_REGISTRY = (
+    REPOSITORY_ROOT / "control-plane" / "portal" / "lib" / "portal-registry.ts"
+)
 
 # The two metric dashboards that carry the fleet -> validator navigation contract.
 NAVIGATION_UIDS = ("eth-fleet-overview", "eth-validator-detail")
@@ -77,11 +81,12 @@ FORBIDDEN_LABEL_NAMES = ("pubkey", "public_key", "publickey", "validator_pubkey"
 def load_dashboards() -> list[tuple[Path, str, dict]]:
     """Return (path, payload name, parsed dashboard) for every provisioned dashboard."""
     dashboards: list[tuple[Path, str, dict]] = []
-    for path in sorted(LOCAL_APPS.glob("*dashboard.yaml")):
-        with path.open(encoding="utf-8") as stream:
-            config_map = yaml.safe_load(stream)
-        for name, payload in config_map["data"].items():
-            dashboards.append((path, name, json.loads(payload)))
+    for directory in (LOCAL_APPS, EKS_NODE_APPS):
+        for path in sorted(directory.glob("*dashboard.yaml")):
+            with path.open(encoding="utf-8") as stream:
+                config_map = yaml.safe_load(stream)
+            for name, payload in config_map["data"].items():
+                dashboards.append((path, name, json.loads(payload)))
     return dashboards
 
 
@@ -112,6 +117,16 @@ class DashboardContractTests(unittest.TestCase):
         uids = [dashboard["uid"] for _, _, dashboard in self.dashboards]
         duplicates = {uid for uid in uids if uids.count(uid) > 1}
         self.assertEqual(duplicates, set(), f"duplicate dashboard uids: {sorted(duplicates)}")
+
+    def test_portal_direct_links_use_only_git_provisioned_dashboard_uids(self) -> None:
+        registry = PORTAL_REGISTRY.read_text(encoding="utf-8")
+        linked_uids = set(re.findall(r"\$\{grafanaBase\}/d/([^/`]+)", registry))
+        self.assertTrue(linked_uids, "portal should link its provisioned pair dashboard")
+        self.assertEqual(
+            linked_uids - set(self.by_uid),
+            set(),
+            "portal direct links may use only dashboard UIDs provisioned by this repository",
+        )
 
     def test_panel_ids_are_unique_and_stable_within_each_dashboard(self) -> None:
         for path, name, dashboard in self.dashboards:
