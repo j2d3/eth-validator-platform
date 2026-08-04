@@ -8,3 +8,6 @@ configMapGenerator:
       disableNameSuffixHash: true
     files:
       - config.yaml=network-configs/ephemery-162.yaml
+      # Lighthouse v8.2.1 requires this file whenever --testnet-dir is used.
+      # It comes from the same SHA-pinned Ephemery-162 bundle as config.yaml.
+      - deposit_contract_block.txt=network-configs/deposit_contract_block.txt
