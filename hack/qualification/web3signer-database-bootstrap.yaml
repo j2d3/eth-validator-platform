@@ -97,8 +97,22 @@ spec:
                 SELECT 1 FROM pg_catalog.pg_roles WHERE rolname = :'app_username'
               ) \gexec
 
+              SELECT (
+                NOT rolsuper
+                AND NOT rolcreatedb
+                AND NOT rolcreaterole
+                AND NOT rolreplication
+              ) AS role_attributes_are_safe
+              FROM pg_catalog.pg_roles
+              WHERE rolname = :'app_username' \gset
+
+              \if :role_attributes_are_safe
+              \else
+                \quit 1
+              \endif
+
               SELECT format(
-                'ALTER ROLE %I WITH LOGIN INHERIT NOSUPERUSER NOCREATEDB NOCREATEROLE NOREPLICATION PASSWORD %L',
+                'ALTER ROLE %I WITH LOGIN PASSWORD %L',
                 :'app_username', :'app_password'
               ) \gexec
 
