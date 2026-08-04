@@ -1,0 +1,190 @@
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: web3signer-database-bootstrap
+  namespace: database
+  labels:
+    app.kubernetes.io/name: web3signer-schema
+    app.kubernetes.io/component: database-migration
+    app.kubernetes.io/part-of: ethereum-validator-platform
+spec:
+  podSelector:
+    matchLabels:
+      app.kubernetes.io/name: web3signer-schema
+      app.kubernetes.io/component: database-migration
+      platform.galaxy-lab/qualification: database-bootstrap
+  policyTypes: ["Ingress", "Egress"]
+  ingress: []
+  egress:
+    - to:
+        - ipBlock:
+            cidr: ${WEB3SIGNER_DATABASE_VPC_CIDR}
+      ports:
+        - port: 5432
+          protocol: TCP
+    - to:
+        - namespaceSelector:
+            matchLabels:
+              kubernetes.io/metadata.name: kube-system
+      ports:
+        - port: 53
+          protocol: UDP
+        - port: 53
+          protocol: TCP
+---
+apiVersion: batch/v1
+kind: Job
+metadata:
+  name: web3signer-database-bootstrap
+  namespace: database
+  labels:
+    app.kubernetes.io/name: web3signer-schema
+    app.kubernetes.io/component: database-migration
+    app.kubernetes.io/part-of: ethereum-validator-platform
+    platform.galaxy-lab/qualification: database-bootstrap
+spec:
+  completions: 1
+  parallelism: 1
+  backoffLimit: 0
+  activeDeadlineSeconds: 300
+  ttlSecondsAfterFinished: 600
+  template:
+    metadata:
+      labels:
+        # The first two labels deliberately select the same migration-only
+        # SecurityGroupPolicy used by the later Flyway Job.
+        app.kubernetes.io/name: web3signer-schema
+        app.kubernetes.io/component: database-migration
+        app.kubernetes.io/part-of: ethereum-validator-platform
+        platform.galaxy-lab/qualification: database-bootstrap
+    spec:
+      automountServiceAccountToken: false
+      restartPolicy: Never
+      terminationGracePeriodSeconds: 30
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 999
+        runAsGroup: 999
+        fsGroup: 999
+        fsGroupChangePolicy: OnRootMismatch
+        seccompProfile:
+          type: RuntimeDefault
+      containers:
+        - name: create-application-role
+          image: postgres:18.3-alpine3.23@sha256:54451ecb8ab38c24c3ec123f2fd501303a3a1856a5c66e98cecf2460d5e1e9d7
+          imagePullPolicy: IfNotPresent
+          command: ["/bin/sh", "-ec"]
+          args:
+            - |
+              set -eu
+              export PGPASSWORD="$MASTER_PASSWORD"
+              export PGSSLMODE=verify-full
+              export PGSSLROOTCERT=/etc/rds-ca/global-bundle.pem
+              export PGCONNECT_TIMEOUT=10
+
+              psql \
+                --host="$DB_HOST" \
+                --port="$DB_PORT" \
+                --dbname="$DB_NAME" \
+                --username="$MASTER_USERNAME" \
+                --no-password \
+                --set=ON_ERROR_STOP=1 <<'SQL'
+              \getenv app_username APP_USERNAME
+              \getenv app_password APP_PASSWORD
+
+              SELECT format('CREATE ROLE %I', :'app_username')
+              WHERE NOT EXISTS (
+                SELECT 1 FROM pg_catalog.pg_roles WHERE rolname = :'app_username'
+              ) \gexec
+
+              SELECT format(
+                'ALTER ROLE %I WITH LOGIN INHERIT NOSUPERUSER NOCREATEDB NOCREATEROLE NOREPLICATION PASSWORD %L',
+                :'app_username', :'app_password'
+              ) \gexec
+
+              SELECT format(
+                'GRANT CONNECT ON DATABASE %I TO %I',
+                current_database(), :'app_username'
+              ) \gexec
+              SELECT format(
+                'GRANT USAGE, CREATE ON SCHEMA public TO %I',
+                :'app_username'
+              ) \gexec
+
+              SELECT (
+                rolcanlogin
+                AND NOT rolsuper
+                AND NOT rolcreatedb
+                AND NOT rolcreaterole
+                AND NOT rolreplication
+              ) AS role_is_restricted
+              FROM pg_catalog.pg_roles
+              WHERE rolname = :'app_username' \gset
+
+              \if :role_is_restricted
+              \else
+                \quit 1
+              \endif
+              SQL
+          env:
+            - name: DB_HOST
+              valueFrom:
+                secretKeyRef:
+                  name: web3signer-database-bootstrap
+                  key: host
+            - name: DB_PORT
+              valueFrom:
+                secretKeyRef:
+                  name: web3signer-database-bootstrap
+                  key: port
+            - name: DB_NAME
+              valueFrom:
+                secretKeyRef:
+                  name: web3signer-database-bootstrap
+                  key: database
+            - name: MASTER_USERNAME
+              valueFrom:
+                secretKeyRef:
+                  name: web3signer-database-bootstrap
+                  key: masterUsername
+            - name: MASTER_PASSWORD
+              valueFrom:
+                secretKeyRef:
+                  name: web3signer-database-bootstrap
+                  key: masterPassword
+            - name: APP_USERNAME
+              valueFrom:
+                secretKeyRef:
+                  name: web3signer-database-bootstrap
+                  key: appUsername
+            - name: APP_PASSWORD
+              valueFrom:
+                secretKeyRef:
+                  name: web3signer-database-bootstrap
+                  key: appPassword
+          resources:
+            requests:
+              cpu: 50m
+              memory: 64Mi
+            limits:
+              cpu: 250m
+              memory: 128Mi
+          securityContext:
+            allowPrivilegeEscalation: false
+            readOnlyRootFilesystem: true
+            capabilities:
+              drop: ["ALL"]
+          volumeMounts:
+            - name: rds-ca
+              mountPath: /etc/rds-ca
+              readOnly: true
+            - name: tmp
+              mountPath: /tmp
+      volumes:
+        - name: rds-ca
+          configMap:
+            name: web3signer-rds-ca
+        - name: tmp
+          emptyDir:
+            medium: Memory
+            sizeLimit: 16Mi

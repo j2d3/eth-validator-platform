@@ -112,13 +112,13 @@ Terraform creates secret **containers**, never secret versions:
   bundle and its password.
 
 RDS generates its master password and stores it in an RDS-managed Secrets
-Manager secret. Terraform state receives the secret ARN, not the password. A
-restricted bootstrap still has to use that master identity to create a
-least-privilege `web3signer` application role and write the application
-connection JSON directly to its empty container. Validator onboarding likewise
-writes encrypted keystore material directly to its container. Neither procedure
-is implemented by this declaration and neither may pass a secret through a
-Terraform variable, plan, output value, shell argument, GitHub log, or Git.
+Manager secret. Terraform state receives the secret ARN, not the password. The
+trusted-local `hack/bootstrap-web3signer-database.py` procedure uses that master
+identity in process memory to create a least-privilege `web3signer` application
+role and write the application connection JSON directly to its empty container.
+Validator onboarding separately writes encrypted keystore material directly to
+its container. Neither procedure may pass a secret through a Terraform
+variable, plan, output value, shell argument, GitHub log, or Git.
 
 External Secrets has one Pod Identity base role with only the
 `sts:AssumeRole` and `sts:TagSession` actions needed to establish sessions on
