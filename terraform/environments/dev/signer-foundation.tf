@@ -286,8 +286,10 @@ resource "aws_secretsmanager_secret" "web3signer_signing_key" {
 
 data "aws_iam_policy_document" "external_secrets_reader_trust" {
   statement {
-    effect  = "Allow"
-    actions = ["sts:AssumeRole"]
+    effect = "Allow"
+    # EKS Pod Identity marks its session tags as transitive. Role chaining
+    # therefore requires TagSession as well as AssumeRole on every target.
+    actions = ["sts:AssumeRole", "sts:TagSession"]
 
     principals {
       type        = "AWS"
