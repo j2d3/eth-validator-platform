@@ -5,7 +5,7 @@ metadata:
 spec:
   validatorRef: validator-ephemery-162-synthetic
   networkProfileRef: ephemery-162
-  lifecycle: stopped
+  lifecycle: active
   serviceProfileRef: dedicated-geth-lighthouse
   nodePairRef: pair-ephemery-162-synthetic
   signerRef: shared-web3signer
@@ -14,4 +14,4 @@ spec:
     slashingProtectionConfirmed: false
     doppelgangerProtectionConfirmed: false
   maintenance:
-    reason: End bounded EKS sync run; retain same-generation encrypted chain-data claims for resume.
+    reason: Fresh generation-162 full-sync retry on the retained consensus volume; keep the non-signing pair running.
