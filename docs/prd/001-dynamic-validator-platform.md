@@ -995,8 +995,11 @@ surfaces. It provides the narrative, fleet posture, evidence provenance, and
 cross-tool navigation; Grafana remains the metrics workbench, Loki the log
 backend, Flux the reconciliation authority, GitHub the change record, AWS the
 cloud control plane, and beacon explorers the external chain view. The first
-portal slice is read-only and public-safe. Live operator data and mutation
-requests arrive only in later, authenticated phases.
+portal slice is read-only and public-safe. It may read a fixed, aggregate live
+snapshot through a platform-owned adapter that accepts no caller-supplied
+PromQL or resource identifiers and returns no customer, validator, key, Secret,
+address, or cloud-account fields. Detailed operator data and all mutation
+requests remain behind later authenticated surfaces.
 
 ### 12.1 Initial stack
 

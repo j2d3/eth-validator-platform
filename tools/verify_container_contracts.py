@@ -67,6 +67,14 @@ class HelmImageContract:
 
 CONTRACTS = (
     ContainerContract(
+        manifest_path=Path("platform/apps/portal/dev/deployment.yaml"),
+        workload_kind="Deployment",
+        container_name="status-api",
+        identity_mode=IdentityMode.KUBERNETES_OVERRIDE,
+        smoke_entrypoint="/usr/local/bin/python",
+        smoke_args=("--version",),
+    ),
+    ContainerContract(
         manifest_path=Path("platform/apps/base/web3signer/deployment.yaml"),
         workload_kind="Deployment",
         container_name="web3signer",
