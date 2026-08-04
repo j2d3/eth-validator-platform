@@ -284,7 +284,7 @@ def _pair_snapshot(results: dict[str, list[dict[str, Any]]]) -> list[dict[str, A
                 "consensusClient": labels.get("consensus_client"),
                 "lifecycleState": labels.get("lifecycle_state"),
                 "targets": {},
-                "signing": {},
+                "signing": {"validatorsEnabled": None},
                 "sync": {},
                 "resources": {"cpuCores": {}, "memoryBytes": {}},
                 "grafanaUrl": _grafana_url(labels),
