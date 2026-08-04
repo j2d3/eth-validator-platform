@@ -28,6 +28,11 @@ NETWORK_PROFILE_PATTERN = re.compile(r"^[a-z][a-z0-9-]{2,62}$")
 PUBLIC_KEY_PATTERN = re.compile(r"^[0-9a-fA-F]{96}$")
 VALIDATOR_PATH_PATTERN = re.compile(r"^m/12381/3600/[0-9]+/0/0$")
 MAX_KEYSTORE_BYTES = 64 * 1024
+MAX_SCRYPT_N = 2**20
+MAX_SCRYPT_R = 32
+MAX_SCRYPT_P = 16
+MAX_SCRYPT_MEMORY = 1024 * 1024 * 1024
+SCRYPT_MEMORY_HEADROOM = 32 * 1024 * 1024
 
 
 class OnboardingError(RuntimeError):
@@ -137,13 +142,28 @@ def verify_keystore_password(canonical_keystore: str, password: str) -> None:
                 "sha256", password_bytes, salt, int(params["c"]), dklen
             )
         elif function == "scrypt":
+            n = int(params["n"])
+            r = int(params["r"])
+            p = int(params["p"])
+            if n < 2 or n & (n - 1) or n > MAX_SCRYPT_N:
+                raise OnboardingError("Encrypted keystore scrypt N is unsupported")
+            if not 1 <= r <= MAX_SCRYPT_R or not 1 <= p <= MAX_SCRYPT_P:
+                raise OnboardingError("Encrypted keystore scrypt work factors are unsupported")
+            required_memory = 128 * n * r + 128 * r * p
+            max_memory = required_memory + SCRYPT_MEMORY_HEADROOM
+            if max_memory > MAX_SCRYPT_MEMORY:
+                raise OnboardingError("Encrypted keystore scrypt memory cost is unsupported")
             derived_key = hashlib.scrypt(
                 password_bytes,
                 salt=salt,
-                n=int(params["n"]),
-                r=int(params["r"]),
-                p=int(params["p"]),
+                n=n,
+                r=r,
+                p=p,
                 dklen=dklen,
+                # OpenSSL otherwise applies a much lower implementation
+                # default. EIP-2335 deposit keystores commonly use N=262144,
+                # r=8 (~256 MiB), so pass the validated bound explicitly.
+                maxmem=max_memory,
             )
         else:
             raise OnboardingError(f"Encrypted keystore KDF {function!r} is unsupported")

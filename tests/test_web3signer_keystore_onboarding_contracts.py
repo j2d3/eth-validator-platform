@@ -54,6 +54,25 @@ def valid_keystore(password: str = "correct horse") -> dict:
     }
 
 
+def valid_scrypt_keystore(password: str = "correct horse") -> dict:
+    value = valid_keystore(password)
+    salt = bytes.fromhex("22" * 32)
+    cipher_message = bytes.fromhex(value["crypto"]["cipher"]["message"])
+    params = {"dklen": 32, "n": 16, "r": 8, "p": 1, "salt": salt.hex()}
+    derived_key = hashlib.scrypt(
+        password.encode("utf-8"), salt=salt, n=16, r=8, p=1, dklen=32
+    )
+    value["crypto"]["kdf"] = {
+        "function": "scrypt",
+        "params": params,
+        "message": "",
+    }
+    value["crypto"]["checksum"]["message"] = hashlib.sha256(
+        derived_key[16:32] + cipher_message
+    ).hexdigest()
+    return value
+
+
 class Web3SignerKeystoreOnboardingContracts(unittest.TestCase):
     def setUp(self) -> None:
         self.module = load_module()
@@ -100,6 +119,21 @@ class Web3SignerKeystoreOnboardingContracts(unittest.TestCase):
         ):
             with self.assertRaisesRegex(self.module.OnboardingError, "did not match"):
                 self.module.prompt_password()
+
+    def test_scrypt_password_verification_raises_the_bounded_memory_ceiling(self) -> None:
+        canonical = json.dumps(valid_scrypt_keystore(), separators=(",", ":"))
+        self.module.verify_keystore_password(canonical, "correct horse")
+
+        production_n = 262144
+        required = 128 * production_n * 8 + 128 * 8
+        configured = required + self.module.SCRYPT_MEMORY_HEADROOM
+        self.assertGreater(configured, 256 * 1024 * 1024)
+        self.assertLessEqual(configured, self.module.MAX_SCRYPT_MEMORY)
+
+        value = valid_scrypt_keystore()
+        value["crypto"]["kdf"]["params"]["n"] = 3
+        with self.assertRaisesRegex(self.module.OnboardingError, "N is unsupported"):
+            self.module.verify_keystore_password(json.dumps(value), "correct horse")
 
     def test_secret_value_uses_stdin_and_never_argv(self) -> None:
         payload = {
