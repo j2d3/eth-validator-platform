@@ -17,10 +17,11 @@ spec:
   path: ./platform/apps/dev
   prune: true
   wait: true
-  # This layer owns the shared signer application, not node-pair releases. A
-  # separate reviewed commit removes this suspension only after the signer
-  # migration Job is Ready and every signer runtime gate is proven.
-  suspend: true
+  # This layer owns the shared signer application, not node-pair releases.
+  # The RDS credential, TLS path, and schema migration were qualified before
+  # this release. Web3Signer still receives an empty key directory, so this
+  # reconciliation cannot authorize validator duties.
+  suspend: false
   commonMetadata:
     labels:
       platform.galaxy-lab/environment: dev

@@ -25,12 +25,13 @@ infrastructure-configs
                                       |
                                       v
                                     apps
-                                (suspended)
+                                  (active)
 ```
 
 The cluster is bootstrapped and the node, signer-infrastructure, and signer-
-prerequisite branches are admitted. `apps` remains suspended, so Web3Signer and
-validator duties are not admitted.
+prerequisite branches are admitted. The `apps` layer admits Web3Signer only
+after its database prerequisites were qualified. Its key directory remains
+empty and validator duties remain disabled.
 
 ## Ownership boundary
 
