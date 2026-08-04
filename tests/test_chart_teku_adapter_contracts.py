@@ -214,6 +214,99 @@ class TekuAdapterRenderTests(unittest.TestCase):
         self.assertIn("--testnet-dir=/network/files", script)
         self.assertNotIn("teku", script)
 
+    def test_signing_validator_uses_teku_remote_signer_contract(self) -> None:
+        values = teku_ephemery_values()
+        public_key = (
+            "0x8bdb644e0e4dae9ef4c6b054075b861c771d82ba9aeb09bca944478e8108378b"
+            "383560efac16f727014b88ceb37e0bcf"
+        )
+        fee_recipient = "0x26c31E06d6D4CEd468704b62Cb6c2F897D997576"
+        values["networkProfile"]["signer"] = {
+            "web3signer": {
+                "mode": "artifact-bundle",
+                "network": None,
+                "signingQualified": True,
+            }
+        }
+        values["validator"] = {
+            "enabled": True,
+            "publicKey": public_key,
+            "feeRecipient": fee_recipient,
+            "graffiti": "eth-validator-platform-lab",
+            "slashingProtectionConfirmed": True,
+            "networkConfigMapName": "web3signer-network-config-ephemery-test",
+        }
+
+        documents = helm_template(values)
+        deployment = next(d for d in documents if d["kind"] == "Deployment")
+        pod = deployment["spec"]["template"]["spec"]
+        validator = next(c for c in pod["containers"] if c["name"] == "validator")
+
+        self.assertEqual(validator["image"], TEKU_TEST_IMAGE)
+        self.assertEqual(validator["command"], ["/opt/teku/bin/teku"])
+        args = validator["args"]
+        self.assertEqual(args[0], "validator-client")
+        self.assertIn("--network=/validator-network/config.yaml", args)
+        self.assertIn(
+            "--beacon-node-api-endpoint=http://teku-test-ethereum-node:5052",
+            args,
+        )
+        self.assertIn(
+            "--validators-external-signer-url="
+            "http://web3signer.signing.svc.cluster.local:9000",
+            args,
+        )
+        self.assertIn(f"--validators-external-signer-public-keys={public_key}", args)
+        self.assertIn(
+            "--validators-external-signer-slashing-protection-enabled=false", args
+        )
+        self.assertIn("--doppelganger-detection-enabled=true", args)
+        self.assertIn(
+            f"--validators-proposer-default-fee-recipient={fee_recipient}", args
+        )
+        self.assertIn("--validators-graffiti-client-append-format=DISABLED", args)
+        self.assertIn("--metrics-port=5064", args)
+        self.assertIn("--metrics-host-allowlist=*", args)
+        self.assertNotIn("--init-slashing-protection", args)
+        self.assertNotIn("--enable-doppelganger-protection", args)
+
+        init_names = {container["name"] for container in pod["initContainers"]}
+        self.assertNotIn("configure-validator", init_names)
+        self.assertIn("fetch-validator-genesis", init_names)
+        self.assertIn("verify-validator-network", init_names)
+        fetch = next(
+            container
+            for container in pod["initContainers"]
+            if container["name"] == "fetch-validator-genesis"
+        )["args"][0]
+        self.assertIn("/eth/v1/beacon/genesis", fetch)
+        self.assertNotIn("/eth/v2/debug/beacon/states/genesis", fetch)
+        verify = next(
+            container
+            for container in pod["initContainers"]
+            if container["name"] == "verify-validator-network"
+        )["args"][0]
+        self.assertNotIn("test -s /validator-network/genesis.ssz", verify)
+        volume_names = {volume["name"] for volume in pod["volumes"]}
+        self.assertNotIn("validator-config", volume_names)
+        self.assertFalse(
+            any(
+                d["kind"] == "ConfigMap"
+                and d["metadata"]["name"].endswith("-validator-config")
+                for d in documents
+            )
+        )
+
+    def test_teku_validator_rule_uses_runtime_observed_metric(self) -> None:
+        rule = next(d for d in self.documents if d["kind"] == "PrometheusRule")
+        recording = next(
+            item
+            for item in rule["spec"]["groups"][0]["rules"]
+            if item.get("record") == "validator_platform_validator_enabled"
+        )
+        self.assertIn("validator_local_validator_count", recording["expr"])
+        self.assertIn('consensus_client="teku"', recording["expr"])
+
 
 if __name__ == "__main__":
     unittest.main()

@@ -1,12 +1,14 @@
 {{- if and (eq .Values.lifecycleState "active") .Values.validator.enabled }}
-{{- $lighthouseAdapter := .Values.networkProfile.clients.lighthouse -}}
-{{- $artifactMode := eq $lighthouseAdapter.mode "artifact-bundle" -}}
+{{- $consensusAdapter := index .Values.networkProfile.clients .Values.consensusClient -}}
+{{- $consensusClient := index .Values.consensusClients .Values.consensusClient -}}
+{{- $artifactMode := eq $consensusAdapter.mode "artifact-bundle" -}}
 {{- if not .Values.networkProfile.signer.web3signer.signingQualified -}}
 {{- fail "validator duties require a qualified Web3Signer network binding" -}}
 {{- end -}}
 {{- if not .Values.validator.slashingProtectionConfirmed -}}
 {{- fail "validator.slashingProtectionConfirmed must be true before validator duties can start" -}}
 {{- end -}}
+{{- if eq .Values.consensusClient "lighthouse" }}
 apiVersion: v1
 kind: ConfigMap
 metadata:
@@ -23,6 +25,7 @@ data:
       suggested_fee_recipient: {{ required "validator.feeRecipient is required when validator.enabled=true" .Values.validator.feeRecipient | quote }}
       graffiti: {{ .Values.validator.graffiti | quote }}
 ---
+{{- end }}
 apiVersion: apps/v1
 kind: Deployment
 metadata:
@@ -71,6 +74,7 @@ spec:
                     values: [SPOT]
       {{- end }}
       initContainers:
+        {{- if eq .Values.consensusClient "lighthouse" }}
         - name: configure-validator
           image: {{ .Values.validatorClient.initImage }}
           command: [sh, -ec]
@@ -83,6 +87,7 @@ spec:
           volumeMounts:
             - {name: validator-config, mountPath: /config, readOnly: true}
             - {name: validator-data, mountPath: /validator-data}
+        {{- end }}
         {{- if $artifactMode }}
         - name: fetch-validator-genesis
           image: {{ .Values.networkArtifactLoader.downloadImage }}
@@ -91,10 +96,12 @@ spec:
           args:
             - |
               set -eu
+              {{- if eq .Values.consensusClient "lighthouse" }}
               curl --fail --location --connect-timeout 10 --max-time 60 \
                 --max-filesize 16777216 --header 'Accept: application/octet-stream' \
                 --output /validator-network/genesis.ssz \
                 http://{{ include "ethereum-node.fullname" . }}:5052/eth/v2/debug/beacon/states/genesis
+              {{- end }}
               curl --fail --location --connect-timeout 10 --max-time 30 \
                 --max-filesize 4096 --output /validator-network/genesis.json \
                 http://{{ include "ethereum-node.fullname" . }}:5052/eth/v1/beacon/genesis
@@ -114,7 +121,9 @@ spec:
           args:
             - |
               set -eu
+              {{- if eq .Values.consensusClient "lighthouse" }}
               test -s /validator-network/genesis.ssz
+              {{- end }}
               grep -F {{ printf "\"genesis_time\":\"%d\"" (int64 .Values.networkProfile.identity.consensusGenesisTime) | quote }} /validator-network/genesis.json
               grep -F {{ printf "\"genesis_validators_root\":\"%s\"" .Values.networkProfile.identity.consensusGenesisValidatorsRoot | quote }} /validator-network/genesis.json
               cp /network-source/config.yaml /validator-network/config.yaml
@@ -132,8 +141,13 @@ spec:
         {{- end }}
       containers:
         - name: validator
+          {{- if eq .Values.consensusClient "lighthouse" }}
           image: {{ .Values.validatorClient.image }}
+          {{- else }}
+          image: {{ $consensusClient.image }}
+          {{- end }}
           imagePullPolicy: {{ .Values.imagePullPolicy }}
+          {{- if eq .Values.consensusClient "lighthouse" }}
           command: [lighthouse]
           args:
             - vc
@@ -151,6 +165,34 @@ spec:
             - --metrics
             - --metrics-address=0.0.0.0
             - --metrics-port=5064
+          {{- else if eq .Values.consensusClient "teku" }}
+          command: [/opt/teku/bin/teku]
+          args:
+            - validator-client
+            {{- if $artifactMode }}
+            - --network=/validator-network/config.yaml
+            {{- else }}
+            - {{ printf "--network=%s" $consensusAdapter.network | quote }}
+            {{- end }}
+            - --beacon-node-api-endpoint=http://{{ include "ethereum-node.fullname" . }}:5052
+            - --data-base-path=/validator-data
+            - --validators-external-signer-url={{ .Values.web3signer.endpoint }}
+            - --validators-external-signer-public-keys={{ required "validator.publicKey is required when validator.enabled=true" .Values.validator.publicKey }}
+            # Web3Signer + RDS is the authoritative slashing-protection layer.
+            # Keeping a second client-local history would make migrations
+            # depend on disposable validator-client storage.
+            - --validators-external-signer-slashing-protection-enabled=false
+            - --doppelganger-detection-enabled=true
+            - --validators-proposer-default-fee-recipient={{ required "validator.feeRecipient is required when validator.enabled=true" .Values.validator.feeRecipient }}
+            - --validators-graffiti={{ .Values.validator.graffiti }}
+            - --validators-graffiti-client-append-format=DISABLED
+            - --metrics-enabled=true
+            - --metrics-interface=0.0.0.0
+            - --metrics-port=5064
+            - --metrics-host-allowlist=*
+          {{- else }}
+          {{- fail (printf "validator duties are not implemented for consensusClient=%s" .Values.consensusClient) }}
+          {{- end }}
           ports:
             - {name: metrics, containerPort: 5064}
           resources:
@@ -167,9 +209,11 @@ spec:
             - {name: validator-network, mountPath: /validator-network, readOnly: true}
             {{- end }}
       volumes:
+        {{- if eq .Values.consensusClient "lighthouse" }}
         - name: validator-config
           configMap:
             name: {{ include "ethereum-node.fullname" . }}-validator-config
+        {{- end }}
         - name: validator-data
           persistentVolumeClaim:
             claimName: {{ include "ethereum-node.validatorPvcName" . }}

@@ -221,10 +221,6 @@ consensusClients:
   teku:
     image: consensys/teku:26.7.1@sha256:5ab492b125c0fbcd60e7b3c32a7b61578a5e7186ed6637c077651795b133fb7b
     # Native Prometheus metric names Teku exposes on --metrics-port.
-    # `validatorEnabled` is deliberately omitted: Teku's separate VC isn't
-    # running in this pair (non-signing), and per #124's PRD §12.5 guard
-    # the union skips CLs that don't declare the metric. A future Teku VC
-    # activation PR adds the runtime-verified name at that time.
     metrics:
       # Current head slot on the beacon chain.
       headSlot: beacon_head_slot
@@ -238,6 +234,11 @@ consensusClients:
       # its beacon-node /metrics endpoint (not the Prysm-style
       # `beacon_peer_count`).
       peers: libp2p_peers
+      # Enabled public keys in Teku's separate validator client. Verified by
+      # launching this exact digest with the hardened Pod UID/GID, the same
+      # remote-signer flags, and an unreachable signer endpoint so the
+      # contract process could not sign.
+      validatorEnabled: validator_local_validator_count
 
 resources:
   execution:
