@@ -45,21 +45,38 @@ spec:
         platform.galaxy-lab/network-identity: {{ .Values.networkProfile.identityFingerprint | quote }}
     spec:
       automountServiceAccountToken: false
-      terminationGracePeriodSeconds: 60
+      terminationGracePeriodSeconds: {{ .Values.availability.validatorTerminationGracePeriodSeconds }}
       securityContext:
+        runAsNonRoot: true
+        runAsUser: 1000
+        runAsGroup: 1000
         seccompProfile: {type: RuntimeDefault}
         fsGroup: 1000
+        fsGroupChangePolicy: OnRootMismatch
       nodeSelector:
         {{- toYaml .Values.nodeSelector | nindent 8 }}
       tolerations:
         {{- toYaml .Values.tolerations | nindent 8 }}
+      {{- if .Values.scheduling.preferSpot }}
+      affinity:
+        nodeAffinity:
+          preferredDuringSchedulingIgnoredDuringExecution:
+            - weight: 100
+              preference:
+                matchExpressions:
+                  - key: eks.amazonaws.com/capacityType
+                    operator: In
+                    values: [SPOT]
+      {{- end }}
       initContainers:
         - name: configure-validator
           image: {{ .Values.validatorClient.initImage }}
           command: [sh, -ec]
           args: ["cp /config/validator_definitions.yml /validator-data/validator_definitions.yml"]
           securityContext:
+            runAsNonRoot: true
             allowPrivilegeEscalation: false
+            readOnlyRootFilesystem: true
             capabilities: {drop: [ALL]}
           volumeMounts:
             - {name: validator-config, mountPath: /config, readOnly: true}
@@ -85,10 +102,13 @@ spec:
           resources:
             {{- toYaml .Values.validatorClient.resources | nindent 12 }}
           securityContext:
+            runAsNonRoot: true
             allowPrivilegeEscalation: false
+            readOnlyRootFilesystem: true
             capabilities: {drop: [ALL]}
           volumeMounts:
             - {name: validator-data, mountPath: /validator-data}
+            - {name: validator-runtime, mountPath: /tmp}
       volumes:
         - name: validator-config
           configMap:
@@ -96,4 +116,7 @@ spec:
         - name: validator-data
           persistentVolumeClaim:
             claimName: {{ include "ethereum-node.validatorPvcName" . }}
+        - name: validator-runtime
+          emptyDir:
+            sizeLimit: 64Mi
 {{- end }}

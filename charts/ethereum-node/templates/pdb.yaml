@@ -1,4 +1,5 @@
 {{- if eq .Values.lifecycleState "active" }}
+{{- if .Values.availability.nodeDisruptionBudgetEnabled }}
 apiVersion: policy/v1
 kind: PodDisruptionBudget
 metadata:
@@ -11,7 +12,8 @@ spec:
     matchLabels:
       {{- include "ethereum-node.selectorLabels" . | nindent 6 }}
       platform.galaxy-lab/component: node
-{{- if .Values.validator.enabled }}
+{{- end }}
+{{- if and .Values.validator.enabled .Values.availability.validatorDisruptionBudgetEnabled }}
 ---
 apiVersion: policy/v1
 kind: PodDisruptionBudget

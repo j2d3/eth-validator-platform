@@ -1,6 +1,6 @@
 # The Terraform RDS foundation admits only this Pod security group. Flux
-# substitutes its non-secret ID from the trusted-local bootstrap ConfigMap;
-# without that input this layer fails closed before any signer is admitted.
+# substitutes its non-secret ID only after the signer branch is explicitly
+# resumed; node-only sync never needs this value.
 apiVersion: vpcresources.k8s.aws/v1beta1
 kind: SecurityGroupPolicy
 metadata:

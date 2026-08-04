@@ -1,0 +1,49 @@
+apiVersion: kustomize.config.k8s.io/v1beta1
+kind: Kustomization
+resources:
+  # Only the generation-pinned Ephemery assignment is admitted in this first
+  # EKS node slice. The generated catalog projection remains the source.
+  - ../../local/assignments
+  - profile.yaml
+  - sync-dashboard.yaml
+
+patches:
+  - target:
+      group: helm.toolkit.fluxcd.io
+      version: v2
+      kind: HelmRelease
+      name: assignment-synthetic-01
+    patch: |-
+      apiVersion: helm.toolkit.fluxcd.io/v2
+      kind: HelmRelease
+      metadata:
+        name: assignment-synthetic-01
+        namespace: ethereum
+      $patch: delete
+  - target:
+      group: helm.toolkit.fluxcd.io
+      version: v2
+      kind: HelmRelease
+      name: assignment-ephemery-162-synthetic
+    patch: |-
+      - op: add
+        path: /spec/chart/spec/valuesFiles
+        value:
+          - values.yaml
+          - values-eks-ephemery.yaml
+      - op: replace
+        path: /spec/values/telemetry
+        value:
+          cluster: eth-validator-platform-dev
+          environment: dev
+      - op: add
+        path: /spec/values/engineJwt
+        value:
+          secretStoreName: aws-engine-secrets
+          remoteSecretKey: eth-validator-platform-dev/ethereum/engine-jwt
+          remoteSecretProperty: jwt.hex
+
+labels:
+  - pairs:
+      platform.galaxy-lab/environment: dev
+    includeSelectors: false

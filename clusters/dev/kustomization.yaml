@@ -6,5 +6,7 @@ resources:
   - flux-system
   - infrastructure-controllers.yaml
   - infrastructure-configs.yaml
+  - node-apps.yaml
+  - signer-infrastructure-configs.yaml
   - signer-prerequisites.yaml
   - apps.yaml

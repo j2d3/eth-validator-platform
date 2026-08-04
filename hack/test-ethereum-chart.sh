@@ -18,6 +18,15 @@ python3 "${REPOSITORY_ROOT}/tools/render_local_assignments.py" \
       --values - \
       --set lifecycleState=active \
       >"${temporary_directory}/ephemery-162.yaml"
+python3 "${REPOSITORY_ROOT}/tools/render_local_assignments.py" \
+  --values-for assignment-ephemery-162-synthetic \
+  | helm template ephemery-eks "${CHART}" --namespace ethereum \
+      --values "${CHART}/values-eks-ephemery.yaml" \
+      --values - \
+      --set lifecycleState=active \
+      --set telemetry.cluster=eth-validator-platform-dev \
+      --set telemetry.environment=dev \
+      >"${temporary_directory}/ephemery-eks.yaml"
 helm template ethereum-node "${CHART}" --namespace ethereum \
   --set lifecycleState=active \
   --set validator.enabled=true \
@@ -71,6 +80,29 @@ grep -q 'pair-ephemery-162-sy-eaa1dc641654bfe3-1607eeafd183-execution' "${tempor
 grep -q 'pair-ephemery-162-sy-eaa1dc641654bfe3-1607eeafd183-consensus' "${temporary_directory}/ephemery-162.yaml"
 if grep -Eq -- '--hoodi|--network=ephemery|^kind: Deployment$' "${temporary_directory}/ephemery-162.yaml"; then
   printf 'Ephemery node render inherited a built-in network flag or enabled validator duties.\n' >&2
+  exit 1
+fi
+
+grep -q '^ *type: LoadBalancer$' "${temporary_directory}/ephemery-eks.yaml"
+grep -q 'service.beta.kubernetes.io/aws-load-balancer-type: nlb' "${temporary_directory}/ephemery-eks.yaml"
+grep -q '^ *externalTrafficPolicy: Local$' "${temporary_directory}/ephemery-eks.yaml"
+grep -q 'eks.amazonaws.com/capacityType' "${temporary_directory}/ephemery-eks.yaml"
+grep -q '^ *values: \[SPOT\]$' "${temporary_directory}/ephemery-eks.yaml"
+if grep -q 'nodePort:' "${temporary_directory}/ephemery-eks.yaml"; then
+  printf 'EKS P2P Service must let Kubernetes allocate a valid NodePort.\n' >&2
+  exit 1
+fi
+ephemery_eks_class_references="$(grep -c '^ *storageClassName: ebs-gp3-encrypted$' "${temporary_directory}/ephemery-eks.yaml" || true)"
+if [[ "${ephemery_eks_class_references}" -ne 2 ]]; then
+  printf 'Expected two non-signing Ephemery chain claims on encrypted gp3; found %s.\n' \
+    "${ephemery_eks_class_references}" >&2
+  exit 1
+fi
+for expected_size in 50Gi 20Gi; do
+  grep -q "storage: ${expected_size}$" "${temporary_directory}/ephemery-eks.yaml"
+done
+if grep -Eq '^kind: Deployment$|platform.galaxy-lab/signing-enabled: "true"' "${temporary_directory}/ephemery-eks.yaml"; then
+  printf 'EKS Ephemery sync render unexpectedly enabled validator duties or signing.\n' >&2
   exit 1
 fi
 if python3 "${REPOSITORY_ROOT}/tools/render_local_assignments.py" \

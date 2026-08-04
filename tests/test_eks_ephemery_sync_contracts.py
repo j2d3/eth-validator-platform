@@ -1,0 +1,340 @@
+"""Offline contracts for the first node-only Ephemery sync slice on EKS.
+
+These tests prove desired-state composition, not AWS provisioning, P2P
+reachability, peer discovery, or chain sync. Runtime evidence remains a runbook
+gate and must not be inferred from a green render.
+"""
+
+from __future__ import annotations
+
+import json
+import subprocess
+import tempfile
+import unittest
+from pathlib import Path
+
+import yaml
+
+from tools import render_local_assignments
+
+
+ROOT = Path(__file__).resolve().parents[1]
+CHART = ROOT / "charts" / "ethereum-node"
+EKS_VALUES = CHART / "values-eks-ephemery.yaml"
+NODE_APPS = ROOT / "platform" / "apps" / "nodes" / "dev"
+CLUSTER = ROOT / "clusters" / "dev"
+RUNBOOK = ROOT / "docs" / "runbooks" / "eks-ephemery-sync.md"
+
+
+def load_documents(text: str) -> list[dict]:
+    return [document for document in yaml.safe_load_all(text) if document]
+
+
+class EksEphemeryRenderTests(unittest.TestCase):
+    @classmethod
+    def setUpClass(cls) -> None:
+        catalog = render_local_assignments.load_catalog()
+        release = render_local_assignments.build_release(
+            "assignment-ephemery-162-synthetic", catalog
+        )
+        release["spec"]["values"]["engineJwt"] = {
+            "secretStoreName": "aws-engine-secrets",
+            "remoteSecretKey": "eth-validator-platform-dev/ethereum/engine-jwt",
+            "remoteSecretProperty": "jwt.hex",
+        }
+        release["spec"]["values"]["telemetry"] = {
+            "cluster": "eth-validator-platform-dev",
+            "environment": "dev",
+        }
+        with tempfile.TemporaryDirectory() as directory:
+            projected_values = Path(directory) / "values.yaml"
+            projected_values.write_text(
+                yaml.safe_dump(release["spec"]["values"], sort_keys=False),
+                encoding="utf-8",
+            )
+            result = subprocess.run(
+                [
+                    "helm",
+                    "template",
+                    "ephemery-eks",
+                    str(CHART),
+                    "--namespace",
+                    "ethereum",
+                    "--values",
+                    str(EKS_VALUES),
+                    "--values",
+                    str(projected_values),
+                    "--set",
+                    "lifecycleState=active",
+                    "--set",
+                    "telemetry.cluster=eth-validator-platform-dev",
+                    "--set",
+                    "telemetry.environment=dev",
+                ],
+                check=False,
+                capture_output=True,
+                text=True,
+            )
+            if result.returncode != 0:
+                raise AssertionError(result.stderr)
+        cls.documents = load_documents(result.stdout)
+        cls.by_kind: dict[str, list[dict]] = {}
+        for document in cls.documents:
+            cls.by_kind.setdefault(document["kind"], []).append(document)
+
+    def test_renders_exactly_one_node_pair_and_no_validator_or_signer(self) -> None:
+        self.assertEqual(len(self.by_kind["StatefulSet"]), 1)
+        self.assertNotIn("Deployment", self.by_kind)
+        text = yaml.safe_dump_all(self.documents).lower()
+        self.assertNotIn("validator-keystore", text)
+        self.assertNotIn("signing-enabled: 'true'", text)
+        self.assertNotIn("web3signer-database", text)
+
+        external_secrets = self.by_kind["ExternalSecret"]
+        self.assertEqual(len(external_secrets), 1)
+        self.assertEqual(
+            external_secrets[0]["spec"]["secretStoreRef"]["name"],
+            "aws-engine-secrets",
+        )
+
+    def test_chain_claims_use_small_encrypted_gp3_generation_identity(self) -> None:
+        claims = self.by_kind["PersistentVolumeClaim"]
+        self.assertEqual(len(claims), 2)
+        sizes = {
+            claim["metadata"]["name"].rsplit("-", 1)[-1]: claim["spec"]["resources"][
+                "requests"
+            ]["storage"]
+            for claim in claims
+        }
+        self.assertEqual(sizes, {"execution": "50Gi", "consensus": "20Gi"})
+        for claim in claims:
+            with self.subTest(claim=claim["metadata"]["name"]):
+                self.assertEqual(claim["spec"]["storageClassName"], "ebs-gp3-encrypted")
+                self.assertIn("1607eeafd183", claim["metadata"]["name"])
+                self.assertEqual(
+                    claim["metadata"]["annotations"][
+                        "platform.galaxy-lab/network-identity"
+                    ],
+                    "1607eeafd1831115cd81bfd3aed07ea9a154ec688776a25f3395c960756a048c",
+                )
+
+    def test_p2p_has_one_public_nlb_and_never_exposes_http_or_metrics(self) -> None:
+        services = self.by_kind["Service"]
+        p2p = next(
+            service
+            for service in services
+            if service["metadata"]["name"].endswith("-p2p")
+        )
+        internal = next(service for service in services if service is not p2p)
+
+        self.assertEqual(p2p["spec"]["type"], "LoadBalancer")
+        self.assertEqual(p2p["spec"]["externalTrafficPolicy"], "Local")
+        self.assertEqual(p2p["spec"]["loadBalancerSourceRanges"], ["0.0.0.0/0"])
+        self.assertEqual(
+            p2p["metadata"]["annotations"][
+                "service.beta.kubernetes.io/aws-load-balancer-type"
+            ],
+            "nlb",
+        )
+        p2p_ports = {
+            (port["port"], port.get("protocol", "TCP")) for port in p2p["spec"]["ports"]
+        }
+        self.assertEqual(
+            p2p_ports,
+            {
+                (30303, "TCP"),
+                (30303, "UDP"),
+                (9000, "TCP"),
+                (9000, "UDP"),
+                (9001, "UDP"),
+            },
+        )
+        self.assertTrue(all("nodePort" not in port for port in p2p["spec"]["ports"]))
+        self.assertEqual(internal["spec"]["type"], "ClusterIP")
+        self.assertEqual(
+            {port["port"] for port in internal["spec"]["ports"]},
+            {5052, 6060, 8008},
+        )
+
+    def test_restricted_runtime_and_spot_preference_fit_one_bounded_worker(
+        self,
+    ) -> None:
+        pod_spec = self.by_kind["StatefulSet"][0]["spec"]["template"]["spec"]
+        security = pod_spec["securityContext"]
+        self.assertTrue(security["runAsNonRoot"])
+        self.assertEqual((security["runAsUser"], security["runAsGroup"]), (1000, 1000))
+        self.assertEqual(security["seccompProfile"]["type"], "RuntimeDefault")
+        self.assertEqual(security["fsGroupChangePolicy"], "OnRootMismatch")
+
+        self.assertEqual(pod_spec["nodeSelector"], {"workload": "ethereum"})
+        self.assertEqual(pod_spec["terminationGracePeriodSeconds"], 30)
+        self.assertNotIn("PodDisruptionBudget", self.by_kind)
+        preference = pod_spec["affinity"]["nodeAffinity"][
+            "preferredDuringSchedulingIgnoredDuringExecution"
+        ][0]
+        self.assertEqual(preference["weight"], 100)
+        expression = preference["preference"]["matchExpressions"][0]
+        self.assertEqual(expression["key"], "eks.amazonaws.com/capacityType")
+        self.assertEqual(expression["values"], ["SPOT"])
+
+        expected_limits = {"execution": ("5", "24Gi"), "consensus": ("3", "16Gi")}
+        for container in pod_spec["containers"]:
+            with self.subTest(container=container["name"]):
+                context = container["securityContext"]
+                self.assertTrue(context["runAsNonRoot"])
+                self.assertFalse(context["allowPrivilegeEscalation"])
+                self.assertTrue(context["readOnlyRootFilesystem"])
+                self.assertIn("ALL", context["capabilities"]["drop"])
+                self.assertEqual(
+                    (
+                        container["resources"]["limits"]["cpu"],
+                        container["resources"]["limits"]["memory"],
+                    ),
+                    expected_limits[container["name"]],
+                )
+                self.assertIn("startupProbe", container)
+                self.assertIn("readinessProbe", container)
+                self.assertIn("livenessProbe", container)
+                self.assertIn(
+                    {"name": f"{container['name']}-runtime", "mountPath": "/tmp"},
+                    container["volumeMounts"],
+                )
+
+        runtime_volumes = {
+            volume["name"]: volume["emptyDir"]["sizeLimit"]
+            for volume in pod_spec["volumes"]
+            if volume["name"].endswith("-runtime")
+        }
+        self.assertEqual(
+            runtime_volumes,
+            {"execution-runtime": "256Mi", "consensus-runtime": "256Mi"},
+        )
+
+    def test_network_policy_opens_only_p2p_publicly(self) -> None:
+        policy = self.by_kind["NetworkPolicy"][0]
+        public_rule = policy["spec"]["ingress"][0]
+        self.assertNotIn("from", public_rule)
+        self.assertEqual(
+            {(port["port"], port["protocol"]) for port in public_rule["ports"]},
+            {
+                (30303, "TCP"),
+                (30303, "UDP"),
+                (9000, "TCP"),
+                (9000, "UDP"),
+                (9001, "UDP"),
+            },
+        )
+        public_ports = {port["port"] for port in public_rule["ports"]}
+        self.assertTrue({5052, 6060, 8008, 8545, 8551}.isdisjoint(public_ports))
+
+    def test_consensus_peer_rule_sums_verified_lighthouse_status_buckets(
+        self,
+    ) -> None:
+        rules = self.by_kind["PrometheusRule"][0]["spec"]["groups"][0]["rules"]
+        peer_rule = next(
+            rule
+            for rule in rules
+            if rule.get("record") == "validator_platform_consensus_peers"
+        )
+        self.assertIn("sum by", peer_rule["expr"])
+        self.assertIn("sync_peers_per_status", peer_rule["expr"])
+        self.assertNotIn("libp2p_peers", peer_rule["expr"])
+
+
+class EksEphemeryFluxAndTelemetryTests(unittest.TestCase):
+    def test_node_layer_is_independent_suspended_and_non_signing(self) -> None:
+        layer = yaml.safe_load((CLUSTER / "node-apps.yaml").read_text(encoding="utf-8"))
+        self.assertEqual(
+            layer["spec"]["dependsOn"], [{"name": "infrastructure-configs"}]
+        )
+        self.assertTrue(layer["spec"]["suspend"])
+
+        rendered = subprocess.run(
+            ["kubectl", "kustomize", str(NODE_APPS)],
+            check=True,
+            capture_output=True,
+            text=True,
+        ).stdout
+        documents = load_documents(rendered)
+        releases = [
+            document for document in documents if document["kind"] == "HelmRelease"
+        ]
+        self.assertEqual(
+            [release["metadata"]["name"] for release in releases],
+            ["assignment-ephemery-162-synthetic"],
+        )
+        release = releases[0]
+        self.assertEqual(release["spec"]["values"]["lifecycleState"], "stopped")
+        self.assertFalse(release["spec"]["values"]["validator"]["enabled"])
+        self.assertEqual(
+            release["spec"]["values"]["engineJwt"]["secretStoreName"],
+            "aws-engine-secrets",
+        )
+        self.assertEqual(
+            release["spec"]["chart"]["spec"]["valuesFiles"],
+            ["values.yaml", "values-eks-ephemery.yaml"],
+        )
+        self.assertNotIn("web3signer", rendered.lower())
+
+    def test_sync_dashboard_uses_only_declared_evidence_and_states_limits(self) -> None:
+        config_map = yaml.safe_load(
+            (NODE_APPS / "sync-dashboard.yaml").read_text(encoding="utf-8")
+        )
+        dashboard = json.loads(config_map["data"]["eks-ephemery-sync.json"])
+        self.assertEqual(dashboard["uid"], "eth-eks-ephemery-sync")
+        self.assertFalse(dashboard["editable"])
+        self.assertEqual(
+            len({panel["id"] for panel in dashboard["panels"]}),
+            len(dashboard["panels"]),
+        )
+
+        expressions = [
+            target["expr"]
+            for panel in dashboard["panels"]
+            for target in panel.get("targets", [])
+        ]
+        rules = (CHART / "templates" / "prometheusrule.yaml").read_text(
+            encoding="utf-8"
+        )
+        platform_metrics = {
+            token.split("{")[0]
+            for expression in expressions
+            for token in expression.replace("(", " ").split()
+            if token.startswith("validator_platform_")
+        }
+        for metric in platform_metrics:
+            with self.subTest(metric=metric):
+                self.assertIn(f"record: {metric}", rules)
+
+        text = json.dumps(dashboard).lower()
+        self.assertIn("ready means only", text)
+        self.assertIn("not an independent network-tip distance", text)
+        self.assertIn("validator duties and signing remain disabled", text)
+        self.assertNotIn("public_key", text)
+        self.assertNotIn("web3signer", text)
+
+    def test_runbook_requires_generation_capacity_p2p_and_sustained_sync_evidence(
+        self,
+    ) -> None:
+        text = RUNBOOK.read_text(encoding="utf-8")
+        for required in (
+            "successor generation",
+            "suspend: true",
+            "validator.enabled=false",
+            "signingEnabled: false",
+            "Engine JWT",
+            "LoadBalancer",
+            "externalTrafficPolicy: Local",
+            "same Availability Zone",
+            "30-second",
+            "Spot interruption",
+            "15-minute",
+            "internal sync distance",
+            "authorize validator duties",
+        ):
+            with self.subTest(required=required):
+                self.assertIn(required, text)
+
+
+if __name__ == "__main__":
+    unittest.main()

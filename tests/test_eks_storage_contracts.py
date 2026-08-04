@@ -23,6 +23,7 @@ STORAGE_CLASS_FILE = DEV_CONFIGS / "ebs-gp3-storage-class.yaml"
 DEV_README = DEV_CONFIGS / "README.md"
 CHART = ROOT / "charts" / "ethereum-node"
 EKS_STORAGE_VALUES = CHART / "values-eks-hoodi-storage.yaml"
+EKS_EPHEMERY_VALUES = CHART / "values-eks-ephemery.yaml"
 CLUSTERS = ROOT / "clusters"
 
 # The historical claim the directory README made before clusters/dev existed.
@@ -120,11 +121,13 @@ class EksStorageClassTests(unittest.TestCase):
 class EksStorageProfileTests(unittest.TestCase):
     def setUp(self) -> None:
         self.profile = yaml.safe_load(EKS_STORAGE_VALUES.read_text(encoding="utf-8"))
+        self.ephemery_profile = yaml.safe_load(EKS_EPHEMERY_VALUES.read_text(encoding="utf-8"))
         self.chart_defaults = yaml.safe_load((CHART / "values.yaml").read_text(encoding="utf-8"))
         self.declared_class = load_documents(STORAGE_CLASS_FILE)[0]["metadata"]["name"]
 
     def test_profile_names_the_declared_storage_class(self) -> None:
         self.assertEqual(self.profile["storageClassName"], self.declared_class)
+        self.assertEqual(self.ephemery_profile["storageClassName"], self.declared_class)
 
     def test_profile_cannot_inherit_gp2_or_the_local_class(self) -> None:
         self.assertNotIn(self.profile["storageClassName"], {"gp2", "standard", ""})
@@ -145,6 +148,18 @@ class EksStorageProfileTests(unittest.TestCase):
             {"execution": "200Gi", "consensus": "50Gi", "validator": "5Gi"},
         )
 
+    def test_ephemery_sizes_are_reset_aware_and_cheaper_than_hoodi(self) -> None:
+        self.assertEqual(
+            self.ephemery_profile["storage"],
+            {"execution": "50Gi", "consensus": "20Gi", "validator": "5Gi"},
+        )
+        for claim in ("execution", "consensus"):
+            with self.subTest(claim=claim):
+                self.assertLess(
+                    to_bytes(self.ephemery_profile["storage"][claim]),
+                    to_bytes(self.profile["storage"][claim]),
+                )
+
     def test_sizes_are_expandable_from_the_local_defaults(self) -> None:
         """Volume expansion grows a claim; nothing shrinks one.
 
@@ -155,6 +170,10 @@ class EksStorageProfileTests(unittest.TestCase):
         for claim, default in self.chart_defaults["storage"].items():
             with self.subTest(claim=claim):
                 self.assertGreaterEqual(to_bytes(self.profile["storage"][claim]), to_bytes(default))
+                self.assertGreaterEqual(
+                    to_bytes(self.ephemery_profile["storage"][claim]),
+                    to_bytes(default),
+                )
 
     def test_chart_schema_requires_an_explicit_class_and_sizes(self) -> None:
         schema = json.loads((CHART / "values.schema.json").read_text(encoding="utf-8"))

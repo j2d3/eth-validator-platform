@@ -17,8 +17,9 @@ spec:
   path: ./platform/apps/dev
   prune: true
   wait: true
-  # A separate reviewed commit removes this suspension only after the signer
-  # migration Job is Ready. The committed assignment is still non-signing.
+  # This layer owns the shared signer application, not node-pair releases. A
+  # separate reviewed commit removes this suspension only after the signer
+  # migration Job is Ready and every signer runtime gate is proven.
   suspend: true
   commonMetadata:
     labels:
