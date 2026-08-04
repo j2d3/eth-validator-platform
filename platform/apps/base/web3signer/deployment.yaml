@@ -53,6 +53,12 @@ spec:
             - --slashing-protection-db-username=$(DB_USERNAME)
             - --slashing-protection-db-password=$(DB_PASSWORD)
           env:
+            # The JVM's container default is approximately 25% of the 1 GiB
+            # limit (~248 MiB), which is smaller than the working set needed
+            # to decrypt a standard EIP-2335 scrypt keystore (N=262144).
+            # Keep explicit native-memory headroom while admitting that key.
+            - name: JAVA_TOOL_OPTIONS
+              value: -Xms128m -Xmx640m
             - name: DB_HOST
               valueFrom:
                 secretKeyRef:

@@ -111,6 +111,14 @@ class Web3SignerKeyProjectionContracts(unittest.TestCase):
         )
         self.assertNotIn("emptyDir", key_volume)
 
+    def test_web3signer_heap_admits_standard_eip2335_scrypt(self) -> None:
+        deployment = object_named(self.documents, "Deployment", "web3signer")
+        container = deployment["spec"]["template"]["spec"]["containers"][0]
+        environment = {item["name"]: item.get("value") for item in container["env"]}
+
+        self.assertEqual(environment["JAVA_TOOL_OPTIONS"], "-Xms128m -Xmx640m")
+        self.assertEqual(container["resources"]["limits"]["memory"], "1Gi")
+
     def test_signer_network_matches_ephemery_but_duties_stay_disabled(self) -> None:
         deployment = object_named(self.documents, "Deployment", "web3signer")
         pod = deployment["spec"]["template"]["spec"]
