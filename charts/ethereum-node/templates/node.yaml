@@ -22,10 +22,14 @@
 {{- $artifactMode := eq $executionAdapter.mode "artifact-bundle" -}}
 {{- /* Built-in-mode is currently Geth+Lighthouse only; the args blocks for
      that path hard-code Geth and Lighthouse flag names. Fail loudly if
-     someone tries to render a Reth or Teku pair on a built-in network — a
-     future PR can extract those args behind per-client helpers. */ -}}
+     someone tries to render a Reth, Erigon, or Teku pair on a built-in
+     network — a future PR can extract those args behind per-client
+     helpers. */ -}}
 {{- if and (eq .Values.executionClient "reth") (not $artifactMode) -}}
 {{- fail "executionClient=reth requires networkProfile.clients.reth.mode = artifact-bundle in this chart version" -}}
+{{- end -}}
+{{- if and (eq .Values.executionClient "erigon") (not $artifactMode) -}}
+{{- fail "executionClient=erigon requires networkProfile.clients.erigon.mode = artifact-bundle in this chart version" -}}
 {{- end -}}
 {{- if and (eq .Values.consensusClient "teku") (not $artifactMode) -}}
 {{- fail "consensusClient=teku requires networkProfile.clients.teku.mode = artifact-bundle in this chart version" -}}

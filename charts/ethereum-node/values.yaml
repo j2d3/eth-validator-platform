@@ -37,6 +37,13 @@ networkProfile:
     teku:
       mode: builtin
       network: hoodi
+    # Erigon adapter default: mirrors Geth/Reth's builtin+hoodi shape so an
+    # Erigon pair renders correctly against the default Hoodi profile if
+    # selected. The artifact-bundle assignments override this via the
+    # projection tool's network: null clearing (same pattern as Reth).
+    erigon:
+      mode: builtin
+      network: hoodi
   signer:
     web3signer:
       mode: builtin
@@ -156,6 +163,33 @@ executionClients:
     metrics:
       headBlock: reth_blockchain_tree_canonical_chain_height
       peers: reth_network_connected_peers
+  # Erigon adapter. Genesis format is Geth-compatible (same digest-verified
+  # genesis.json). State lives under /data/chaindata/ (erigonInitCommand
+  # asserts this marker directory). No `--syncmode` — Erigon 3.x uses its
+  # staged-sync pipeline unconditionally, architecturally different from
+  # both Geth's snap sync and Reth's staged pipeline. Image digest was
+  # resolved from Docker Hub's tags API for `erigontech/erigon:v3.5.4` on
+  # 2026-08-04; verify with `docker buildx imagetools inspect
+  # docker.io/erigontech/erigon:v3.5.4` against a live registry before the
+  # first Erigon Pod starts.
+  erigon:
+    image: erigontech/erigon:v3.5.4@sha256:7d48b74edda1cc8b66909ba53cb8250f1225140dd915475d09521d95a3eb6fc7
+    # Erigon's native metric names differ from both Geth's and Reth's.
+    # These names track Erigon 3.x's documented Prometheus series but are
+    # unverified against a live Pod until the first Erigon pair is
+    # scraped; the recording rules degrade to empty series for unknown
+    # names rather than render errors (matching the pattern PR #96/#124
+    # formalized). `headHeader` is deliberately omitted: Erigon's staged
+    # pipeline does not publish a separately-observed downloaded-header-
+    # frontier gauge distinct from the executed head, so mapping both
+    # concepts to the same series would publish `internal_sync_distance = 0`
+    # regardless of actual sync state. Per PRD §12.5, missing telemetry is
+    # unsupported/not collected, not zero.
+    metrics:
+      # Executed head block number.
+      headBlock: chain_head_block
+      # Connected peer count.
+      peers: p2p_peers
 consensusClients:
   lighthouse:
     image: sigp/lighthouse:v8.2.1@sha256:9538f53d8e11766e3cb5de1889b292074f8e518e0dabe6df13d9054d504d1d62
