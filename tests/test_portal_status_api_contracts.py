@@ -173,6 +173,30 @@ class PortalStatusApiResponseTests(unittest.TestCase):
         self.assertIsNone(snapshot["cluster"]["nodes"]["systemReady"])
         self.assertIsNone(snapshot["cluster"]["nodes"]["ethereumReady"])
 
+    def test_pair_without_validator_metric_reports_explicit_null(self) -> None:
+        results = base_results()
+        pair_labels = {
+            "assignment_id": "assignment-ephemery-162-synthetic-reth",
+            "cluster": "eth-validator-platform-dev",
+            "environment": "dev",
+            "network": "ephemery",
+            "network_profile": "ephemery",
+            "network_generation": "162",
+            "execution_client": "reth",
+            "consensus_client": "lighthouse",
+            "lifecycle_state": "active",
+        }
+        results[SERVER.PAIR_QUERIES["targetUp"]] = [
+            *vector(1, **pair_labels, component="execution"),
+            *vector(1, **pair_labels, component="consensus"),
+        ]
+
+        snapshot = SERVER.build_snapshot(FakePrometheus(results))
+
+        self.assertEqual(
+            snapshot["pairs"][0]["signing"], {"validatorsEnabled": None}
+        )
+
     def test_no_target_series_means_no_pair_and_no_dead_grafana_link(self) -> None:
         snapshot = SERVER.build_snapshot(FakePrometheus(base_results()))
         self.assertEqual(snapshot["pairs"], [])
