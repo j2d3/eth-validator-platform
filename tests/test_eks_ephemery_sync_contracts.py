@@ -89,6 +89,7 @@ class EksEphemeryRenderTests(unittest.TestCase):
         self.assertTrue(validator["metadata"]["name"].endswith("-validator"))
         args = validator["spec"]["template"]["spec"]["containers"][0]["args"]
         self.assertIn("--testnet-dir=/validator-network", args)
+        self.assertIn("--init-slashing-protection", args)
         self.assertIn("--enable-doppelganger-protection", args)
         self.assertIn("--disable-slashing-protection-web3signer", args)
         text = yaml.safe_dump_all(self.documents).lower()
@@ -100,13 +101,13 @@ class EksEphemeryRenderTests(unittest.TestCase):
             text,
         )
 
-        network_volume = next(
+        network_source_volume = next(
             volume
             for volume in validator["spec"]["template"]["spec"]["volumes"]
-            if volume["name"] == "validator-network"
+            if volume["name"] == "validator-network-source"
         )
         self.assertEqual(
-            network_volume["configMap"]["items"],
+            network_source_volume["configMap"]["items"],
             [
                 {"key": "config.yaml", "path": "config.yaml"},
                 {
@@ -114,6 +115,34 @@ class EksEphemeryRenderTests(unittest.TestCase):
                     "path": "deposit_contract_block.txt",
                 },
             ],
+        )
+        network_volume = next(
+            volume
+            for volume in validator["spec"]["template"]["spec"]["volumes"]
+            if volume["name"] == "validator-network"
+        )
+        self.assertEqual(network_volume["emptyDir"]["sizeLimit"], "16Mi")
+
+        init_containers = {
+            container["name"]: container
+            for container in validator["spec"]["template"]["spec"]["initContainers"]
+        }
+        self.assertEqual(
+            set(init_containers),
+            {
+                "configure-validator",
+                "fetch-validator-genesis",
+                "verify-validator-network",
+            },
+        )
+        fetch_command = init_containers["fetch-validator-genesis"]["args"][0]
+        self.assertIn("/eth/v2/debug/beacon/states/genesis", fetch_command)
+        self.assertIn("Accept: application/octet-stream", fetch_command)
+        verify_command = init_containers["verify-validator-network"]["args"][0]
+        self.assertIn("1785438600", verify_command)
+        self.assertIn(
+            "0xe7ba535e068e129a2e3b17ee6a8f275eee3d1a01126f583ea7b6e867a91c0e5e",
+            verify_command,
         )
 
         external_secrets = self.by_kind["ExternalSecret"]

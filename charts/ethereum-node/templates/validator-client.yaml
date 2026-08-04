@@ -83,6 +83,53 @@ spec:
           volumeMounts:
             - {name: validator-config, mountPath: /config, readOnly: true}
             - {name: validator-data, mountPath: /validator-data}
+        {{- if $artifactMode }}
+        - name: fetch-validator-genesis
+          image: {{ .Values.networkArtifactLoader.downloadImage }}
+          imagePullPolicy: {{ .Values.imagePullPolicy }}
+          command: [/bin/sh, -ec]
+          args:
+            - |
+              set -eu
+              curl --fail --location --connect-timeout 10 --max-time 60 \
+                --max-filesize 16777216 --header 'Accept: application/octet-stream' \
+                --output /validator-network/genesis.ssz \
+                http://{{ include "ethereum-node.fullname" . }}:5052/eth/v2/debug/beacon/states/genesis
+              curl --fail --location --connect-timeout 10 --max-time 30 \
+                --max-filesize 4096 --output /validator-network/genesis.json \
+                http://{{ include "ethereum-node.fullname" . }}:5052/eth/v1/beacon/genesis
+          securityContext:
+            runAsNonRoot: true
+            runAsUser: 101
+            runAsGroup: 102
+            allowPrivilegeEscalation: false
+            readOnlyRootFilesystem: true
+            capabilities: {drop: [ALL]}
+          volumeMounts:
+            - {name: validator-network, mountPath: /validator-network}
+        - name: verify-validator-network
+          image: {{ .Values.networkArtifactLoader.verifyImage }}
+          imagePullPolicy: {{ .Values.imagePullPolicy }}
+          command: [/bin/sh, -ec]
+          args:
+            - |
+              set -eu
+              test -s /validator-network/genesis.ssz
+              grep -F {{ printf "\"genesis_time\":\"%d\"" (int64 .Values.networkProfile.identity.consensusGenesisTime) | quote }} /validator-network/genesis.json
+              grep -F {{ printf "\"genesis_validators_root\":\"%s\"" .Values.networkProfile.identity.consensusGenesisValidatorsRoot | quote }} /validator-network/genesis.json
+              cp /network-source/config.yaml /validator-network/config.yaml
+              cp /network-source/deposit_contract_block.txt /validator-network/deposit_contract_block.txt
+          securityContext:
+            runAsNonRoot: true
+            runAsUser: 1000
+            runAsGroup: 1000
+            allowPrivilegeEscalation: false
+            readOnlyRootFilesystem: true
+            capabilities: {drop: [ALL]}
+          volumeMounts:
+            - {name: validator-network-source, mountPath: /network-source, readOnly: true}
+            - {name: validator-network, mountPath: /validator-network}
+        {{- end }}
       containers:
         - name: validator
           image: {{ .Values.validatorClient.image }}
@@ -98,6 +145,7 @@ spec:
             - --beacon-nodes=http://{{ include "ethereum-node.fullname" . }}:5052
             - --validators-dir=/validator-data
             - --suggested-fee-recipient={{ .Values.validator.feeRecipient }}
+            - --init-slashing-protection
             - --enable-doppelganger-protection
             - --disable-slashing-protection-web3signer
             - --metrics
@@ -129,7 +177,7 @@ spec:
           emptyDir:
             sizeLimit: 64Mi
         {{- if $artifactMode }}
-        - name: validator-network
+        - name: validator-network-source
           configMap:
             name: {{ required "validator.networkConfigMapName is required for artifact-bundle signing" .Values.validator.networkConfigMapName }}
             items:
@@ -137,5 +185,8 @@ spec:
                 path: config.yaml
               - key: deposit_contract_block.txt
                 path: deposit_contract_block.txt
+        - name: validator-network
+          emptyDir:
+            sizeLimit: 16Mi
         {{- end }}
 {{- end }}
