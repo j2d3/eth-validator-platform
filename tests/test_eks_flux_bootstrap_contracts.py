@@ -124,7 +124,13 @@ class EksFluxEntrypointTests(unittest.TestCase):
 
         self.assertNotIn("suspend", self.layers["infrastructure-controllers"]["spec"])
         self.assertNotIn("suspend", self.layers["infrastructure-configs"]["spec"])
-        self.assertTrue(self.layers["node-apps"]["spec"]["suspend"])
+        # node-apps has been reviewed-unsuspended to admit the stopped
+        # HelmRelease per docs/runbooks/eks-ephemery-sync.md §4. The
+        # HelmRelease itself remains lifecycleState=stopped and non-signing;
+        # that safety property is asserted separately in
+        # test_eks_ephemery_sync_contracts.
+        self.assertIn("suspend", self.layers["node-apps"]["spec"])
+        self.assertFalse(self.layers["node-apps"]["spec"]["suspend"])
         self.assertTrue(self.layers["signer-infrastructure-configs"]["spec"]["suspend"])
         self.assertTrue(self.layers["signer-prerequisites"]["spec"]["suspend"])
         self.assertTrue(self.layers["apps"]["spec"]["suspend"])
