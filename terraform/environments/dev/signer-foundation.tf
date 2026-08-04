@@ -2,6 +2,10 @@ locals {
   web3signer_database_identifier = "${local.name}-web3signer"
   web3signer_database_name       = "web3signer"
   web3signer_database_port       = 5432
+  web3signer_signing_key_names = {
+    validator-ephemery-162-01 = "validator-keystore"
+    validator-ephemery-162-02 = "validator-keystore-02"
+  }
 }
 
 # This group is attached later to Web3Signer's branch ENI by a reviewed EKS
@@ -275,13 +279,20 @@ resource "aws_secretsmanager_secret" "web3signer_database" {
 }
 
 resource "aws_secretsmanager_secret" "web3signer_signing_key" {
-  name                    = "${local.name}/signing/validator-keystore"
+  for_each = local.web3signer_signing_key_names
+
+  name                    = "${local.name}/signing/${each.value}"
   description             = "Encrypted validator keystore bundle and password; populated by restricted onboarding outside Terraform."
   recovery_window_in_days = 30
 
   tags = {
     DataClassification = "validator-signing-key"
   }
+}
+
+moved {
+  from = aws_secretsmanager_secret.web3signer_signing_key
+  to   = aws_secretsmanager_secret.web3signer_signing_key["validator-ephemery-162-01"]
 }
 
 data "aws_iam_policy_document" "external_secrets_reader_trust" {
@@ -348,7 +359,7 @@ data "aws_iam_policy_document" "external_secrets_signing_reader" {
     sid       = "ReadValidatorKeystore"
     effect    = "Allow"
     actions   = ["secretsmanager:DescribeSecret", "secretsmanager:GetSecretValue"]
-    resources = [aws_secretsmanager_secret.web3signer_signing_key.arn]
+    resources = [for signing_key in values(aws_secretsmanager_secret.web3signer_signing_key) : signing_key.arn]
   }
 }
 

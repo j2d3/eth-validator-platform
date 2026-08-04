@@ -36,7 +36,10 @@ output "web3signer_secret_arns" {
   description = "Empty Secrets Manager containers populated by restricted bootstrap/onboarding procedures outside Terraform."
   value = {
     database_connection = aws_secretsmanager_secret.web3signer_database.arn
-    signing_key_bundle  = aws_secretsmanager_secret.web3signer_signing_key.arn
+    signing_key_bundles = {
+      for validator_id, signing_key in aws_secretsmanager_secret.web3signer_signing_key :
+      validator_id => signing_key.arn
+    }
   }
 }
 

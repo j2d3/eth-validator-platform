@@ -576,10 +576,22 @@ database connection is not a substitute for proving which network identity the
 Pod received.
 
 Only after the migration gate passes may `clusters/dev/apps.yaml` reconcile.
-The current application layer projects exactly one encrypted validator
-keystore. Verify that Web3Signer reports exactly that public key without reading
-the keystore or password. Also prove the Web3Signer Pod has a branch ENI carrying
-only the expected runtime group before calling this layer qualified:
+The application layer projects only explicitly onboarded encrypted validator
+keystores. For each onboarding run, pass the declared validator identity so the
+tool selects exactly that identity's empty Terraform-managed container:
+
+```bash
+python3 hack/onboard-web3signer-keystore.py \
+  --keystore "$KEYSTORE_FILE" \
+  --network-profile ephemery-162 \
+  --validator-id validator-ephemery-162-02
+```
+
+The tool refuses an unknown identity and refuses any target container that
+already has a version. After projection, verify that Web3Signer reports exactly
+the deposited public keys without reading a keystore or password. Also prove the
+Web3Signer Pod has a branch ENI carrying only the expected runtime group before
+calling this layer qualified:
 
 ```bash
 kubectl -n signing rollout status deployment/web3signer --timeout=5m
