@@ -55,6 +55,9 @@ spec:
         lighthouse:
           mode: artifact-bundle
           network: null
+        teku:
+          mode: artifact-bundle
+          network: null
       signer:
         web3signer:
           mode: artifact-bundle

@@ -94,7 +94,8 @@
           "properties": {
             "geth": {"$ref": "#/$defs/gethAdapter"},
             "reth": {"$ref": "#/$defs/rethAdapter"},
-            "lighthouse": {"$ref": "#/$defs/lighthouseAdapter"}
+            "lighthouse": {"$ref": "#/$defs/lighthouseAdapter"},
+            "teku": {"$ref": "#/$defs/tekuAdapter"}
           }
         },
         "signer": {
@@ -233,6 +234,27 @@
       ]
     },
     "lighthouseAdapter": {
+      "oneOf": [
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["mode", "network"],
+          "properties": {
+            "mode": {"const": "builtin"},
+            "network": {"enum": ["sepolia", "hoodi"]}
+          }
+        },
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["mode"],
+          "properties": {
+            "mode": {"const": "artifact-bundle"}
+          }
+        }
+      ]
+    },
+    "tekuAdapter": {
       "oneOf": [
         {
           "type": "object",

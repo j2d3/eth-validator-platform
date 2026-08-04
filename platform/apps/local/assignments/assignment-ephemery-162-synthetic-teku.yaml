@@ -3,12 +3,12 @@
 apiVersion: helm.toolkit.fluxcd.io/v2
 kind: HelmRelease
 metadata:
-  name: assignment-ephemery-162-synthetic
+  name: assignment-ephemery-162-synthetic-teku
   namespace: ethereum
   labels:
     app.kubernetes.io/part-of: ethereum-validator-platform
-    platform.galaxy-lab/assignment-id: assignment-ephemery-162-synthetic
-    platform.galaxy-lab/validator-id: validator-ephemery-162-01
+    platform.galaxy-lab/assignment-id: assignment-ephemery-162-synthetic-teku
+    platform.galaxy-lab/validator-id: validator-ephemery-162-synthetic-teku
 spec:
   interval: 10m
   timeout: 10m
@@ -30,7 +30,7 @@ spec:
     remediation:
       retries: 3
   values:
-    fullnameOverride: pair-ephemery-162-synthetic
+    fullnameOverride: pair-ephemery-162-synthetic-teku
     lifecycleState: active
     networkProfile:
       name: ephemery-162
@@ -85,18 +85,14 @@ spec:
         verificationUrls:
         - https://ephemery.beaconstate.ethstaker.cc/
     executionClient: geth
-    consensusClient: lighthouse
+    consensusClient: teku
     telemetry:
       cluster: kind-eth-validator-local
       environment: local
     identity:
-      customerId: customer-testnet-lab
-      validatorId: validator-ephemery-162-01
-      assignmentId: assignment-ephemery-162-synthetic
+      customerId: customer-synthetic-lab
+      validatorId: validator-ephemery-162-synthetic-teku
+      assignmentId: assignment-ephemery-162-synthetic-teku
     validator:
-      enabled: true
-      slashingProtectionConfirmed: true
-      publicKey: '0x8b8fb7b0abfa650d1b393e87328b3af24f0605adc807942d1e1b10095f72b06a6fc281cb31d67a32dc0ef1ce9388c47e'
-      feeRecipient: '0x26c31E06d6D4CEd468704b62Cb6c2F897D997576'
-      graffiti: eth-validator-platform-lab
-      networkConfigMapName: web3signer-network-config-ephemery-162
+      enabled: false
+      slashingProtectionConfirmed: false

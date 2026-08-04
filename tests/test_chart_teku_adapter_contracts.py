@@ -88,11 +88,10 @@ def teku_ephemery_values() -> dict:
             "clients": {
                 # Overriding `network: null` collapses the values.yaml default
                 # `network: hoodi` so the artifact-bundle-only adapter schema
-                # is satisfied. Teku has no values.yaml default so it just
-                # declares mode.
+                # is satisfied.
                 "geth": {"mode": "artifact-bundle", "network": None},
                 "lighthouse": {"mode": "artifact-bundle", "network": None},
-                "teku": {"mode": "artifact-bundle"},
+                "teku": {"mode": "artifact-bundle", "network": None},
             },
             "artifactBundle": {
                 "url": "https://example.invalid/testnet-all.tar.gz",
