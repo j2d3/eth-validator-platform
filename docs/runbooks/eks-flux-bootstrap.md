@@ -481,6 +481,45 @@ test "$(kubectl -n database get securitygrouppolicy web3signer-schema \
   "$WEB3SIGNER_MIGRATION_POD_SECURITY_GROUP_ID"
 ```
 
+Populate the empty database application-credential container with the reviewed
+trusted-local bootstrap tool. The tool refuses an existing secret version, so
+it cannot rotate a credential implicitly. It reads the RDS-managed master
+credential only into process memory, creates one temporary Kubernetes Secret,
+and runs the committed qualification Job through the migration Pod's branch
+ENI. PostgreSQL TLS uses `verify-full` and the digest-pinned AWS RDS CA bundle.
+The Job creates or updates only a `web3signer` login with no superuser,
+database-creation, role-creation, or replication authority. It then writes the
+five-field application JSON to the existing Secrets Manager container and
+deletes its Job, NetworkPolicy, Secret, and CA ConfigMap.
+
+Run from a clean checkout with the project-local Terraform binary first on
+`PATH`. Do not add tracing, redirect AWS output, or inspect either secret
+value:
+
+```bash
+export PATH="$PWD/.local/bin:$PWD/.local/test-venv/bin:$PATH"
+./hack/bootstrap-web3signer-database.py
+
+test "$(aws secretsmanager list-secret-version-ids \
+  --secret-id eth-validator-platform-dev/signing/web3signer-database \
+  --query 'length(Versions)' --output text)" = "1"
+
+for resource in \
+  job/web3signer-database-bootstrap \
+  networkpolicy/web3signer-database-bootstrap \
+  secret/web3signer-database-bootstrap \
+  configmap/web3signer-rds-ca; do
+  ! kubectl -n database get "$resource" >/dev/null 2>&1
+done
+```
+
+The success message proves that the role-creation transaction completed, the
+Job's branch ENI contained the exact Terraform migration security group, the
+application secret readback matched the in-memory payload, and all temporary
+Kubernetes material was removed. It does not prove that External Secrets,
+Flyway, or Web3Signer can consume the credential; the next two reviewed stages
+provide that evidence.
+
 Only then open a second PR changing
 `clusters/dev/signer-prerequisites.yaml` to `suspend: false`. After merge,
 verify:
