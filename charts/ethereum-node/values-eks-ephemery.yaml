@@ -38,10 +38,10 @@ p2p:
 scheduling:
   preferSpot: true
 
-# This slice has one non-signing replica, so a minAvailable=1 PDB would only
-# obstruct voluntary Spot draining without providing redundancy. AWS recommends
-# no more than 30 seconds of termination grace for EKS Spot workloads. Recovery
-# remains unqualified until the runbook exercise.
+# The node pair has one replica, so a minAvailable=1 node PDB would only
+# obstruct voluntary Spot draining without providing redundancy. The validator
+# client keeps its own minAvailable=1 PDB. AWS recommends no more than 30
+# seconds of termination grace for EKS Spot workloads.
 availability:
   nodeTerminationGracePeriodSeconds: 30
   nodeDisruptionBudgetEnabled: false

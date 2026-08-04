@@ -12,9 +12,6 @@
 {{- fail (printf "%s and Lighthouse network adapter modes must match" .Values.executionClient) -}}
 {{- end -}}
 {{- $artifactMode := eq $executionAdapter.mode "artifact-bundle" -}}
-{{- if and $artifactMode .Values.validator.enabled -}}
-{{- fail "validator duties are not qualified for artifact-bundle network profiles" -}}
-{{- end -}}
 {{- /* Built-in-mode is currently Geth-only; the args block for that path
      hard-codes Geth's flag names. Fail loudly if someone tries to render a
      Reth pair on a built-in network — a future PR can extract those args

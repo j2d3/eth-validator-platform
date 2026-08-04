@@ -8,7 +8,7 @@ metadata:
   labels:
     app.kubernetes.io/part-of: ethereum-validator-platform
     platform.galaxy-lab/assignment-id: assignment-ephemery-162-synthetic
-    platform.galaxy-lab/validator-id: validator-ephemery-162-synthetic
+    platform.galaxy-lab/validator-id: validator-ephemery-162-01
 spec:
   interval: 10m
   timeout: 10m
@@ -55,6 +55,11 @@ spec:
         lighthouse:
           mode: artifact-bundle
           network: null
+      signer:
+        web3signer:
+          mode: artifact-bundle
+          signingQualified: true
+          network: null
       artifactBundle:
         url: https://github.com/ephemery-testnet/ephemery-genesis/releases/download/ephemery-162/testnet-all.tar.gz
         sha256: 478ca7181212f2d87137c337e854befbed8aacde8bee8f64d6ca7e28967ee2fb
@@ -82,9 +87,13 @@ spec:
       cluster: kind-eth-validator-local
       environment: local
     identity:
-      customerId: customer-synthetic-lab
-      validatorId: validator-ephemery-162-synthetic
+      customerId: customer-testnet-lab
+      validatorId: validator-ephemery-162-01
       assignmentId: assignment-ephemery-162-synthetic
     validator:
-      enabled: false
-      slashingProtectionConfirmed: false
+      enabled: true
+      slashingProtectionConfirmed: true
+      publicKey: '0x8b8fb7b0abfa650d1b393e87328b3af24f0605adc807942d1e1b10095f72b06a6fc281cb31d67a32dc0ef1ce9388c47e'
+      feeRecipient: '0x26c31E06d6D4CEd468704b62Cb6c2F897D997576'
+      graffiti: eth-validator-platform-lab
+      networkConfigMapName: web3signer-network-config-ephemery-162

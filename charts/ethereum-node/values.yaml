@@ -31,6 +31,11 @@ networkProfile:
     lighthouse:
       mode: builtin
       network: hoodi
+  signer:
+    web3signer:
+      mode: builtin
+      network: hoodi
+      signingQualified: false
 
 # Custom/resetting networks use these digest-pinned tools to fetch and verify
 # one immutable release bundle before either client starts. Built-in networks
@@ -83,7 +88,7 @@ validator:
   enabled: false
   publicKey: ""
   feeRecipient: ""
-  graffiti: galaxy-platform-lab
+  graffiti: eth-validator-platform-lab
   # Required acknowledgment before the chart starts signing components.
   slashingProtectionConfirmed: false
 

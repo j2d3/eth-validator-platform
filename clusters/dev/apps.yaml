@@ -18,9 +18,8 @@ spec:
   prune: true
   wait: true
   # This layer owns the shared signer application, not node-pair releases.
-  # The RDS credential, TLS path, and schema migration were qualified before
-  # this release. Web3Signer still receives an empty key directory, so this
-  # reconciliation cannot authorize validator duties.
+  # The RDS credential, TLS path, schema migration, generation-pinned network
+  # config, and one encrypted validator key were qualified before activation.
   suspend: false
   commonMetadata:
     labels:

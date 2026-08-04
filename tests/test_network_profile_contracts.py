@@ -148,11 +148,16 @@ class NetworkProfileCatalogTests(unittest.TestCase):
 
         self.assertTrue(any("adapters disagree" in error for error in errors))
 
-    def test_ephemery_signing_fails_until_signer_binding_is_qualified(self) -> None:
+    def test_ephemery_signing_fails_if_signer_binding_loses_qualification(self) -> None:
         documents = copy.deepcopy(self.documents)
         for _, document in documents:
-            if document["kind"] == "ValidatorAssignment" and document["metadata"]["name"] == "assignment-ephemery-162-synthetic":
-                document["spec"]["signingEnabled"] = True
+            if (
+                document["kind"] == "NetworkProfile"
+                and document["metadata"]["name"] == "ephemery-162"
+            ):
+                document["spec"]["signer"]["web3signer"][
+                    "signingQualified"
+                ] = False
 
         errors = validate_catalog.relational_errors(documents)
 
@@ -190,7 +195,7 @@ class NetworkProfileRenderingTests(unittest.TestCase):
         })
         self.assertRegex(values["networkProfile"]["identityFingerprint"], r"^[0-9a-f]{64}$")
 
-    def test_ephemery_projection_is_digest_pinned_and_non_signing(self) -> None:
+    def test_ephemery_projection_is_digest_pinned_and_signing_qualified(self) -> None:
         release = render_local_assignments.build_release(
             "assignment-ephemery-162-synthetic", self.catalog
         )
@@ -205,7 +210,15 @@ class NetworkProfileRenderingTests(unittest.TestCase):
             network["artifactBundle"]["sha256"],
             "478ca7181212f2d87137c337e854befbed8aacde8bee8f64d6ca7e28967ee2fb",
         )
-        self.assertFalse(values["validator"]["enabled"])
+        self.assertTrue(network["signer"]["web3signer"]["signingQualified"])
+        self.assertIsNone(network["signer"]["web3signer"]["network"])
+        self.assertTrue(values["validator"]["enabled"])
+        self.assertTrue(values["validator"]["slashingProtectionConfirmed"])
+        self.assertEqual(
+            values["validator"]["publicKey"],
+            "0x8b8fb7b0abfa650d1b393e87328b3af24f0605adc807942d1e1b10095f72b06a6fc281cb31d67a32dc0ef1ce9388c47e",
+        )
+        self.assertNotIn("signingSecretRef", yaml.safe_dump(release))
 
         catalog = copy.deepcopy(self.catalog)
         del catalog["NetworkProfile"]["ephemery-162"]["spec"]["checkpointSync"]
@@ -252,8 +265,8 @@ class NetworkProfileRenderingTests(unittest.TestCase):
 
         first = render_pvc_names("pair-" + "x" * 40 + "-one")
         second = render_pvc_names("pair-" + "x" * 40 + "-two")
-        self.assertEqual(len(first), 2)
-        self.assertEqual(len(second), 2)
+        self.assertEqual(len(first), 3)
+        self.assertEqual(len(second), 3)
         self.assertTrue(first.isdisjoint(second))
 
     def test_mixed_network_adapter_modes_fail_projection(self) -> None:

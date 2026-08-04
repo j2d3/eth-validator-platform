@@ -55,6 +55,11 @@ spec:
         lighthouse:
           mode: artifact-bundle
           network: null
+      signer:
+        web3signer:
+          mode: artifact-bundle
+          signingQualified: true
+          network: null
       artifactBundle:
         url: https://github.com/ephemery-testnet/ephemery-genesis/releases/download/ephemery-162/testnet-all.tar.gz
         sha256: 478ca7181212f2d87137c337e854befbed8aacde8bee8f64d6ca7e28967ee2fb

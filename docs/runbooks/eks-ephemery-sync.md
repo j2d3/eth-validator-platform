@@ -2,14 +2,12 @@
 
 ## Scope and evidence boundary
 
-This runbook launches exactly one generation-pinned Geth/Lighthouse **node
-pair** through Flux in the EKS development lab. It does not deploy a validator
-client, bind Web3Signer, create or load a validator key, make a deposit, or
-authorize validator duties. Every catalog and rendered value remains
-`signingEnabled: false`, `validator.enabled=false`, and
-`slashingProtectionConfirmed: false`.
+This runbook records the node-only qualification that preceded the first
+signing activation. Its chain-identity, P2P, sync, and recovery checks still
+apply. The current catalog now contains one deposited signing identity, and the
+non-signing lifecycle workflow deliberately refuses that assignment.
 
-The committed state is intentionally inert:
+At the start of that node-only exercise, the committed state was inert:
 
 - `clusters/dev/node-apps.yaml` contains `suspend: true`;
 - `assignment-ephemery-162-synthetic` is `stopped`;
@@ -187,9 +185,10 @@ Provider rationale: [Amazon EKS managed node groups](https://docs.aws.amazon.com
 recommends termination grace periods of 30 seconds or less for Spot workloads
 and notes that Pods are not guaranteed to receive the full interruption window.
 
-## 6. Activate the non-signing assignment
+## 6. Historical node-only activation procedure
 
-Use the lifecycle workflow to request `activate` for
+Before the assignment carried a signing identity, the lifecycle workflow was
+used to request `activate` for
 `assignment-ephemery-162-synthetic`, review the generated catalog and
 projection diff, and merge it. The resulting HelmRelease must change to
 `lifecycleState: active` while keeping `validator.enabled=false` and every
@@ -280,14 +279,14 @@ therefore never accepted without peers, head changes, CL progress, and exact
 identity evidence. Likewise, a TCP readiness probe says the API answers—it says
 nothing about the head.
 
-This milestone is complete only when that evidence is captured. It still does
-not authorize validator duties. Key generation, deposits, signer binding,
-slashing-history restore, doppelganger protection, uniqueness, clock, and duty
-activation are separate later gates.
+This node-only milestone did not authorize validator duties. Key generation,
+deposit, signer binding, slashing storage, doppelganger protection, uniqueness,
+and duty activation were reviewed separately.
 
 ## 9. Stop and resume without losing chain identity
 
-Request `stop` through the lifecycle workflow and wait for Flux/Helm to remove
+For a non-signing assignment, request `stop` through the lifecycle workflow and
+wait for Flux/Helm to remove
 the StatefulSet, ExternalSecret, Services, and P2P LoadBalancer. Confirm the two
 PVCs remain Bound, then pause the worker in the PV's zone:
 

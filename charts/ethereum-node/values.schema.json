@@ -31,7 +31,7 @@
     "networkProfile": {
       "type": "object",
       "additionalProperties": false,
-      "required": ["name", "family", "generation", "resetPolicy", "identityFingerprint", "identity", "clients"],
+      "required": ["name", "family", "generation", "resetPolicy", "identityFingerprint", "identity", "clients", "signer"],
       "properties": {
         "name": {"type": "string", "pattern": "^[a-z][a-z0-9-]{2,62}$"},
         "family": {"type": "string", "pattern": "^[a-z][a-z0-9-]{2,31}$"},
@@ -59,6 +59,14 @@
             "geth": {"$ref": "#/$defs/networkAdapter"},
             "reth": {"$ref": "#/$defs/networkAdapter"},
             "lighthouse": {"$ref": "#/$defs/networkAdapter"}
+          }
+        },
+        "signer": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["web3signer"],
+          "properties": {
+            "web3signer": {"$ref": "#/$defs/web3signerNetworkAdapter"}
           }
         },
         "artifactBundle": {"$ref": "#/$defs/artifactBundle"},
@@ -323,6 +331,10 @@
         },
         "slashingProtectionConfirmed": {
           "type": "boolean"
+        },
+        "networkConfigMapName": {
+          "type": "string",
+          "pattern": "^[a-z][a-z0-9-]{2,62}$"
         }
       }
     },
@@ -343,22 +355,24 @@
     {
       "if": {
         "properties": {
-          "networkProfile": {
-            "properties": {
-              "clients": {
-                "properties": {
-                  "geth": {"properties": {"mode": {"const": "artifact-bundle"}}}
-                }
-              }
-            }
+          "validator": {
+            "required": ["enabled"],
+            "properties": {"enabled": {"const": true}}
           }
         }
       },
       "then": {
         "properties": {
-          "validator": {
+          "networkProfile": {
             "properties": {
-              "enabled": {"const": false}
+              "signer": {
+                "properties": {
+                  "web3signer": {
+                    "required": ["signingQualified"],
+                    "properties": {"signingQualified": {"const": true}}
+                  }
+                }
+              }
             }
           }
         }
@@ -382,6 +396,30 @@
       "properties": {
         "mode": {"const": "artifact-bundle"}
       }
+    },
+    "web3signerNetworkAdapter": {
+      "oneOf": [
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["mode", "network"],
+          "properties": {
+            "mode": {"const": "builtin"},
+            "network": {"enum": ["sepolia", "hoodi"]},
+            "signingQualified": {"type": "boolean"}
+          }
+        },
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["mode", "signingQualified"],
+          "properties": {
+            "mode": {"const": "artifact-bundle"},
+            "network": {"type": "null"},
+            "signingQualified": {"type": "boolean"}
+          }
+        }
+      ]
     },
     "networkAdapter": {
       "oneOf": [

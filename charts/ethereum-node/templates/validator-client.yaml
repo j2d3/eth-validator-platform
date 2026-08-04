@@ -1,6 +1,8 @@
 {{- if and (eq .Values.lifecycleState "active") .Values.validator.enabled }}
-{{- if eq .Values.networkProfile.clients.lighthouse.mode "artifact-bundle" -}}
-{{- fail "validator duties are not qualified for artifact-bundle network profiles" -}}
+{{- $lighthouseAdapter := .Values.networkProfile.clients.lighthouse -}}
+{{- $artifactMode := eq $lighthouseAdapter.mode "artifact-bundle" -}}
+{{- if not .Values.networkProfile.signer.web3signer.signingQualified -}}
+{{- fail "validator duties require a qualified Web3Signer network binding" -}}
 {{- end -}}
 {{- if not .Values.validator.slashingProtectionConfirmed -}}
 {{- fail "validator.slashingProtectionConfirmed must be true before validator duties can start" -}}
@@ -88,7 +90,11 @@ spec:
           command: [lighthouse]
           args:
             - vc
+            {{- if $artifactMode }}
+            - --testnet-dir=/validator-network
+            {{- else }}
             - {{ printf "--network=%s" .Values.networkProfile.clients.lighthouse.network | quote }}
+            {{- end }}
             - --beacon-nodes=http://{{ include "ethereum-node.fullname" . }}:5052
             - --validators-dir=/validator-data
             - --suggested-fee-recipient={{ .Values.validator.feeRecipient }}
@@ -109,6 +115,9 @@ spec:
           volumeMounts:
             - {name: validator-data, mountPath: /validator-data}
             - {name: validator-runtime, mountPath: /tmp}
+            {{- if $artifactMode }}
+            - {name: validator-network, mountPath: /validator-network, readOnly: true}
+            {{- end }}
       volumes:
         - name: validator-config
           configMap:
@@ -119,4 +128,12 @@ spec:
         - name: validator-runtime
           emptyDir:
             sizeLimit: 64Mi
+        {{- if $artifactMode }}
+        - name: validator-network
+          configMap:
+            name: {{ required "validator.networkConfigMapName is required for artifact-bundle signing" .Values.validator.networkConfigMapName }}
+            items:
+              - key: config.yaml
+                path: config.yaml
+        {{- end }}
 {{- end }}

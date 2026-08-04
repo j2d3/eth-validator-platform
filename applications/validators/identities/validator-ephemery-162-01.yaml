@@ -1,0 +1,11 @@
+apiVersion: platform.galaxy-lab/v1alpha1
+kind: ValidatorIdentity
+metadata:
+  name: validator-ephemery-162-01
+spec:
+  customerRef: customer-testnet-lab
+  networkProfileRef: ephemery-162
+  lifecycle: registered
+  synthetic: false
+  publicKey: "0x8b8fb7b0abfa650d1b393e87328b3af24f0605adc807942d1e1b10095f72b06a6fc281cb31d67a32dc0ef1ce9388c47e"
+  signingSecretRef: aws-sm://eth-validator-platform-dev/signing/validator-keystore

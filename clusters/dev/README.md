@@ -13,28 +13,26 @@ infrastructure-controllers
           |
           v
 infrastructure-configs
-          +--------------------------+
-          |                          |
-          v                          v
-      node-apps          signer-infrastructure-configs
-       (active)                    (active)
-                                      |
-                                      v
-                           signer-prerequisites
-                                  (active)
-                                      |
-                                      v
-                                    apps
-                                  (active)
+          |
+          v
+signer-infrastructure-configs
+          |
+          v
+signer-prerequisites
+          |
+          v
+        apps
+          |
+          v
+      node-apps
 ```
 
 Controllers, common Engine-JWT/storage configuration, the node branch, signer
 infrastructure, database prerequisites, and the shared signer reconcile
-continuously. The RDS credential, TLS path, Flyway migration, and migration
-branch ENI were qualified before the signer application was released. The
-signer still mounts an empty key directory: it can expose health and metrics,
-but it cannot sign. Key projection and validator duties require separate
-reviewed Git changes and the runtime gates in the runbook.
+continuously. The RDS credential, TLS path, Flyway migration, migration branch
+ENI, signer branch ENI, generation-pinned network config, and one encrypted
+validator key were qualified before validator activation. `node-apps` depends
+on the Ready `apps` layer so the validator client cannot precede Web3Signer.
 
 The three scoped reader-role ARNs are non-secret Terraform outputs, but they are
 account-specific and therefore are not committed here. The trusted local

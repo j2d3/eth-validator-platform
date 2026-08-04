@@ -226,6 +226,9 @@ def relational_errors(documents: list[tuple[Path, dict[str, Any]]]) -> list[str]
                 network_profile
                 and network_profile["spec"]["signer"]["web3signer"]["mode"]
                 != "builtin"
+                and not network_profile["spec"]["signer"]["web3signer"].get(
+                    "signingQualified", False
+                )
             ):
                 errors.append(
                     f"ValidatorAssignment/{name}: signing is not qualified for "

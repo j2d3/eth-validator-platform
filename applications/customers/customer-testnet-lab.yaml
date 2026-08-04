@@ -1,0 +1,13 @@
+apiVersion: platform.galaxy-lab/v1alpha1
+kind: Customer
+metadata:
+  name: customer-testnet-lab
+spec:
+  customerId: cus_TESTNET01
+  displayName: Testnet Lab
+  lifecycle: active
+  serviceTier: testnet-standard
+  externalRefs:
+    environment: ephemery
+  labels:
+    purpose: validator-testing

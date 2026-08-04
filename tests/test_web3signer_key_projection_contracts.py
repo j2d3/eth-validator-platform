@@ -119,7 +119,7 @@ class Web3SignerKeyProjectionContracts(unittest.TestCase):
         self.assertEqual(environment["JAVA_TOOL_OPTIONS"], "-Xms128m -Xmx640m")
         self.assertEqual(container["resources"]["limits"]["memory"], "1Gi")
 
-    def test_signer_network_matches_ephemery_but_duties_stay_disabled(self) -> None:
+    def test_signer_network_matches_qualified_ephemery_assignment(self) -> None:
         deployment = object_named(self.documents, "Deployment", "web3signer")
         pod = deployment["spec"]["template"]["spec"]
         container = pod["containers"][0]
@@ -166,7 +166,8 @@ class Web3SignerKeyProjectionContracts(unittest.TestCase):
             config_text,
             rf"(?m)^DEPOSIT_CHAIN_ID: {identity['executionChainId']}$",
         )
-        self.assertEqual(profile["data"]["signingEnabled"], "false")
+        self.assertEqual(profile["data"]["signingEnabled"], "true")
+        self.assertEqual(profile["data"]["network"], "ephemery-162")
         self.assertNotIn("validator-client", yaml.safe_dump_all(self.documents))
 
 

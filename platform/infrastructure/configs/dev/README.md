@@ -36,9 +36,8 @@ of the signer-only substitution variables.
 `aws-database-secrets` is namespace-visible to both the migration Job in
 `database` and Web3Signer in `signing`, but it assumes only the database-reader
 role. `aws-signing-secrets` is visible only in `signing` and assumes only the
-signing-key reader role. No ExternalSecret consumes that signing store in this
-non-signing slice; declaring its fail-closed identity boundary does not load a
-key.
+signing-key reader role. The Web3Signer ExternalSecret consumes one encrypted
+validator keystore from that store; node and validator Pods cannot read it.
 
 ## What is and is not evidence
 
@@ -180,13 +179,12 @@ local default for that reason.
 Storage cost is linear in provisioned size, not in used size — an empty 200Gi
 volume bills as 200Gi.
 
-The validator claim only renders when a validator client is enabled, and every
-projection in this repository keeps signing disabled, so the number that applies
-today is the two-claim one.
+The validator claim renders only when a validator client is enabled. The active
+Ephemery signing assignment therefore carries all three claims.
 
 ```
-200Gi + 50Gi        = 250 GiB   non-signing pair (execution + consensus)
-        + 5Gi       = 255 GiB   once a validator client is enabled
+200Gi + 50Gi        = 250 GiB   execution + consensus
+        + 5Gi       = 255 GiB   with a validator client
 
 250 GiB x $0.08 per GiB-month  ~= $20 per pair per month
 ```

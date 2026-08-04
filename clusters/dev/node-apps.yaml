@@ -7,7 +7,7 @@ metadata:
     platform.galaxy-lab/environment: dev
 spec:
   dependsOn:
-    - name: infrastructure-configs
+    - name: apps
   interval: 10m
   retryInterval: 1m
   timeout: 15m
@@ -17,9 +17,8 @@ spec:
   path: ./platform/apps/nodes/dev
   prune: true
   wait: true
-  # A reviewed change removes this suspension only after the Engine JWT,
-  # selected Ephemery generation, P2P cost/exposure, and zonal capacity gates
-  # in the sync runbook are satisfied. The assignment itself remains stopped.
+  # The signing assignment is admitted only after the shared signer application
+  # and its transitive RDS/migration/secret prerequisites report Ready.
   suspend: false
   commonMetadata:
     labels:

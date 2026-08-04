@@ -3,16 +3,16 @@ kind: ValidatorAssignment
 metadata:
   name: assignment-ephemery-162-synthetic
 spec:
-  validatorRef: validator-ephemery-162-synthetic
+  validatorRef: validator-ephemery-162-01
   networkProfileRef: ephemery-162
   lifecycle: active
   serviceProfileRef: dedicated-geth-lighthouse
   nodePairRef: pair-ephemery-162-synthetic
   signerRef: shared-web3signer
-  signingEnabled: false
+  signingEnabled: true
+  feeRecipient: "0x26c31E06d6D4CEd468704b62Cb6c2F897D997576"
   safety:
-    slashingProtectionConfirmed: false
-    doppelgangerProtectionConfirmed: false
+    slashingProtectionConfirmed: true
+    doppelgangerProtectionConfirmed: true
   maintenance:
-    reason: Reactivate with a fresh Lighthouse consensus claim after the retained database refused checkpoint sync; keep the
-      pair running.
+    reason: Enable the deposited Ephemery validator through the qualified shared signer and synced Lighthouse pair.
