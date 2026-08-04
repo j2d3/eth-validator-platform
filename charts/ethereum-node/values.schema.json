@@ -58,7 +58,8 @@
           "properties": {
             "geth": {"$ref": "#/$defs/networkAdapter"},
             "reth": {"$ref": "#/$defs/networkAdapter"},
-            "lighthouse": {"$ref": "#/$defs/networkAdapter"}
+            "lighthouse": {"$ref": "#/$defs/networkAdapter"},
+            "teku": {"$ref": "#/$defs/networkAdapter"}
           }
         },
         "signer": {
@@ -139,7 +140,7 @@
       "enum": ["geth", "reth"]
     },
     "consensusClient": {
-      "const": "lighthouse"
+      "enum": ["lighthouse", "teku"]
     },
     "executionClients": {
       "type": "object",
@@ -170,6 +171,15 @@
       "required": ["lighthouse"],
       "properties": {
         "lighthouse": {
+          "type": "object",
+          "required": ["image", "metrics"],
+          "additionalProperties": false,
+          "properties": {
+            "image": {"type": "string", "pattern": "@sha256:[0-9a-f]{64}$"},
+            "metrics": {"$ref": "#/$defs/consensusMetricsMap"}
+          }
+        },
+        "teku": {
           "type": "object",
           "required": ["image", "metrics"],
           "additionalProperties": false,
