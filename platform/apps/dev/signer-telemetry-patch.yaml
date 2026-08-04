@@ -1,0 +1,23 @@
+apiVersion: monitoring.coreos.com/v1
+kind: PodMonitor
+metadata:
+  name: web3signer
+  namespace: signing
+spec:
+  podMetricsEndpoints:
+    - port: metrics
+      interval: 30s
+      path: /metrics
+      relabelings:
+        - action: replace
+          replacement: ethereum-validator
+          targetLabel: platform
+        - action: replace
+          replacement: signer
+          targetLabel: component
+        - action: replace
+          replacement: eth-validator-platform-dev
+          targetLabel: cluster
+        - action: replace
+          replacement: dev
+          targetLabel: environment

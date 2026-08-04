@@ -1,0 +1,25 @@
+apiVersion: kustomize.toolkit.fluxcd.io/v1
+kind: Kustomization
+metadata:
+  name: apps
+  namespace: flux-system
+  labels:
+    platform.galaxy-lab/environment: dev
+spec:
+  dependsOn:
+    - name: signer-prerequisites
+  interval: 10m
+  retryInterval: 1m
+  timeout: 15m
+  sourceRef:
+    kind: GitRepository
+    name: flux-system
+  path: ./platform/apps/dev
+  prune: true
+  wait: true
+  # A separate reviewed commit removes this suspension only after the signer
+  # migration Job is Ready. The committed assignment is still non-signing.
+  suspend: true
+  commonMetadata:
+    labels:
+      platform.galaxy-lab/environment: dev

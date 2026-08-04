@@ -25,8 +25,9 @@ CHART = ROOT / "charts" / "ethereum-node"
 EKS_STORAGE_VALUES = CHART / "values-eks-hoodi-storage.yaml"
 CLUSTERS = ROOT / "clusters"
 
-# The claim the directory README makes about its own reconciliation status.
-# It is asserted against the filesystem so it cannot quietly go stale.
+# The historical claim the directory README made before clusters/dev existed.
+# It is asserted against the filesystem so reintroducing it cannot quietly make
+# a registered adapter sound unreconciled.
 UNRECONCILED_CLAIM = "no Flux Kustomization reconciles this directory"
 DEV_CONFIGS_PATH = "platform/infrastructure/configs/dev"
 
@@ -105,8 +106,8 @@ class EksStorageClassTests(unittest.TestCase):
         kustomization = load_documents(DEV_CONFIGS / "kustomization.yaml")[0]
         self.assertIn(STORAGE_CLASS_FILE.name, kustomization["resources"])
 
-    def test_offline_validation_covers_the_unreconciled_directory(self) -> None:
-        """Nothing reconciles this yet, so `make check` is its only standing guard.
+    def test_offline_validation_covers_the_declared_directory(self) -> None:
+        """The entrypoint is not bootstrapped, so `make check` is its standing guard.
 
         The one-off server-side dry-run against the live cluster checked this
         manifest once; it does not re-run and cannot catch a later edit.
@@ -167,7 +168,7 @@ class EksStorageProfileTests(unittest.TestCase):
 
 class EksAdapterTruthfulnessTests(unittest.TestCase):
     def test_readme_reconciliation_claim_matches_the_flux_entrypoints(self) -> None:
-        """The adapter is CI-validated, not reconciled — and says so.
+        """The adapter is registered but not bootstrapped — and says so.
 
         When someone adds a `clusters/dev` entrypoint that points here, this
         test fails until the README stops claiming the directory is unreconciled.

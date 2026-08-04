@@ -1,0 +1,45 @@
+apiVersion: kustomize.config.k8s.io/v1beta1
+kind: Kustomization
+resources:
+  - database-secret.yaml
+  - ../local
+
+patches:
+  - target:
+      group: batch
+      version: v1
+      kind: Job
+      name: web3signer-schema-v12
+    patch: |-
+      - op: replace
+        path: /metadata/labels/platform.galaxy-lab~1environment
+        value: dev
+      - op: add
+        path: /spec/template/metadata/labels/platform.galaxy-lab~1environment
+        value: dev
+      - op: replace
+        path: /spec/template/spec/containers/0/env/3/value
+        value: jdbc:postgresql://$(DB_HOST):$(DB_PORT)/$(DB_NAME)?sslmode=verify-full
+  - target:
+      group: networking.k8s.io
+      version: v1
+      kind: NetworkPolicy
+      name: web3signer-schema
+    patch: |-
+      - op: replace
+        path: /spec/egress/0
+        value:
+          # RDS resolves to a private address inside the Terraform dev VPC.
+          # The RDS security group independently narrows TCP/5432 to the
+          # signer/migration security path.
+          to:
+            - ipBlock:
+                cidr: 10.42.0.0/16
+          ports:
+            - port: 5432
+              protocol: TCP
+
+labels:
+  - pairs:
+      platform.galaxy-lab/environment: dev
+    includeSelectors: false

@@ -1,0 +1,18 @@
+apiVersion: vpcresources.k8s.aws/v1beta1
+kind: SecurityGroupPolicy
+metadata:
+  name: web3signer-schema
+  namespace: database
+  labels:
+    app.kubernetes.io/name: web3signer-schema
+    app.kubernetes.io/component: database-migration
+    app.kubernetes.io/part-of: ethereum-validator-platform
+    platform.galaxy-lab/environment: dev
+spec:
+  podSelector:
+    matchLabels:
+      app.kubernetes.io/name: web3signer-schema
+      app.kubernetes.io/component: database-migration
+  securityGroups:
+    groupIds:
+      - ${WEB3SIGNER_MIGRATION_POD_SECURITY_GROUP_ID}

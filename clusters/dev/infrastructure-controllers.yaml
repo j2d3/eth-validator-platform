@@ -1,0 +1,20 @@
+apiVersion: kustomize.toolkit.fluxcd.io/v1
+kind: Kustomization
+metadata:
+  name: infrastructure-controllers
+  namespace: flux-system
+  labels:
+    platform.galaxy-lab/environment: dev
+spec:
+  interval: 15m
+  retryInterval: 1m
+  timeout: 15m
+  sourceRef:
+    kind: GitRepository
+    name: flux-system
+  path: ./platform/infrastructure/overlays/dev/controllers
+  prune: true
+  wait: true
+  commonMetadata:
+    labels:
+      platform.galaxy-lab/environment: dev
