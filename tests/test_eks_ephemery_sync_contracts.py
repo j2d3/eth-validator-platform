@@ -405,11 +405,10 @@ class EksEphemeryFluxAndTelemetryTests(unittest.TestCase):
             document for document in documents if document["kind"] == "HelmRelease"
         ]
         # Four generation-pinned Ephemery pairs are rendered by this overlay:
-        # Geth+Lighthouse (signing), Reth+Lighthouse (non-signing), Geth+Teku
-        # (non-signing), and Reth+Teku (non-signing) — the last fills the 2x2
-        # EL/CL matrix using existing chart adapters. Everything else in this
-        # test asserts on the signing Geth pair; the non-signing pairs are
-        # covered in test_chart_reth_adapter_contracts,
+        # Geth+Lighthouse and Reth+Lighthouse sign with disjoint identities;
+        # Geth+Teku and Reth+Teku stay non-signing. Everything else in this
+        # test asserts on the two signing Lighthouse pairs; the non-signing
+        # pairs are covered in test_chart_reth_adapter_contracts,
         # test_chart_teku_adapter_contracts, and test_local_assignment_projection.
         self.assertEqual(
             sorted(release["metadata"]["name"] for release in releases),
@@ -452,21 +451,37 @@ class EksEphemeryFluxAndTelemetryTests(unittest.TestCase):
                     ],
                 )
 
-        signing_release = next(
-            r for r in releases
-            if r["metadata"]["name"] == "assignment-ephemery-162-synthetic"
-        )
-        self.assertTrue(signing_release["spec"]["values"]["validator"]["enabled"])
-        self.assertTrue(
-            signing_release["spec"]["values"]["validator"]["slashingProtectionConfirmed"]
-        )
-        self.assertTrue(
-            signing_release["spec"]["values"]["networkProfile"]["signer"]["web3signer"]
-            ["signingQualified"]
-        )
+        signing_releases = {
+            release["metadata"]["name"]: release
+            for release in releases
+            if release["spec"]["values"]["validator"]["enabled"]
+        }
         self.assertEqual(
-            signing_release["spec"]["values"]["validator"]["networkConfigMapName"],
-            "web3signer-network-config-ephemery-162",
+            set(signing_releases),
+            {
+                "assignment-ephemery-162-synthetic",
+                "assignment-ephemery-162-synthetic-reth",
+            },
+        )
+        signing_public_keys = set()
+        signing_validator_ids = set()
+        for release in signing_releases.values():
+            values = release["spec"]["values"]
+            validator = values["validator"]
+            self.assertTrue(validator["slashingProtectionConfirmed"])
+            self.assertTrue(
+                values["networkProfile"]["signer"]["web3signer"]["signingQualified"]
+            )
+            self.assertEqual(
+                validator["networkConfigMapName"],
+                "web3signer-network-config-ephemery-162",
+            )
+            signing_public_keys.add(validator["publicKey"])
+            signing_validator_ids.add(values["identity"]["validatorId"])
+        self.assertEqual(len(signing_public_keys), 2)
+        self.assertEqual(
+            signing_validator_ids,
+            {"validator-ephemery-162-01", "validator-ephemery-162-02"},
         )
 
     def test_sync_dashboard_uses_only_declared_evidence_and_states_limits(self) -> None:
