@@ -34,6 +34,8 @@ spec:
           env:
             - name: PROMETHEUS_URL
               value: http://prometheus-operated.observability.svc.cluster.local:9090
+            - name: GRAFANA_BASE_URL
+              value: https://ops.g.j2d3.com/grafana
             - name: ALLOWED_ORIGIN
               value: https://g.j2d3.com
             - name: CLUSTER_NAME

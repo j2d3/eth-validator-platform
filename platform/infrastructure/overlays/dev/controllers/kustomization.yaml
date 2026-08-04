@@ -5,6 +5,7 @@ resources:
   - ingress-nginx-namespace.yaml
   - ingress-nginx-repository.yaml
   - ingress-nginx.yaml
+  - grafana-ingress.yaml
 
 patches:
   - path: monitoring-patch.yaml

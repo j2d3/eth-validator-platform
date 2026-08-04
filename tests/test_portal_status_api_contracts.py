@@ -205,8 +205,13 @@ class PortalStatusApiManifestTests(unittest.TestCase):
         self.assertIn("readinessProbe", container)
         self.assertIn("livenessProbe", container)
         env_names = {item["name"] for item in container["env"]}
-        self.assertNotIn("GRAFANA_BASE_URL", env_names)
         self.assertNotIn("valueFrom", yaml.safe_dump(container["env"]))
+        grafana_url = next(
+            item["value"]
+            for item in container["env"]
+            if item["name"] == "GRAFANA_BASE_URL"
+        )
+        self.assertEqual(grafana_url, "https://ops.g.j2d3.com/grafana")
         prometheus_url = next(
             item["value"]
             for item in container["env"]
@@ -217,10 +222,17 @@ class PortalStatusApiManifestTests(unittest.TestCase):
             "http://prometheus-operated.observability.svc.cluster.local:9090",
         )
 
-    def test_service_is_cluster_private_and_no_ingress_is_declared(self) -> None:
+    def test_service_is_cluster_private_and_ingress_exposes_one_exact_path(self) -> None:
         service = self.object("Service", "portal-status-api")
         self.assertEqual(service["spec"]["type"], "ClusterIP")
-        self.assertNotIn("Ingress", {item["kind"] for item in self.objects})
+        ingress = self.object("Ingress", "portal-status-api")
+        self.assertEqual(ingress["spec"]["ingressClassName"], "nginx")
+        self.assertEqual(len(ingress["spec"]["rules"]), 1)
+        rule = ingress["spec"]["rules"][0]
+        self.assertEqual(rule["host"], "ops.g.j2d3.com")
+        self.assertEqual(len(rule["http"]["paths"]), 1)
+        self.assertEqual(rule["http"]["paths"][0]["path"], "/api/status")
+        self.assertEqual(rule["http"]["paths"][0]["pathType"], "Exact")
 
     def test_network_policy_allows_only_ingress_controller_dns_and_prometheus(self) -> None:
         policy = self.object("NetworkPolicy", "portal-status-api")["spec"]
