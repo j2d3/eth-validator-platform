@@ -322,7 +322,7 @@ class EksEphemeryRenderTests(unittest.TestCase):
         public_ports = {port["port"] for port in public_rule["ports"]}
         self.assertTrue({5052, 6060, 8008, 8545, 8551}.isdisjoint(public_ports))
 
-    def test_consensus_peer_rule_sums_verified_lighthouse_status_buckets(
+    def test_consensus_peer_rule_sums_verified_client_series(
         self,
     ) -> None:
         rules = self.by_kind["PrometheusRule"][0]["spec"]["groups"][0]["rules"]
@@ -332,8 +332,16 @@ class EksEphemeryRenderTests(unittest.TestCase):
             if rule.get("record") == "validator_platform_consensus_peers"
         )
         self.assertIn("sum by", peer_rule["expr"])
+        # The rule takes an `or`-union across every declared CL adapter's
+        # documented peer series; the assignment-under-test only selects
+        # Lighthouse, but the chart renders both adapters' contributions
+        # so a future Teku-selected pair inherits the same PrometheusRule.
+        # Both contributions are filtered by consensus_client="…" so a pair
+        # never double-counts its peers.
         self.assertIn("sync_peers_per_status", peer_rule["expr"])
-        self.assertNotIn("libp2p_peers", peer_rule["expr"])
+        self.assertIn("libp2p_peers", peer_rule["expr"])
+        self.assertIn('consensus_client="lighthouse"', peer_rule["expr"])
+        self.assertIn('consensus_client="teku"', peer_rule["expr"])
 
     def test_validator_rule_uses_the_observed_lighthouse_metric(self) -> None:
         rules = self.by_kind["PrometheusRule"][0]["spec"]["groups"][0]["rules"]
@@ -396,47 +404,66 @@ class EksEphemeryFluxAndTelemetryTests(unittest.TestCase):
         releases = [
             document for document in documents if document["kind"] == "HelmRelease"
         ]
-        # Both the Geth+Lighthouse and Reth+Lighthouse Ephemery pairs are
-        # rendered by this overlay. Everything else in this test asserts on
-        # the signing Geth pair; the non-signing Reth pair is covered in
-        # test_chart_reth_adapter_contracts and test_local_assignment_projection.
+        # Three generation-pinned Ephemery pairs are rendered by this overlay:
+        # Geth+Lighthouse (signing), Reth+Lighthouse (non-signing), and
+        # Geth+Teku (non-signing). Everything else in this test asserts on the
+        # signing Geth pair; the non-signing pairs are covered in
+        # test_chart_reth_adapter_contracts, test_chart_teku_adapter_contracts,
+        # and test_local_assignment_projection.
         self.assertEqual(
             sorted(release["metadata"]["name"] for release in releases),
             [
                 "assignment-ephemery-162-synthetic",
                 "assignment-ephemery-162-synthetic-reth",
+                "assignment-ephemery-162-synthetic-teku",
             ],
         )
-        release = next(
+        # Every rendered Ephemery release must carry the same EKS-specific
+        # inputs (valuesFiles, dev telemetry, aws-engine-secrets Engine JWT).
+        # A missing patch on any release would leave that pair pointing at
+        # the local kind defaults (standard StorageClass, local-platform-
+        # secrets, kind-eth-validator-local telemetry) on EKS — an outage,
+        # not an obviously-broken render.
+        for release in releases:
+            with self.subTest(release=release["metadata"]["name"]):
+                self.assertEqual(release["spec"]["values"]["lifecycleState"], "active")
+                self.assertEqual(
+                    release["spec"]["values"]["engineJwt"]["secretStoreName"],
+                    "aws-engine-secrets",
+                )
+                self.assertEqual(
+                    release["spec"]["values"]["telemetry"],
+                    {
+                        "cluster": "eth-validator-platform-dev",
+                        "environment": "dev",
+                    },
+                )
+                # Flux resolves valuesFiles from the GitRepository artifact
+                # root when the chart source is a GitRepository, so entries
+                # include the chart directory prefix (verified against
+                # source-controller v1.8.5 in dev on 2026-08-04).
+                self.assertEqual(
+                    release["spec"]["chart"]["spec"]["valuesFiles"],
+                    [
+                        "charts/ethereum-node/values.yaml",
+                        "charts/ethereum-node/values-eks-ephemery.yaml",
+                    ],
+                )
+
+        signing_release = next(
             r for r in releases
             if r["metadata"]["name"] == "assignment-ephemery-162-synthetic"
         )
-        self.assertEqual(release["spec"]["values"]["lifecycleState"], "active")
-        self.assertTrue(release["spec"]["values"]["validator"]["enabled"])
+        self.assertTrue(signing_release["spec"]["values"]["validator"]["enabled"])
         self.assertTrue(
-            release["spec"]["values"]["validator"]["slashingProtectionConfirmed"]
+            signing_release["spec"]["values"]["validator"]["slashingProtectionConfirmed"]
         )
         self.assertTrue(
-            release["spec"]["values"]["networkProfile"]["signer"]["web3signer"]
+            signing_release["spec"]["values"]["networkProfile"]["signer"]["web3signer"]
             ["signingQualified"]
         )
         self.assertEqual(
-            release["spec"]["values"]["engineJwt"]["secretStoreName"],
-            "aws-engine-secrets",
-        )
-        # Flux resolves valuesFiles from the GitRepository artifact root
-        # when the chart source is a GitRepository, so entries include the
-        # chart directory prefix (verified against source-controller v1.8.5
-        # in dev on 2026-08-04).
-        self.assertEqual(
-            release["spec"]["chart"]["spec"]["valuesFiles"],
-            [
-                "charts/ethereum-node/values.yaml",
-                "charts/ethereum-node/values-eks-ephemery.yaml",
-            ],
-        )
-        self.assertEqual(
-            release["spec"]["values"]["validator"]["networkConfigMapName"],
+            signing_release["spec"]["values"]["validator"]["networkConfigMapName"],
             "web3signer-network-config-ephemery-162",
         )
 

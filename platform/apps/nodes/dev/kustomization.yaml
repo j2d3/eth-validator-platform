@@ -1,12 +1,14 @@
 apiVersion: kustomize.config.k8s.io/v1beta1
 kind: Kustomization
 resources:
-  # Both generation-pinned Ephemery pairs are admitted in this EKS node
-  # slice — Geth+Lighthouse and Reth+Lighthouse. The Geth pair carries the
-  # qualified signing assignment; the Reth pair remains non-signing.
-  # The generated catalog projection remains the source; the overlay only
-  # deletes the local-only synthetic-01 assignment and injects each pair's
-  # EKS-specific inputs (valuesFiles + telemetry + engineJwt).
+  # Three generation-pinned Ephemery pairs are admitted in this EKS node
+  # slice — Geth+Lighthouse (signing), Reth+Lighthouse (non-signing), and
+  # Geth+Teku (non-signing). The generated catalog projection remains the
+  # source; the overlay only deletes the local-only synthetic-01 assignment
+  # and injects each pair's EKS-specific inputs (valuesFiles + telemetry +
+  # engineJwt). Every Ephemery release below must receive the same three
+  # patches so its ExternalSecret, PVC StorageClass, and telemetry follow
+  # the reviewed dev contracts on EKS.
   - ../../local/assignments
   # The same generation-pinned consensus config is rendered separately into
   # the ethereum namespace for Lighthouse validator duties.
@@ -75,6 +77,34 @@ patches:
       # Both pairs draw Engine JWT from the same Secrets Manager object —
       # the JWT authenticates the EL <-> CL Engine API and is per-pair
       # scoped by the chart's fullnameOverride (pair-<validator>-engine-jwt).
+      - op: add
+        path: /spec/chart/spec/valuesFiles
+        value:
+          - charts/ethereum-node/values.yaml
+          - charts/ethereum-node/values-eks-ephemery.yaml
+      - op: replace
+        path: /spec/values/telemetry
+        value:
+          cluster: eth-validator-platform-dev
+          environment: dev
+      - op: add
+        path: /spec/values/engineJwt
+        value:
+          secretStoreName: aws-engine-secrets
+          remoteSecretKey: eth-validator-platform-dev/ethereum/engine-jwt
+          remoteSecretProperty: jwt.hex
+  - target:
+      group: helm.toolkit.fluxcd.io
+      version: v2
+      kind: HelmRelease
+      name: assignment-ephemery-162-synthetic-teku
+    patch: |-
+      # Teku pair uses the same EKS-specific storage/scheduling/availability
+      # profile as the other Ephemery pairs (values-eks-ephemery.yaml is
+      # CL-agnostic; the chart dispatches on consensusClient=teku from the
+      # projection). Same Engine JWT source as Geth+Lighthouse and
+      # Reth+Lighthouse — the JWT authenticates the EL <-> CL Engine API
+      # and is per-pair scoped by the chart's fullnameOverride.
       - op: add
         path: /spec/chart/spec/valuesFiles
         value:

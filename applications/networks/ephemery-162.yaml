@@ -41,6 +41,11 @@ spec:
       mode: artifact-bundle
     lighthouse:
       mode: artifact-bundle
+    # Teku adapter uses the same generation-pinned config.yaml as Lighthouse
+    # (passed via --network=<file>) and the same consensusBootnodesText for
+    # --p2p-discovery-bootnodes.
+    teku:
+      mode: artifact-bundle
   signer:
     web3signer:
       mode: artifact-bundle

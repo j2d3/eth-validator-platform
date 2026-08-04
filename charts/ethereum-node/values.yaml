@@ -31,6 +31,12 @@ networkProfile:
     lighthouse:
       mode: builtin
       network: hoodi
+    # Teku adapter default: mirrors Lighthouse's builtin+hoodi shape so a Teku
+    # pair renders correctly against the default Hoodi profile if selected.
+    # Networks that only run one CL can drop the unused adapter locally.
+    teku:
+      mode: builtin
+      network: hoodi
   signer:
     web3signer:
       mode: builtin
@@ -172,6 +178,32 @@ consensusClients:
       peers: sync_peers_per_status
       # Enabled validator keys in Lighthouse's separate validator client.
       validatorEnabled: vc_validators_enabled_count
+  # Teku adapter. Same generation-pinned consensus config as Lighthouse
+  # (--network=<file>) and same bootnodes text. Image digest and metric
+  # names verified against Consensys sources on 2026-08-04: digest
+  # `sha256:5ab492…` resolves from Docker Hub's tags API for
+  # `consensys/teku:26.7.1` with an amd64 manifest present; the five
+  # metric names below match Teku's published metric/alert examples.
+  teku:
+    image: consensys/teku:26.7.1@sha256:5ab492b125c0fbcd60e7b3c32a7b61578a5e7186ed6637c077651795b133fb7b
+    # Native Prometheus metric names Teku exposes on --metrics-port.
+    # `validatorEnabled` is deliberately omitted: Teku's separate VC isn't
+    # running in this pair (non-signing), and per #124's PRD §12.5 guard
+    # the union skips CLs that don't declare the metric. A future Teku VC
+    # activation PR adds the runtime-verified name at that time.
+    metrics:
+      # Current head slot on the beacon chain.
+      headSlot: beacon_head_slot
+      # Wall-clock present slot.
+      presentSlot: beacon_slot
+      # Wall-clock present epoch.
+      presentEpoch: beacon_epoch
+      # Finalized epoch of the beacon head.
+      finalizedEpoch: beacon_finalized_epoch
+      # Teku exposes libp2p connected-peer count under `libp2p_peers` on
+      # its beacon-node /metrics endpoint (not the Prysm-style
+      # `beacon_peer_count`).
+      peers: libp2p_peers
 
 resources:
   execution:
