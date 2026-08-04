@@ -41,7 +41,7 @@ patches:
       name: web3signer
     patch: |-
       - op: replace
-        path: /spec/template/spec/containers/0/args/10
+        path: /spec/template/spec/containers/0/args/11
         value: --slashing-protection-db-url=jdbc:postgresql://$(DB_HOST):$(DB_PORT)/$(DB_NAME)?sslmode=verify-full&sslrootcert=/var/run/aws-rds-ca/rds-ca.pem
       - op: add
         path: /spec/template/spec/containers/0/volumeMounts/-
