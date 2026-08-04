@@ -147,6 +147,40 @@ which client is active.
 {{- end -}}
 
 {{/*
+Consensus-client adapters. Same dispatcher pattern as the execution adapters
+above. Today Lighthouse is the only registered CL; adding Teku/Nimbus/Prysm
+is chart-side work that plugs in through the same dispatcher without
+touching node.yaml.
+*/}}
+{{- define "ethereum-node.consensusRunCommand" -}}
+{{- $client := .Values.consensusClient -}}
+{{- if eq $client "lighthouse" -}}
+{{- include "ethereum-node.lighthouseRunCommand" . -}}
+{{- else -}}
+{{- fail (printf "no run-command adapter for consensusClient=%q" $client) -}}
+{{- end -}}
+{{- end -}}
+
+{{- define "ethereum-node.lighthouseRunCommand" -}}
+set -eu
+bootnodes="$(paste -sd, {{ printf "/network/files/%s" .Values.networkProfile.artifactBundle.files.consensusBootnodesText | quote }})"
+test -n "$bootnodes"
+exec lighthouse bn \
+  {{ printf "--testnet-dir=/network/files" | quote }} \
+  {{ printf "--checkpoint-sync-url=%s" .Values.networkProfile.checkpointSync.primaryUrl | quote }} \
+  --boot-nodes="$bootnodes" \
+  --datadir=/data \
+  --execution-endpoint=http://127.0.0.1:8551 \
+  --execution-jwt=/jwt/jwt.hex \
+  --http \
+  --http-address=0.0.0.0 \
+  --http-port=5052 \
+  --metrics \
+  --metrics-address=0.0.0.0 \
+  --metrics-port=8008
+{{- end -}}
+
+{{/*
 Geth-specific adapters. These are the exact shell scripts previously inlined
 in templates/node.yaml — extracted verbatim so this refactor is a pure
 extraction and the rendered chart is byte-identical to the pre-refactor

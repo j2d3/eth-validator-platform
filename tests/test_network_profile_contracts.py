@@ -290,7 +290,15 @@ class NetworkProfileRenderingTests(unittest.TestCase):
         ).read_text(encoding="utf-8")
         self.assertIn("command: [lighthouse]", validator)
         self.assertIn("sha256sum -c", node)
-        self.assertIn("--testnet-dir=/network/files", node)
+        # The artifact-mode Lighthouse command was extracted into
+        # `ethereum-node.lighthouseRunCommand` (in _helpers.tpl) so a second
+        # CL adapter (Teku, Nimbus) can plug in through the same dispatcher
+        # without touching node.yaml. The `--testnet-dir=/network/files` flag
+        # now lives inside the helper, not the template body.
+        helpers = (
+            ROOT / "charts" / "ethereum-node" / "templates" / "_helpers.tpl"
+        ).read_text(encoding="utf-8")
+        self.assertIn("--testnet-dir=/network/files", helpers)
         self.assertNotIn(".Values.clientArgs", node)
 
     def test_current_shared_signer_matches_profile_but_is_single_network(self) -> None:
