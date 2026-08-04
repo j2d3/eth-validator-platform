@@ -322,7 +322,7 @@ class EksEphemeryRenderTests(unittest.TestCase):
         public_ports = {port["port"] for port in public_rule["ports"]}
         self.assertTrue({5052, 6060, 8008, 8545, 8551}.isdisjoint(public_ports))
 
-    def test_consensus_peer_rule_sums_verified_lighthouse_status_buckets(
+    def test_consensus_peer_rule_sums_verified_client_series(
         self,
     ) -> None:
         rules = self.by_kind["PrometheusRule"][0]["spec"]["groups"][0]["rules"]
@@ -332,8 +332,16 @@ class EksEphemeryRenderTests(unittest.TestCase):
             if rule.get("record") == "validator_platform_consensus_peers"
         )
         self.assertIn("sum by", peer_rule["expr"])
+        # The rule takes an `or`-union across every declared CL adapter's
+        # documented peer series; the assignment-under-test only selects
+        # Lighthouse, but the chart renders both adapters' contributions
+        # so a future Teku-selected pair inherits the same PrometheusRule.
+        # Both contributions are filtered by consensus_client="…" so a pair
+        # never double-counts its peers.
         self.assertIn("sync_peers_per_status", peer_rule["expr"])
-        self.assertNotIn("libp2p_peers", peer_rule["expr"])
+        self.assertIn("libp2p_peers", peer_rule["expr"])
+        self.assertIn('consensus_client="lighthouse"', peer_rule["expr"])
+        self.assertIn('consensus_client="teku"', peer_rule["expr"])
 
     def test_validator_rule_uses_the_observed_lighthouse_metric(self) -> None:
         rules = self.by_kind["PrometheusRule"][0]["spec"]["groups"][0]["rules"]
