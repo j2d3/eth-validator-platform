@@ -1,17 +1,18 @@
 # Dynamic Ethereum Validator Platform
 
 > **Product requirements and architecture specification**<br>
-> A safe, GitOps-operated Ethereum validator laboratory, runnable locally before Amazon EKS
+> A GitOps-operated Ethereum validator laboratory for local Kubernetes and Amazon EKS
 
 | Document | Value |
 |---|---|
 | Status | **Approved architecture baseline** |
 | Version | 0.1.0 |
 | Owner | the human |
-| Repository | `j2d3/eth-validator-platform` (private) |
-| Initial environments | One local `kind` cluster, followed by one AWS EKS cluster; one Ethereum testnet |
+| Repository | `j2d3/eth-validator-platform` (public demonstration source; an operational repository would normally be private) |
+| Environments | One local `kind` profile and one applied AWS EKS development cluster; generation-pinned Ephemery testnet |
 | Operating model | Terraform bootstraps infrastructure; Flux owns in-cluster state |
 | Review rule | This specification is agreed before implementation is committed |
+| Implementation checkpoint | First Web3Signer-backed attestation observed on EKS on 2026-08-04; see [runtime evidence](../evidence/2026-08-04-first-signing-validator.md) |
 
 ---
 
@@ -21,7 +22,7 @@ This project builds a **dynamic, fully automated Ethereum validator platform** r
 
 An operator chooses an execution client, a consensus client, a validator identity, and a desired lifecycle action. The platform safely launches or retires the corresponding validator stack on EKS, keeps signing keys outside Git, preserves slashing history across every transition, and exposes enough telemetry to understand the validator, its client pair, the signer, and the Kubernetes cluster as one system.
 
-The laboratory deliberately mirrors the boundaries of a larger institutional staking platform while remaining affordable and understandable in a personal AWS account. All sixteen execution/consensus client combinations are defined and continuously validated, but only one or two run at a time.
+The laboratory models the boundaries of a larger staking platform while remaining affordable and understandable in a personal AWS account. The target matrix contains sixteen execution/consensus client combinations, but only one or two run at a time. Geth + Lighthouse and Reth + Lighthouse are the first live pairs; the remaining adapters and qualifications are incremental work.
 
 ### 1.1 Product promise
 
@@ -37,7 +38,7 @@ Given a registered testnet validator identity, the platform will let an authoriz
 
 ### 1.2 Why this product exists
 
-The product is an educational and portfolio-grade model of the platform responsibilities behind institutional Ethereum staking:
+The product is an educational model of the platform responsibilities behind Ethereum staking:
 
 - mixed execution and consensus client operations;
 - remote signing and durable slashing protection;
@@ -523,7 +524,7 @@ flowchart TB
 | Layer | Authoritative owner | Responsibilities |
 |---|---|---|
 | AWS foundation | Terraform, applied locally in v1 | VPC, EKS, node capacity, IAM, KMS, RDS, secret containers/policies, EBS prerequisites, DNS primitives, outputs. |
-| Flux bootstrap | One-time trusted operator command | Installs Flux controllers and connects the cluster to the private repository. |
+| Flux bootstrap | One-time trusted operator command | Installs Flux controllers and connects the cluster to the source repository. The public demo currently uses an SSH deploy key; a private operational repository is the intended security posture. |
 | Kubernetes platform | Flux | Add-on controllers, namespaces, policies, observability, shared signer, application releases. |
 | Customer/validator desired state | Git | Opaque customer metadata, identity ownership, pair assignment, lifecycle state, service profiles, versions, dashboard/rule definitions. |
 | Change preparation | GitHub Actions | Input validation, rendering, policy tests, PR creation, status reporting. |
@@ -748,7 +749,7 @@ spec:
   externalRefs:
     crmId: crm_12345
   labels:
-    portfolio: institutional-lab
+    portfolio: testnet-lab
 ---
 apiVersion: platform.galaxy-lab/v1alpha1
 kind: ValidatorIdentity
@@ -1360,7 +1361,10 @@ The scalable unit is not “one full node per validator.” Ethereum separates t
 | Archive execution service | Shared by audit, compliance, analytics, support, and historical-RPC consumers | Keep off the latency-critical validator path; protect it from unbounded customer queries. |
 | Observability backend | Shared fleet-wide with tenant/customer labels and RBAC | Control label cardinality and prevent PII/secret exposure. |
 
-Galaxy’s own research has publicly noted that large providers commonly run hundreds of validators on a node and must spread customer assets across machines to reduce correlated penalties. Its public staking product also exposes validator provisioning in large batches and advertises client/geographic diversity. Those facts support a many-identities-to-fewer-node-stacks model, but do not disclose Galaxy’s internal topology.
+Large validator fleets commonly share node stacks across many disjoint
+validator identities and distribute those identities across failure domains to
+bound correlated penalties. The exact density remains an operator-specific
+decision based on measured duty latency, client behavior, and risk policy.
 
 ### 15.2 Recommended cell topology
 
@@ -1399,7 +1403,7 @@ EL and CL workloads can run on separate Kubernetes node groups, storage classes,
 
 ### 15.3 Client diversity without a 16-way production explosion
 
-The laboratory qualifies all 16 EL/CL combinations to expose client-specific behavior. A production fleet is more likely to operate a smaller approved set of pair profiles and distribute stake across them—for example, four to eight deliberately chosen combinations—than to run the entire Cartesian product equally.
+The laboratory targets all 16 EL/CL combinations to expose client-specific behavior. A production fleet is more likely to operate a smaller approved set of pair profiles and distribute stake across them—for example, four to eight deliberately chosen combinations—than to run the entire Cartesian product equally.
 
 The placement controller should consider:
 
@@ -1414,17 +1418,17 @@ The placement controller should consider:
 
 A large customer’s validators should be spread across cells and client profiles. Conversely, a dedicated-customer service tier may reserve cells for that customer without changing the core customer/identity/assignment model.
 
-### 15.4 Illustrative 7,000-validator sizing—not a Galaxy claim
+### 15.4 Illustrative 7,000-validator sizing
 
 Validator density is determined more by correlated-risk policy and measured duty latency than by raw CPU. The following is a thought experiment for discussing blast radius:
 
 | Target identities per cell | Active key cells for 7,000 identities | Full EL+CL stacks at two per cell | Operational character |
 |---:|---:|---:|---|
 | 1,000 | 7 | 14 | Efficient, but each cell is a large correlated failure domain. |
-| 500 | 14 | 28 | Balanced illustrative starting point for institutional cell design. |
+| 500 | 14 | 28 | Balanced illustrative starting point for large-fleet cell design. |
 | 250 | 28 | 56 | Smaller blast radius with materially higher infrastructure and operational cost. |
 
-Canaries, warm spares, testnets, migration overlap, regional failover, maintenance capacity, and dedicated customers can add materially to those counts. Node pairs may also be shared across multiple key shards, reducing them. Therefore a plausible institutional platform could operate tens of ordinary full-node stacks for a fleet of this size, but public information is insufficient to infer Galaxy’s number.
+Canaries, warm spares, testnets, migration overlap, regional failover, maintenance capacity, and dedicated customers can add materially to those counts. Node pairs may also be shared across multiple key shards, reducing them. Therefore a large platform could operate tens of ordinary full-node stacks for a fleet of this size, but public information is insufficient to infer any specific operator's number.
 
 ### 15.5 Archive nodes versus validator full nodes
 
@@ -1435,8 +1439,8 @@ Consequently:
 - the number of archive nodes scales with query load, retention/SLA, regions, and client diversity—not validator count;
 - archive nodes belong in a separate RPC/data service with rate limits and independent storage;
 - validator beacon nodes should use ordinary synced execution nodes on the critical path;
-- an institutional operator might run a small HA archive tier—perhaps two regional replicas, or more if it requires multiple execution clients—but there is no sound public basis for assigning Galaxy a number;
-- Galaxy may also share archive infrastructure with its broader trading, research, custody, or blockchain-data estate, making validator-count inference even less reliable.
+- a large operator might run a small HA archive tier—perhaps two regional replicas, or more if it requires multiple execution clients; and
+- archive infrastructure may also be shared with research, audit, compliance, or blockchain-data systems, making validator-count inference unreliable.
 
 As an illustrative range only, an operator might have 2–8 archive execution nodes alongside tens of ordinary validator full-node stacks. Requiring archive coverage for four execution clients across two regions would already imply eight archive instances before spares. Cost varies sharply by client and historical-proof requirements, so this is a product/SLA decision, not a validator formula.
 
@@ -1515,6 +1519,21 @@ A pair is **qualified** only when it:
 
 ## 18. Implementation phases derived from the product
 
+### 18.1 Current progress
+
+This table is an implementation checkpoint, not a change to the phase exit
+criteria below.
+
+| Phase | Current evidence on 2026-08-04 |
+|---|---|
+| 0–1 | Product baseline, local cluster tooling, Flux structure, schemas, and CI are implemented. |
+| 2 | Local platform services are implemented. Recovery and extended logging exercises remain open. |
+| 3 | One deposited Ephemery identity is active on EKS and has published a Web3Signer-backed attestation. Stop/reactivate/archive and restore exercises remain. |
+| 4 | VPC, EKS, zonal Spot capacity, EBS, Pod Identity, Secrets Manager, private RDS, Flux, ingress, and application adapters are applied and running. HA and disaster-recovery properties remain unqualified. |
+| 5 | Geth + Lighthouse and Reth + Lighthouse are live; the Teku chart adapter is implemented. The full matrix and client-switch path remain. |
+| 6 | The public read-only portal and status API are live. Customer CRUD, authentication, and the control-plane API are not implemented. |
+| 7–8 | Recovery and scale requirements are specified but not completed. |
+
 ### Phase 0 — Agree on the product
 
 - Review and approve this PRD/architecture specification.
@@ -1526,7 +1545,7 @@ A pair is **qualified** only when it:
 ### Phase 1 — Reproducible local GitOps foundation
 
 - Create a pinned, reproducible `kind` cluster with explicit laptop resource prerequisites and P2P port mappings.
-- Define `clusters/local` and bootstrap Flux against the private repository.
+- Define `clusters/local` and bootstrap Flux against the source repository.
 - Add local StorageClass, secret-source, database, and network adapters behind stable application contracts.
 - Make create, bootstrap, verify, stop, and delete operations documented and scriptable.
 
@@ -1557,7 +1576,7 @@ A pair is **qualified** only when it:
 
 - Terraform VPC, EKS, node capacity, IAM, KMS, EBS prerequisites, RDS, and Secrets Manager containers.
 - Apply locally and record outputs without secrets.
-- Bootstrap `clusters/dev` Flux reconciliation against the private repository.
+- Bootstrap `clusters/dev` Flux reconciliation against the source repository.
 - Replace only the local infrastructure adapters with EBS, RDS, Secrets Manager/workload identity, and AWS P2P exposure.
 - Re-run the platform and first-pair qualification evidence on EKS.
 
@@ -1698,9 +1717,6 @@ Primary project references:
 - [Grafana provisioning](https://grafana.com/docs/grafana/latest/administration/provisioning/)
 - [Amazon Managed Service for Prometheus collectors](https://docs.aws.amazon.com/prometheus/latest/userguide/AMP-collector.html)
 - [Amazon Managed Grafana for EKS](https://docs.aws.amazon.com/grafana/latest/userguide/solution-eks.html)
-- [Galaxy Staking — public platform overview](https://www.galaxy.com/staking)
-- [Galaxy Staking API — Ethereum validator provisioning](https://docs.staking.galaxy.com/ethereum/ethereum)
-- [Galaxy Research — validator/node sharing and correlated risk](https://www.galaxy.com/insights/research/paths-toward-reducing-validator-set-size-growth)
 
 ---
 

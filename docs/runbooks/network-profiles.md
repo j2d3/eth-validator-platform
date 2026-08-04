@@ -15,8 +15,8 @@ configuration.
 
 ## Implemented contract
 
-The first slice migrates Hoodi without changing its client behavior and adds
-one generation-pinned Ephemery node adapter:
+The current catalog retains Hoodi as a built-in-network example and runs one
+generation-pinned Ephemery profile on EKS:
 
 - Geth receives the typed built-in adapter `--hoodi`.
 - Lighthouse beacon and validator clients receive `--network=hoodi`.
@@ -34,19 +34,28 @@ one generation-pinned Ephemery node adapter:
   verifies the whole archive, and extracts only the reviewed file map;
 - Geth initializes the verified `genesis.json`, receives the profile's numeric
   network ID and bootnodes, and rejects non-empty or mismatched chain data;
-- Lighthouse receives `--testnet-dir=/network/files`, where the verified
-  `config.yaml`, `genesis.ssz`, and `boot_enr.yaml` live, plus the reviewed
-  checkpoint-sync endpoint;
+- Lighthouse beacon nodes receive `--testnet-dir=/network/files`, where the
+  verified `config.yaml`, `genesis.ssz`, and `boot_enr.yaml` live, plus the
+  reviewed checkpoint-sync endpoint;
+- the signing Lighthouse validator client obtains genesis bytes from its
+  already-synced internal beacon endpoint, verifies the profile's genesis time
+  and validators root, and initializes its own data directory before duties;
+- an Ephemery-specific Web3Signer instance reads the committed custom-network
+  configuration and deposit-contract block metadata without downloading
+  mutable network data at runtime;
 - resetting profiles put both a deterministic full-pair hash and the
   identity-fingerprint prefix in their PVC names, so long pair references do
   not collide and a new generation renders different execution and consensus
   claims.
 
-Artifact mode is deliberately **node-only** in this slice. The catalog
-projection always sets `validator.enabled=false`; chart schema/templates reject
-an attempt to enable it; and the deployed shared Web3Signer stays on Hoodi.
-This proves custom EL/CL initialization and sync without claiming signer,
-slashing-database, key-reuse, deposit, or validator-duty safety.
+The original artifact adapter was deliberately node-only. The reviewed signing
+slice now enables one deposited identity only for the active Geth + Lighthouse
+assignment. Reth + Lighthouse remains non-signing. The chart still rejects
+validator duties unless the catalog provides an active registered identity,
+signer reference, fee recipient, and both signing-safety confirmations.
+
+The first observed duty is recorded in
+[the EKS signing evidence](../evidence/2026-08-04-first-signing-validator.md).
 
 Hoodi's canonical values are maintained by the
 [eth-clients Hoodi repository](https://github.com/eth-clients/hoodi).
@@ -67,16 +76,15 @@ The committed generation profile provides:
 - paths to `genesis.json`, `config.yaml`, `genesis.ssz`, execution bootnodes,
   and consensus bootnodes inside that verified bundle;
 - a Geth init-container contract for a new generation-specific data volume;
-- Lighthouse beacon-node `--testnet-dir` configuration; the validator client is
-  deliberately not rendered for this node-only qualification;
+- Lighthouse beacon-node and validator-client custom-network configuration;
 - explicit reset/EOL metadata and a successor-by-reviewed-PR policy.
 
-The locally mounted Web3Signer network config is the next signer-binding slice,
-not part of the node adapter. A profile records that requirement, but nothing
-in this slice mutates the live Hoodi signer.
+The signer network configuration is a separate artifact from the EL/CL release
+bundle, but it is bound to the same immutable profile fields. Flux mounts it in
+the signing namespace and the validator client independently verifies genesis
+metadata from the internal beacon API before starting.
 
-Render the stopped catalog projection or an active node-only manifest without
-editing chart values by hand:
+Render the catalog projection without editing chart values by hand:
 
 ```bash
 python3 tools/render_local_assignments.py --values-for assignment-ephemery-162-synthetic
@@ -87,10 +95,12 @@ python3 tools/render_local_assignments.py \
       --namespace ethereum --values - --set lifecycleState=active
 ```
 
-For a real Flux exercise, request `activate` for
-`assignment-ephemery-162-synthetic` through the non-signing lifecycle workflow,
-review/merge the generated PR, observe sync, then request `stop`. No validator
-client or signer admission is created.
+The non-signing lifecycle workflow now refuses
+`assignment-ephemery-162-synthetic` because that assignment carries a deposited
+identity and signing authorization. It remains valid for the non-signing Reth +
+Lighthouse assignment. Changes to the signing assignment require an explicit
+reviewed catalog PR until a dedicated signing workflow implements equivalent
+gates.
 
 The [official Ephemery resources](https://github.com/ephemery-testnet/ephemery-resources)
 state that existing nodes must use a different data directory or delete the
@@ -99,17 +109,19 @@ an old volume marker must never be accepted by a new generation.
 
 ## Signer boundary
 
-A Web3Signer `eth2` process has one network configuration. The initial shared
-Hoodi signer is therefore shared within one immutable network profile. If the
-lab runs Hoodi and Ephemery concurrently, each network profile/generation gets
-its own signer deployment and admitted-key set.
+A Web3Signer `eth2` process has one network configuration. The live signer is
+therefore bound to Ephemery generation 162 and admits only the deposited key
+for that generation. Concurrent Hoodi or successor-Ephemery duties require a
+separate signer deployment and admitted-key set.
 
-For the first Ephemery qualification, use a new validator signing key and an
-isolated slashing-protection database/schema for every generation. Public-key
-reuse is cryptographically domain-separated by genesis data, but epochs and
-slots restart and retained slashing high-watermarks may reject duties. Sharing
-slashing state across reset generations remains unqualified until conflicting
-signatures and restore behavior are tested against the exact Web3Signer schema.
+The first Ephemery qualification used a new validator signing key and the
+generation-bound signer with RDS-backed slashing protection. Public-key reuse
+is cryptographically domain-separated by genesis data, but epochs and slots
+restart and retained slashing high-watermarks may reject duties. The platform
+therefore does not reuse that signing identity across reset generations.
+Sharing slashing state across generations remains unqualified until
+conflicting signatures and restore behavior are tested against the exact
+Web3Signer schema.
 
 Web3Signer supports a named network or a custom local YAML configuration through
 its [`eth2 --network` option](https://docs.web3signer.consensys.io/reference/cli/subcommands#network).

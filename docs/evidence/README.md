@@ -10,7 +10,11 @@ operator interpretation. It must not contain cloud account IDs, ARNs,
 security-group or network-interface IDs, public or private IP addresses, secret
 values, raw environment dumps, kubeconfigs, or credentials.
 
-The first EKS signer-admission evidence is intentionally absent. The Flux EKS
-bootstrap runbook requires a reviewed NetworkPolicy allow/deny record here
-before either signer layer is unsuspended, followed by sanitized branch-ENI
-attachment assertions for the migration and Web3Signer Pods.
+## Records
+
+- [EKS NetworkPolicy enforcement](2026-08-04-eks-network-policy.md)
+- [First Web3Signer-backed validator duty](2026-08-04-first-signing-validator.md)
+
+The first signing record covers the positive validator-client → Web3Signer →
+RDS → beacon-chain path. RDS recovery, conflicting-duty rejection, and
+signer-specific negative network probes remain separate evidence requirements.

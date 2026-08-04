@@ -190,7 +190,10 @@ class EksSignerFoundationContractTests(unittest.TestCase):
             " ".join(OUTPUTS.split()),
         )
         self.assertIn("SecurityGroupPolicy", README_COMPACT)
-        self.assertIn("neither principal can satisfy its RDS ingress rule", README_COMPACT)
+        self.assertIn(
+            "Those adapters now reconcile before Web3Signer is admitted",
+            README_COMPACT,
+        )
 
     def test_rds_is_small_encrypted_and_bounded(self) -> None:
         database = resource_block("aws_db_instance", "web3signer")
@@ -340,9 +343,10 @@ class EksSignerFoundationContractTests(unittest.TestCase):
         self.assertIn("database = aws_iam_role.external_secrets_database_reader.arn", outputs_compact)
         self.assertIn("signing = aws_iam_role.external_secrets_signing_reader.arn", outputs_compact)
 
-    def test_documentation_does_not_claim_runtime_readiness(self) -> None:
-        self.assertIn("None — no RDS", README_COMPACT)
-        self.assertIn("Do not describe the EKS signer path as ready", README_COMPACT)
+    def test_documentation_distinguishes_live_readiness_from_production_qualification(self) -> None:
+        self.assertIn("first validator duty produced an RDS-backed attestation operation", README_COMPACT)
+        self.assertIn("Runtime evidence and remaining gates", README_COMPACT)
+        self.assertIn("deliberately conflicting-signature rejection test", README_COMPACT)
         self.assertIn("AWS restarts a stopped DB instance after at most seven days", README_COMPACT)
         self.assertIn("snapshot → delete → restore", README_COMPACT)
         self.assertIn("`sslmode=verify-full`", README_COMPACT)

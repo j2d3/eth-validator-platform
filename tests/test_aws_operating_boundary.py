@@ -54,7 +54,7 @@ class AwsOperatingBoundaryTests(unittest.TestCase):
         )
 
         self.assertIn("Amazon EKS is the only cloud Kubernetes target", readme)
-        self.assertIn("Terraform, run from a trusted local workstation", readme)
+        self.assertIn("Terraform, applied from a trusted workstation", readme)
         self.assertIn("There is intentionally no GitHub Actions Terraform apply/destroy workflow", environment)
         self.assertIn("Flux is the continuous writer for in-cluster applications", environment)
 
