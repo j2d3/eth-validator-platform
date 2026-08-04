@@ -3,12 +3,12 @@
 apiVersion: helm.toolkit.fluxcd.io/v2
 kind: HelmRelease
 metadata:
-  name: assignment-ephemery-162-synthetic-reth-teku
+  name: assignment-ephemery-162-synthetic-erigon
   namespace: ethereum
   labels:
     app.kubernetes.io/part-of: ethereum-validator-platform
-    platform.galaxy-lab/assignment-id: assignment-ephemery-162-synthetic-reth-teku
-    platform.galaxy-lab/validator-id: validator-ephemery-162-synthetic-reth-teku
+    platform.galaxy-lab/assignment-id: assignment-ephemery-162-synthetic-erigon
+    platform.galaxy-lab/validator-id: validator-ephemery-162-synthetic-erigon
 spec:
   interval: 10m
   timeout: 10m
@@ -30,7 +30,7 @@ spec:
     remediation:
       retries: 3
   values:
-    fullnameOverride: pair-ephemery-162-synthetic-reth-teku
+    fullnameOverride: pair-ephemery-162-synthetic-erigon
     lifecycleState: active
     networkProfile:
       name: ephemery-162
@@ -87,15 +87,15 @@ spec:
         primaryUrl: https://checkpoint-sync.ephemery.ethpandaops.io/
         verificationUrls:
         - https://ephemery.beaconstate.ethstaker.cc/
-    executionClient: reth
-    consensusClient: teku
+    executionClient: erigon
+    consensusClient: lighthouse
     telemetry:
       cluster: kind-eth-validator-local
       environment: local
     identity:
       customerId: customer-synthetic-lab
-      validatorId: validator-ephemery-162-synthetic-reth-teku
-      assignmentId: assignment-ephemery-162-synthetic-reth-teku
+      validatorId: validator-ephemery-162-synthetic-erigon
+      assignmentId: assignment-ephemery-162-synthetic-erigon
     validator:
       enabled: false
       slashingProtectionConfirmed: false
