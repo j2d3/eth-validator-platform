@@ -149,13 +149,25 @@ class TekuAdapterRenderTests(unittest.TestCase):
         # Teku takes the ephemeral chain config via --network=<file>.
         self.assertIn("--network=/network/files/config.yaml", script)
         # Checkpoint sync is required for Ephemery — no genesis-catchup path.
-        self.assertIn("--initial-state=", script)
+        # --checkpoint-sync-url takes a Beacon API base URL (Checkpointz);
+        # Teku's --initial-state expects a direct SSZ state file/URL and is
+        # not a substitute for the base-URL flag.
+        self.assertIn(
+            "--checkpoint-sync-url=https://checkpoint-sync.example.invalid/",
+            script,
+        )
+        self.assertNotIn("--initial-state=", script)
         self.assertIn("--p2p-discovery-bootnodes=", script)
         self.assertIn("--data-path=/data", script)
         self.assertIn("--ee-endpoint=http://127.0.0.1:8551", script)
         self.assertIn("--ee-jwt-secret-file=/jwt/jwt.hex", script)
         self.assertIn("--rest-api-port=5052", script)
         self.assertIn("--metrics-port=8008", script)
+        # Teku defaults its metrics-host-allowlist to localhost only, so a
+        # Prometheus scraper hitting the Pod IP is rejected without this
+        # wildcard. Port 8008 ingress is already gated at L4 by the chart's
+        # NetworkPolicy to the observability namespace only.
+        self.assertIn("--metrics-host-allowlist=*", script)
         # No Lighthouse signatures leak in.
         self.assertNotIn("exec lighthouse", script)
         self.assertNotIn("--testnet-dir", script)

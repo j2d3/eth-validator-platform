@@ -188,7 +188,7 @@ bootnodes="$(paste -sd, {{ printf "/network/files/%s" .Values.networkProfile.art
 test -n "$bootnodes"
 exec /opt/teku/bin/teku \
   {{ printf "--network=/network/files/%s" .Values.networkProfile.artifactBundle.files.consensusConfig | quote }} \
-  {{ printf "--initial-state=%s" .Values.networkProfile.checkpointSync.primaryUrl | quote }} \
+  {{ printf "--checkpoint-sync-url=%s" .Values.networkProfile.checkpointSync.primaryUrl | quote }} \
   --p2p-discovery-bootnodes="$bootnodes" \
   --data-path=/data \
   --ee-endpoint=http://127.0.0.1:8551 \
@@ -198,7 +198,8 @@ exec /opt/teku/bin/teku \
   --rest-api-port=5052 \
   --metrics-enabled=true \
   --metrics-interface=0.0.0.0 \
-  --metrics-port=8008
+  --metrics-port=8008 \
+  --metrics-host-allowlist=*
 {{- end -}}
 
 {{/*
