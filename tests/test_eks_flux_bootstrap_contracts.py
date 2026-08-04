@@ -536,7 +536,7 @@ class EksApplicationSafetyTests(unittest.TestCase):
             "false",
         )
 
-    def test_released_signer_still_has_an_empty_ephemeral_key_store(self) -> None:
+    def test_released_signer_stays_non_signing_after_key_projection(self) -> None:
         documents = render_all(APPS)
         deployment = object_named(documents, "Deployment", "web3signer")
         pod = deployment["spec"]["template"]["spec"]
@@ -545,13 +545,15 @@ class EksApplicationSafetyTests(unittest.TestCase):
             volume for volume in pod["volumes"] if volume["name"] == "key-store"
         )
 
-        self.assertEqual(key_store, {"name": "key-store", "emptyDir": {}})
+        self.assertEqual(
+            key_store["secret"]["secretName"], "web3signer-validator-keystore"
+        )
+        self.assertNotIn("emptyDir", key_store)
         self.assertIn("--metrics-host-allowlist=*", args)
         self.assertEqual(
             next(arg for arg in args if arg.startswith("--http-host-allowlist=")),
             "--http-host-allowlist=web3signer,web3signer.signing.svc,web3signer.signing.svc.cluster.local",
         )
-        self.assertNotIn("validator-keystore", yaml.safe_dump_all(documents))
         self.assertFalse(
             load_one(APPS / "profile.yaml")["data"]["signingEnabled"]
             == "true"
@@ -561,7 +563,12 @@ class EksApplicationSafetyTests(unittest.TestCase):
         signer_overlay = load_one(APPS / "kustomization.yaml")
         self.assertEqual(
             signer_overlay["resources"],
-            ["../base/web3signer", "../base/aws-rds-ca", "profile.yaml"],
+            [
+                "../base/web3signer",
+                "../base/aws-rds-ca",
+                "profile.yaml",
+                "validator-keystore-secret.yaml",
+            ],
         )
         self.assertNotIn("HelmRelease", yaml.safe_dump(signer_overlay))
 
