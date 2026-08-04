@@ -1,0 +1,10 @@
+apiVersion: platform.galaxy-lab/v1alpha1
+kind: ServiceProfile
+metadata:
+  name: dedicated-reth-lighthouse
+spec:
+  executionClient: reth
+  consensusClient: lighthouse
+  tenancy: dedicated
+  resourceProfile: local-real-node
+  signingAllowed: true

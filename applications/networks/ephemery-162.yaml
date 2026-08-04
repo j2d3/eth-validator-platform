@@ -33,6 +33,12 @@ spec:
   clients:
     geth:
       mode: artifact-bundle
+    # Reth adapter uses the same digest-verified genesis + bootnode files as
+    # Geth; state lives under /data/db/ (per the chart's rethInitCommand).
+    # Declaring the adapter here lets a ServiceProfile choose Reth for this
+    # network without a schema-level change.
+    reth:
+      mode: artifact-bundle
     lighthouse:
       mode: artifact-bundle
   signer:

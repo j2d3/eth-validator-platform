@@ -1,8 +1,13 @@
 apiVersion: kustomize.config.k8s.io/v1beta1
 kind: Kustomization
 resources:
-  # Only the generation-pinned Ephemery assignment is admitted in this first
-  # EKS node slice. The generated catalog projection remains the source.
+  # Both generation-pinned Ephemery pairs are admitted in this EKS node
+  # slice — Geth+Lighthouse and Reth+Lighthouse. Both render `stopped`, so
+  # unsuspending node-apps creates two stopped HelmReleases and four
+  # Pending PVCs (execution + consensus per pair) and no Pods.
+  # The generated catalog projection remains the source; the overlay only
+  # deletes the local-only synthetic-01 assignment and injects each pair's
+  # EKS-specific inputs (valuesFiles + telemetry + engineJwt).
   - ../../local/assignments
   - profile.yaml
   - sync-dashboard.yaml
@@ -32,6 +37,34 @@ patches:
       # directory prefix. Verified against source-controller v1.8.5 in the dev
       # cluster on 2026-08-04: bare filenames produce
       # `no values file found at path '/values.yaml'` and the HelmChart stalls.
+      - op: add
+        path: /spec/chart/spec/valuesFiles
+        value:
+          - charts/ethereum-node/values.yaml
+          - charts/ethereum-node/values-eks-ephemery.yaml
+      - op: replace
+        path: /spec/values/telemetry
+        value:
+          cluster: eth-validator-platform-dev
+          environment: dev
+      - op: add
+        path: /spec/values/engineJwt
+        value:
+          secretStoreName: aws-engine-secrets
+          remoteSecretKey: eth-validator-platform-dev/ethereum/engine-jwt
+          remoteSecretProperty: jwt.hex
+  - target:
+      group: helm.toolkit.fluxcd.io
+      version: v2
+      kind: HelmRelease
+      name: assignment-ephemery-162-synthetic-reth
+    patch: |-
+      # Reth pair shares the same EKS-specific storage/scheduling/availability
+      # profile as the Geth pair (values-eks-ephemery.yaml is EL-agnostic);
+      # the chart dispatches on executionClient=reth from the projection.
+      # Both pairs draw Engine JWT from the same Secrets Manager object —
+      # the JWT authenticates the EL <-> CL Engine API and is per-pair
+      # scoped by the chart's fullnameOverride (pair-<validator>-engine-jwt).
       - op: add
         path: /spec/chart/spec/valuesFiles
         value:

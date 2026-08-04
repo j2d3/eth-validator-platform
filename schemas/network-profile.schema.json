@@ -93,6 +93,7 @@
           "required": ["geth", "lighthouse"],
           "properties": {
             "geth": {"$ref": "#/$defs/gethAdapter"},
+            "reth": {"$ref": "#/$defs/rethAdapter"},
             "lighthouse": {"$ref": "#/$defs/lighthouseAdapter"}
           }
         },
@@ -190,6 +191,27 @@
   },
   "$defs": {
     "gethAdapter": {
+      "oneOf": [
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["mode", "network"],
+          "properties": {
+            "mode": {"const": "builtin"},
+            "network": {"enum": ["sepolia", "hoodi"]}
+          }
+        },
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["mode"],
+          "properties": {
+            "mode": {"const": "artifact-bundle"}
+          }
+        }
+      ]
+    },
+    "rethAdapter": {
       "oneOf": [
         {
           "type": "object",

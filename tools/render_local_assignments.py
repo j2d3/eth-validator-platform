@@ -28,7 +28,7 @@ GENERATED_HEADER = (
     "# Do not edit by hand; change the catalog and rerun the renderer.\n"
 )
 
-SUPPORTED_EXECUTION_CLIENTS = {"geth"}
+SUPPORTED_EXECUTION_CLIENTS = {"geth", "reth"}
 SUPPORTED_CONSENSUS_CLIENTS = {"lighthouse"}
 
 
@@ -166,14 +166,27 @@ def build_release(
         )
 
     network_spec = network_profile["spec"]
-    geth_network = network_spec["clients"]["geth"]
-    lighthouse_network = network_spec["clients"]["lighthouse"]
-    if geth_network["mode"] != lighthouse_network["mode"]:
+    profile_clients = network_spec["clients"]
+
+    # The chart still requires a Geth adapter for backward compatibility; the
+    # selected EL adapter (which may or may not be Geth) drives the runtime
+    # mode. Every declared adapter in the profile must agree on that mode so
+    # the same profile can host any of its declared client pairs.
+    if execution_client not in profile_clients:
         raise ProjectionError(
-            f"NetworkProfile/{network_profile_name}: Geth and Lighthouse adapter "
-            "modes must match"
+            f"NetworkProfile/{network_profile_name}: no adapter for execution "
+            f"client {execution_client!r}"
         )
-    adapter_mode = geth_network["mode"]
+    execution_network = profile_clients[execution_client]
+    lighthouse_network = profile_clients["lighthouse"]
+    adapter_mode = execution_network["mode"]
+    for other_client, other_adapter in profile_clients.items():
+        if other_adapter["mode"] != adapter_mode:
+            raise ProjectionError(
+                f"NetworkProfile/{network_profile_name}: {execution_client} "
+                f"and {other_client} adapter modes must match "
+                f"({adapter_mode!r} vs {other_adapter['mode']!r})"
+            )
     if adapter_mode == "artifact-bundle" and network_spec["resetPolicy"] != "replace-data":
         raise ProjectionError(
             f"NetworkProfile/{network_profile_name}: artifact adapter requires "
@@ -207,14 +220,17 @@ def build_release(
     # activation does not rename resources or replace chain-data PVCs.
     node_pair_name = node_pair_name or default_node_pair_ref(validator_name)
 
-    runtime_geth_adapter = dict(geth_network)
-    runtime_lighthouse_adapter = dict(lighthouse_network)
-    if adapter_mode == "artifact-bundle":
-        # Helm recursively merges maps with chart defaults. Explicit nulls
-        # remove the built-in network selectors so an artifact profile cannot
-        # inherit `hoodi` from values.yaml while changing only its mode.
-        runtime_geth_adapter["network"] = None
-        runtime_lighthouse_adapter["network"] = None
+    # Copy every declared adapter into the runtime map so the chart's helpers
+    # can dispatch on any of them. Helm deep-merges with chart defaults, so
+    # artifact-mode profiles explicitly null out the built-in `network`
+    # selector inherited from `values.yaml` (else `--<network>` args would
+    # leak into the artifact-mode command shape).
+    runtime_clients: dict[str, dict[str, Any]] = {}
+    for client_name, adapter in profile_clients.items():
+        runtime_adapter = dict(adapter)
+        if adapter_mode == "artifact-bundle":
+            runtime_adapter["network"] = None
+        runtime_clients[client_name] = runtime_adapter
 
     network_values = {
         "name": network_profile_name,
@@ -223,10 +239,7 @@ def build_release(
         "resetPolicy": network_spec["resetPolicy"],
         "identityFingerprint": network_identity_fingerprint(network_profile),
         "identity": network_spec["identity"],
-        "clients": {
-            "geth": runtime_geth_adapter,
-            "lighthouse": runtime_lighthouse_adapter,
-        },
+        "clients": runtime_clients,
     }
     if adapter_mode == "artifact-bundle":
         network_values["artifactBundle"] = network_spec["artifactBundle"]
