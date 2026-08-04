@@ -5,5 +5,6 @@ kind: Kustomization
 resources:
 - assignment-ephemery-162-synthetic.yaml
 - assignment-ephemery-162-synthetic-reth.yaml
+- assignment-ephemery-162-synthetic-reth-teku.yaml
 - assignment-ephemery-162-synthetic-teku.yaml
 - assignment-synthetic-01.yaml

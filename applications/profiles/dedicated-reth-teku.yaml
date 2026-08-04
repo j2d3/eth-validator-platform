@@ -1,0 +1,10 @@
+apiVersion: platform.galaxy-lab/v1alpha1
+kind: ServiceProfile
+metadata:
+  name: dedicated-reth-teku
+spec:
+  executionClient: reth
+  consensusClient: teku
+  tenancy: dedicated
+  resourceProfile: local-real-node
+  signingAllowed: true
