@@ -2,6 +2,7 @@ apiVersion: kustomize.config.k8s.io/v1beta1
 kind: Kustomization
 resources:
   - ../base/web3signer
+  - ../base/aws-rds-ca
   - profile.yaml
 
 patches:
@@ -41,7 +42,27 @@ patches:
     patch: |-
       - op: replace
         path: /spec/template/spec/containers/0/args/10
-        value: --slashing-protection-db-url=jdbc:postgresql://$(DB_HOST):$(DB_PORT)/$(DB_NAME)?sslmode=verify-full
+        value: --slashing-protection-db-url=jdbc:postgresql://$(DB_HOST):$(DB_PORT)/$(DB_NAME)?sslmode=verify-full&sslrootcert=/var/run/aws-rds-ca/rds-ca.pem
+      - op: add
+        path: /spec/template/spec/containers/0/volumeMounts/-
+        value:
+          name: aws-rds-ca
+          mountPath: /var/run/aws-rds-ca
+          readOnly: true
+      - op: add
+        path: /spec/template/spec/volumes/-
+        value:
+          name: aws-rds-ca
+          configMap:
+            name: aws-rds-ca
+  - target:
+      version: v1
+      kind: ConfigMap
+      name: aws-rds-ca
+    patch: |-
+      - op: add
+        path: /metadata/namespace
+        value: signing
   - target:
       group: networking.k8s.io
       version: v1

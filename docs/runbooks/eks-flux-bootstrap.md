@@ -21,16 +21,16 @@ infrastructure-configs
                                       |
                                       v
                            signer-prerequisites
-                                (suspended)
+                                  (active)
                                       |
                                       v
                                     apps
                                 (suspended)
 ```
 
-The cluster is bootstrapped and the node and signer-infrastructure branches are
-admitted. The node assignment remains stopped. `signer-prerequisites` and
-`apps` remain suspended, so no migration or signer workload exists yet.
+The cluster is bootstrapped and the node, signer-infrastructure, and signer-
+prerequisite branches are admitted. `apps` remains suspended, so Web3Signer and
+validator duties are not admitted.
 
 ## Ownership boundary
 
@@ -530,6 +530,12 @@ application secret readback matched the in-memory payload, and all temporary
 Kubernetes material was removed. It does not prove that External Secrets,
 Flyway, or Web3Signer can consume the credential; the next two reviewed stages
 provide that evidence.
+
+Both EKS stages mount the committed public `rds-ca-rsa2048-g1` root for
+`us-west-2` and pass its path through `sslrootcert` with
+`sslmode=verify-full`. The pinned Flyway and Web3Signer images do not contain
+that regional RDS root by default; hostname verification without the trust
+anchor is not a usable TLS configuration.
 
 Only then open a second PR changing
 `clusters/dev/signer-prerequisites.yaml` to `suspend: false`. After merge,

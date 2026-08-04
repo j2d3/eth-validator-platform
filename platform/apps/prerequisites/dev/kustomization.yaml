@@ -3,6 +3,7 @@ kind: Kustomization
 resources:
   - database-secret.yaml
   - ../local
+  - ../../base/aws-rds-ca
 
 patches:
   - target:
@@ -19,7 +20,27 @@ patches:
         value: dev
       - op: replace
         path: /spec/template/spec/containers/0/env/3/value
-        value: jdbc:postgresql://$(DB_HOST):$(DB_PORT)/$(DB_NAME)?sslmode=verify-full
+        value: jdbc:postgresql://$(DB_HOST):$(DB_PORT)/$(DB_NAME)?sslmode=verify-full&sslrootcert=/var/run/aws-rds-ca/rds-ca.pem
+      - op: add
+        path: /spec/template/spec/containers/0/volumeMounts/-
+        value:
+          name: aws-rds-ca
+          mountPath: /var/run/aws-rds-ca
+          readOnly: true
+      - op: add
+        path: /spec/template/spec/volumes/-
+        value:
+          name: aws-rds-ca
+          configMap:
+            name: aws-rds-ca
+  - target:
+      version: v1
+      kind: ConfigMap
+      name: aws-rds-ca
+    patch: |-
+      - op: add
+        path: /metadata/namespace
+        value: database
   - target:
       group: networking.k8s.io
       version: v1

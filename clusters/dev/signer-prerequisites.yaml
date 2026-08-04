@@ -17,9 +17,9 @@ spec:
   path: ./platform/apps/prerequisites/dev
   prune: true
   wait: true
-  # Fail closed until the separately reviewed RDS and credential adapter has
-  # supplied every runtime gate documented in the EKS Flux runbook.
-  suspend: true
+  # The restricted RDS application credential and its branch-ENI path were
+  # qualified separately; this stage admits only External Secrets and Flyway.
+  suspend: false
   commonMetadata:
     labels:
       platform.galaxy-lab/environment: dev

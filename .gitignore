@@ -18,6 +18,7 @@ override.tf.json
 .env.*
 !.env.example
 *.pem
+!platform/apps/base/aws-rds-ca/*.pem
 *.key
 secrets/
 tmp/

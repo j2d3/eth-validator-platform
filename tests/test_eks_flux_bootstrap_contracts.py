@@ -135,11 +135,11 @@ class EksFluxEntrypointTests(unittest.TestCase):
         # test_eks_ephemery_sync_contracts.
         self.assertIn("suspend", self.layers["node-apps"]["spec"])
         self.assertFalse(self.layers["node-apps"]["spec"]["suspend"])
-        # The non-workload signer adapter has been reviewed-unsuspended after
-        # its five Terraform-derived inputs and the EKS NetworkPolicy evidence
-        # were qualified. Workload-bearing signer layers remain suspended.
+        # The signer adapter and prerequisite layer have been separately
+        # reviewed after the RDS credential bootstrap and migration branch-ENI
+        # path were qualified. The signer workload layer remains suspended.
         self.assertFalse(self.layers["signer-infrastructure-configs"]["spec"]["suspend"])
-        self.assertTrue(self.layers["signer-prerequisites"]["spec"]["suspend"])
+        self.assertFalse(self.layers["signer-prerequisites"]["spec"]["suspend"])
         self.assertTrue(self.layers["apps"]["spec"]["suspend"])
 
     def test_every_layer_is_dev_labeled_and_waits_for_health(self) -> None:
@@ -537,7 +537,10 @@ class EksApplicationSafetyTests(unittest.TestCase):
 
     def test_eks_surfaces_are_owned_by_separate_signer_and_node_layers(self) -> None:
         signer_overlay = load_one(APPS / "kustomization.yaml")
-        self.assertEqual(signer_overlay["resources"], ["../base/web3signer", "profile.yaml"])
+        self.assertEqual(
+            signer_overlay["resources"],
+            ["../base/web3signer", "../base/aws-rds-ca", "profile.yaml"],
+        )
         self.assertNotIn("HelmRelease", yaml.safe_dump(signer_overlay))
 
         node_overlay = load_one(NODE_APPS / "kustomization.yaml")
@@ -585,7 +588,22 @@ class EksApplicationSafetyTests(unittest.TestCase):
         flyway = next(container for container in job["spec"]["template"]["spec"]["containers"] if container["name"] == "flyway")
         env = {entry["name"]: entry for entry in flyway["env"]}
         self.assertIn("sslmode=verify-full", env["FLYWAY_URL"]["value"])
+        self.assertIn(
+            "sslrootcert=/var/run/aws-rds-ca/rds-ca.pem",
+            env["FLYWAY_URL"]["value"],
+        )
         self.assertEqual(env["FLYWAY_USER"]["valueFrom"]["secretKeyRef"]["key"], "username")
+        self.assertIn(
+            {"name": "aws-rds-ca", "mountPath": "/var/run/aws-rds-ca", "readOnly": True},
+            flyway["volumeMounts"],
+        )
+        self.assertIn(
+            {"name": "aws-rds-ca", "configMap": {"name": "aws-rds-ca"}},
+            job["spec"]["template"]["spec"]["volumes"],
+        )
+        ca = object_named(documents, "ConfigMap", "aws-rds-ca")
+        self.assertEqual(ca["metadata"]["namespace"], "database")
+        self.assertIn("-----BEGIN CERTIFICATE-----", ca["data"]["rds-ca.pem"])
 
         jdbc_urls = [
             value
@@ -607,7 +625,20 @@ class EksApplicationSafetyTests(unittest.TestCase):
         jdbc_urls = [arg for arg in args if arg.startswith("--slashing-protection-db-url=")]
         self.assertEqual(len(jdbc_urls), 1)
         self.assertIn("sslmode=verify-full", jdbc_urls[0])
+        self.assertIn("sslrootcert=/var/run/aws-rds-ca/rds-ca.pem", jdbc_urls[0])
         self.assertIn("--slashing-protection-db-username=$(DB_USERNAME)", args)
+        web3signer = deployment["spec"]["template"]["spec"]["containers"][0]
+        self.assertIn(
+            {"name": "aws-rds-ca", "mountPath": "/var/run/aws-rds-ca", "readOnly": True},
+            web3signer["volumeMounts"],
+        )
+        self.assertIn(
+            {"name": "aws-rds-ca", "configMap": {"name": "aws-rds-ca"}},
+            deployment["spec"]["template"]["spec"]["volumes"],
+        )
+        ca = object_named(documents, "ConfigMap", "aws-rds-ca")
+        self.assertEqual(ca["metadata"]["namespace"], "signing")
+        self.assertIn("-----BEGIN CERTIFICATE-----", ca["data"]["rds-ca.pem"])
 
         rendered_urls = [
             value
