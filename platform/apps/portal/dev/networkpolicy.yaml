@@ -1,0 +1,38 @@
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: portal-status-api
+  namespace: portal-system
+  labels:
+    app.kubernetes.io/name: portal-status-api
+    app.kubernetes.io/part-of: ethereum-validator-platform
+spec:
+  podSelector:
+    matchLabels:
+      app.kubernetes.io/name: portal-status-api
+  policyTypes: [Ingress, Egress]
+  ingress:
+    - from:
+        - namespaceSelector:
+            matchLabels:
+              kubernetes.io/metadata.name: ingress-nginx
+      ports:
+        - {port: 8080, protocol: TCP}
+  egress:
+    - to:
+        - namespaceSelector:
+            matchLabels:
+              kubernetes.io/metadata.name: kube-system
+      ports:
+        - {port: 53, protocol: UDP}
+        - {port: 53, protocol: TCP}
+    - to:
+        - namespaceSelector:
+            matchLabels:
+              kubernetes.io/metadata.name: observability
+          podSelector:
+            matchLabels:
+              app.kubernetes.io/name: prometheus
+              prometheus: monitoring-prometheus
+      ports:
+        - {port: 9090, protocol: TCP}

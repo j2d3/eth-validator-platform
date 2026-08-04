@@ -83,14 +83,16 @@ spec:
       hostRootFsMount:
         enabled: false
     # Expose only the identity labels required to join Kubernetes resource
-    # metrics back to a platform assignment. Restarts key on the Pod and volume
-    # stats key on the PersistentVolumeClaim, so both resource kinds are needed;
-    # exposing pods alone would leave volume usage uncorrelated. Deliberately
+    # metrics back to a platform assignment. The node-group label separates
+    # always-on system capacity from paused/resumed Ethereum capacity; restarts
+    # key on the Pod and volume stats key on the PersistentVolumeClaim.
+    # Deliberately
     # omits platform.galaxy-lab/public-key and every other high-cardinality or
     # sensitive label — kube_*_labels series are broad, and a public key must
     # never appear on one. Rendered by the pinned chart as
-    # --metric-labels-allowlist=pods=[...],persistentvolumeclaims=[...].
+    # --metric-labels-allowlist=nodes=[...],pods=[...],persistentvolumeclaims=[...].
     kube-state-metrics:
       metricLabelsAllowlist:
+        - nodes=[eks.amazonaws.com/nodegroup]
         - pods=[platform.galaxy-lab/network,platform.galaxy-lab/network-profile,platform.galaxy-lab/network-generation,platform.galaxy-lab/customer-id,platform.galaxy-lab/validator-id,platform.galaxy-lab/assignment-id,platform.galaxy-lab/execution-client,platform.galaxy-lab/consensus-client,platform.galaxy-lab/component]
         - persistentvolumeclaims=[platform.galaxy-lab/network,platform.galaxy-lab/network-profile,platform.galaxy-lab/network-generation,platform.galaxy-lab/customer-id,platform.galaxy-lab/validator-id,platform.galaxy-lab/assignment-id]

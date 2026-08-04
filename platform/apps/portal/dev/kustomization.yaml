@@ -1,0 +1,17 @@
+apiVersion: kustomize.config.k8s.io/v1beta1
+kind: Kustomization
+resources:
+  - deployment.yaml
+  - service.yaml
+  - networkpolicy.yaml
+
+configMapGenerator:
+  - name: portal-status-api-source
+    namespace: portal-system
+    files:
+      - server.py
+
+labels:
+  - pairs:
+      platform.galaxy-lab/environment: dev
+    includeSelectors: false

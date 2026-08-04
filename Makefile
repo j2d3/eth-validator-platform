@@ -56,6 +56,7 @@ kustomize-build: ## Build every Kustomize layer, reconciled or not, without cont
 	kubectl kustomize platform/apps/prerequisites/dev > /dev/null
 	kubectl kustomize platform/apps/dev > /dev/null
 	kubectl kustomize platform/apps/nodes/dev > /dev/null
+	kubectl kustomize platform/apps/portal/dev > /dev/null
 
 verify-scripts: ## Syntax-check bash scripts under hack/
 	@for script in hack/*.sh; do bash -n "$$script" || exit 1; done
