@@ -410,36 +410,52 @@ class EksEphemeryFluxAndTelemetryTests(unittest.TestCase):
                 "assignment-ephemery-162-synthetic-teku",
             ],
         )
-        release = next(
+        # Every rendered Ephemery release must carry the same EKS-specific
+        # inputs (valuesFiles, dev telemetry, aws-engine-secrets Engine JWT).
+        # A missing patch on any release would leave that pair pointing at
+        # the local kind defaults (standard StorageClass, local-platform-
+        # secrets, kind-eth-validator-local telemetry) on EKS — an outage,
+        # not an obviously-broken render.
+        for release in releases:
+            with self.subTest(release=release["metadata"]["name"]):
+                self.assertEqual(release["spec"]["values"]["lifecycleState"], "active")
+                self.assertEqual(
+                    release["spec"]["values"]["engineJwt"]["secretStoreName"],
+                    "aws-engine-secrets",
+                )
+                self.assertEqual(
+                    release["spec"]["values"]["telemetry"],
+                    {
+                        "cluster": "eth-validator-platform-dev",
+                        "environment": "dev",
+                    },
+                )
+                # Flux resolves valuesFiles from the GitRepository artifact
+                # root when the chart source is a GitRepository, so entries
+                # include the chart directory prefix (verified against
+                # source-controller v1.8.5 in dev on 2026-08-04).
+                self.assertEqual(
+                    release["spec"]["chart"]["spec"]["valuesFiles"],
+                    [
+                        "charts/ethereum-node/values.yaml",
+                        "charts/ethereum-node/values-eks-ephemery.yaml",
+                    ],
+                )
+
+        signing_release = next(
             r for r in releases
             if r["metadata"]["name"] == "assignment-ephemery-162-synthetic"
         )
-        self.assertEqual(release["spec"]["values"]["lifecycleState"], "active")
-        self.assertTrue(release["spec"]["values"]["validator"]["enabled"])
+        self.assertTrue(signing_release["spec"]["values"]["validator"]["enabled"])
         self.assertTrue(
-            release["spec"]["values"]["validator"]["slashingProtectionConfirmed"]
+            signing_release["spec"]["values"]["validator"]["slashingProtectionConfirmed"]
         )
         self.assertTrue(
-            release["spec"]["values"]["networkProfile"]["signer"]["web3signer"]
+            signing_release["spec"]["values"]["networkProfile"]["signer"]["web3signer"]
             ["signingQualified"]
         )
         self.assertEqual(
-            release["spec"]["values"]["engineJwt"]["secretStoreName"],
-            "aws-engine-secrets",
-        )
-        # Flux resolves valuesFiles from the GitRepository artifact root
-        # when the chart source is a GitRepository, so entries include the
-        # chart directory prefix (verified against source-controller v1.8.5
-        # in dev on 2026-08-04).
-        self.assertEqual(
-            release["spec"]["chart"]["spec"]["valuesFiles"],
-            [
-                "charts/ethereum-node/values.yaml",
-                "charts/ethereum-node/values-eks-ephemery.yaml",
-            ],
-        )
-        self.assertEqual(
-            release["spec"]["values"]["validator"]["networkConfigMapName"],
+            signing_release["spec"]["values"]["validator"]["networkConfigMapName"],
             "web3signer-network-config-ephemery-162",
         )
 
