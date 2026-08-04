@@ -1,196 +1,139 @@
-export type SurfaceAccess = "public" | "operator" | "local";
-export type SurfaceState = "available" | "connect" | "planned";
+export type StatusTone = "ready" | "paused" | "off";
 
-export type PortalSurface = {
-  name: string;
-  category: "Observe" | "Operate" | "Trace" | "Learn";
-  description: string;
-  access: SurfaceAccess;
-  state: SurfaceState;
-  href?: string;
+export type SummaryItem = {
+  label: string;
+  value: string;
   detail: string;
+  tone: StatusTone;
 };
 
-export type SecuritySignal = {
+export type ComponentStatus = {
+  component: string;
+  status: string;
+  detail: string;
+  tone: StatusTone;
+  href: string;
+  linkLabel: string;
+};
+
+export type ResourceLink = {
   name: string;
-  state: "enabled" | "planned";
   description: string;
-  evidence: string;
-  href?: string;
-  linkLabel?: string;
+  href: string;
 };
 
-const repository = "https://github.com/j2d3/eth-validator-platform";
+export const repository = "https://github.com/j2d3/eth-validator-platform";
+export const observedRevision =
+  "86d561f38f1f174cb86e759e62903e51f174ed7d";
+export const observedAt = "2026-08-04 02:57 UTC";
 
-export const securitySignals: SecuritySignal[] = [
+export const summary: SummaryItem[] = [
   {
-    name: "Vulnerability alerts",
-    state: "enabled",
-    description:
-      "GitHub evaluates the dependency graph against its advisory database. Live findings remain inside the authenticated repository security view.",
-    evidence: "GitHub admin API · verified 2026-08-02",
-    href: `${repository}/security/dependabot`,
-    linkLabel: "live findings ↗",
+    label: "System nodes",
+    value: "2",
+    detail: "Ready · on-demand",
+    tone: "ready",
   },
   {
-    name: "Security update PRs",
-    state: "enabled",
-    description:
-      "Dependabot may propose a targeted remediation when a vulnerable dependency has a compatible patched release.",
-    evidence: "GitHub admin API · verified 2026-08-02",
-    href: `${repository}/security/dependabot`,
-    linkLabel: "live findings ↗",
+    label: "Ethereum nodes",
+    value: "0",
+    detail: "Spot capacity at desired 0",
+    tone: "paused",
   },
   {
-    name: "Version-update policy",
-    state: "enabled",
-    description:
-      "A reviewed weekly schedule covers repository Actions, Terraform roots, Python validation, and this portal's npm lockfile with bounded update queues.",
-    evidence: ".github/dependabot.yml · reviewed policy on main",
-    href: `${repository}/blob/main/.github/dependabot.yml`,
-    linkLabel: "source policy ↗",
+    label: "Running node pairs",
+    value: "0",
+    detail: "Node applications suspended",
+    tone: "paused",
   },
   {
-    name: "Container image scanning",
-    state: "planned",
-    description:
-      "The next supply-chain slice combines free ECR basic scan-on-push for owned images with CI scanning of every third-party image digest.",
-    evidence: "PRD requirement · implementation queued",
-    href: `${repository}/issues/43`,
-    linkLabel: "delivery issue ↗",
+    label: "Signing",
+    value: "Disabled",
+    detail: "Signer applications suspended",
+    tone: "off",
   },
 ];
 
-export const surfaces: PortalSurface[] = [
+export const componentStatuses: ComponentStatus[] = [
   {
-    name: "Fleet overview",
-    category: "Observe",
-    description:
-      "Fleet posture, client diversity, target health, and assignment drill-down.",
-    access: "operator",
-    state: "connect",
-    detail: "Grafana · eth-fleet-overview",
+    component: "EKS",
+    status: "Running",
+    detail: "Development cluster · us-west-2",
+    tone: "ready",
+    href: `${repository}/tree/main/terraform/environments/dev`,
+    linkLabel: "Terraform",
   },
   {
-    name: "Validator detail",
-    category: "Observe",
-    description:
-      "One identity across pair health, resources, volumes, duties, and logs.",
-    access: "operator",
-    state: "connect",
-    detail: "Grafana · eth-validator-detail",
+    component: "Flux",
+    status: "Ready",
+    detail: "Controllers and infrastructure configuration reconciled",
+    tone: "ready",
+    href: `${repository}/tree/main/clusters/dev`,
+    linkLabel: "Cluster state",
   },
   {
-    name: "Geth + Lighthouse",
-    category: "Observe",
-    description:
-      "Execution and consensus health for the first qualified client adapter.",
-    access: "operator",
-    state: "connect",
-    detail: "Grafana · eth-validator-geth-lighthouse",
+    component: "Monitoring",
+    status: "Running",
+    detail: "Prometheus, Grafana, Alertmanager, and node exporters",
+    tone: "ready",
+    href: `${repository}/blob/main/platform/infrastructure/controllers/monitoring.yaml`,
+    linkLabel: "Manifests",
   },
   {
-    name: "Signer & slashing",
-    category: "Observe",
-    description:
-      "Web3Signer readiness, signing outcomes, JVM health, and PostgreSQL signals.",
-    access: "operator",
-    state: "connect",
-    detail: "Grafana · eth-signer-slashing",
+    component: "Ethereum capacity",
+    status: "Paused",
+    detail: "Three zonal Spot groups · min 0 · desired 0 · max 1",
+    tone: "paused",
+    href: `${repository}/blob/main/docs/runbooks/eks-capacity.md`,
+    linkLabel: "Runbook",
   },
   {
-    name: "Correlated logs",
-    category: "Trace",
-    description:
-      "Loki streams for platform and pair components with shared identity context.",
-    access: "operator",
-    state: "connect",
-    detail: "Grafana · eth-platform-logs",
+    component: "Geth + Lighthouse",
+    status: "Suspended",
+    detail: "Ephemery profile declared · no pods running",
+    tone: "paused",
+    href: `${repository}/blob/main/docs/runbooks/eks-ephemery-sync.md`,
+    linkLabel: "Runbook",
   },
   {
-    name: "Platform smoke",
-    category: "Observe",
-    description:
-      "The local platform-service baseline: signer, database, secrets, and telemetry.",
-    access: "local",
-    state: "connect",
-    detail: "Grafana · eth-platform-local-smoke",
+    component: "Web3Signer",
+    status: "Not deployed",
+    detail: "Signer prerequisites and applications suspended",
+    tone: "off",
+    href: `${repository}/blob/main/clusters/dev/signer-prerequisites.yaml`,
+    linkLabel: "Manifest",
   },
+];
+
+export const resources: ResourceLink[] = [
   {
-    name: "Desired state",
-    category: "Operate",
-    description:
-      "Catalog, platform manifests, infrastructure definitions, and review history.",
-    access: "operator",
-    state: "available",
+    name: "Source repository",
+    description: "Terraform, Flux resources, Helm chart, tests, and history",
     href: repository,
-    detail: "GitHub · private repository",
   },
   {
-    name: "Lifecycle requests",
-    category: "Operate",
-    description:
-      "Open reviewed pull requests for non-signing pair activation and stop requests.",
-    access: "operator",
-    state: "available",
-    href: `${repository}/actions/workflows/node-pair-lifecycle.yaml`,
-    detail: "GitHub Actions · PR author only",
-  },
-  {
-    name: "Reconciliation",
-    category: "Operate",
-    description:
-      "Flux source, Kustomization, and HelmRelease health with revision evidence.",
-    access: "operator",
-    state: "planned",
-    detail: "Flux · read model not connected",
-  },
-  {
-    name: "EKS capacity",
-    category: "Operate",
-    description:
-      "System tier, zonal Spot groups, EBS placement, and warm-pause posture.",
-    access: "operator",
-    state: "planned",
-    detail: "AWS · environment link not configured",
-  },
-  {
-    name: "Product contract",
-    category: "Learn",
-    description:
-      "The architecture, safety invariants, lifecycle, and production-evolution plan.",
-    access: "operator",
-    state: "available",
+    name: "Architecture specification",
+    description: "Platform boundaries, lifecycle, and safety requirements",
     href: `${repository}/blob/main/docs/prd/001-dynamic-validator-platform.md`,
-    detail: "PRD · canonical specification",
   },
   {
-    name: "Operating runbooks",
-    category: "Learn",
-    description:
-      "Local development, AWS capacity, storage, signing, and recovery procedures.",
-    access: "operator",
-    state: "available",
-    href: `${repository}/tree/main/docs/runbooks`,
-    detail: "GitHub · reviewed procedures",
+    name: "EKS bootstrap",
+    description: "Terraform apply and Flux bootstrap procedure",
+    href: `${repository}/blob/main/docs/runbooks/eks-flux-bootstrap.md`,
+  },
+  {
+    name: "Node-pair lifecycle",
+    description: "Start, inspect, and stop the Ephemery sync pair",
+    href: `${repository}/blob/main/docs/runbooks/eks-ephemery-sync.md`,
+  },
+  {
+    name: "Dashboard definitions",
+    description: "Prometheus and Grafana resources stored in Git",
+    href: `${repository}/tree/main/platform/apps/local`,
+  },
+  {
+    name: "Network policy check",
+    description: "Recorded EKS allow-and-deny probe",
+    href: `${repository}/blob/main/docs/evidence/2026-08-04-eks-network-policy.md`,
   },
 ];
-
-export const architectureSteps = [
-  { name: "Git", detail: "reviewed intent", state: "ready" },
-  { name: "Flux", detail: "reconciliation", state: "ready" },
-  { name: "EKS", detail: "warm-paused", state: "ready" },
-  { name: "EL + CL", detail: "stopped", state: "off" },
-  { name: "Signer", detail: "0 keys", state: "guard" },
-  { name: "Postgres", detail: "slashing history", state: "ready" },
-] as const;
-
-export const clientMatrix = [
-  { execution: "Geth", consensus: "Lighthouse", state: "implemented" },
-  { execution: "Geth", consensus: "Prysm", state: "planned" },
-  { execution: "Geth", consensus: "Teku", state: "planned" },
-  { execution: "Geth", consensus: "Nimbus", state: "planned" },
-  { execution: "Nethermind", consensus: "Lighthouse", state: "planned" },
-  { execution: "Besu", consensus: "Lighthouse", state: "planned" },
-  { execution: "Reth", consensus: "Lighthouse", state: "planned" },
-] as const;

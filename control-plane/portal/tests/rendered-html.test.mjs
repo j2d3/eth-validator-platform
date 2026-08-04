@@ -2,8 +2,6 @@ import assert from "node:assert/strict";
 import { access, readFile } from "node:fs/promises";
 import test from "node:test";
 
-// Reuse the same validator the Worker + layout use, so what the test
-// asserts about canonical URLs is the same value the build baked in.
 import {
   assertCanonicalOrigin,
   DEFAULT_CANONICAL_ORIGIN,
@@ -41,13 +39,13 @@ async function render() {
   return requestPortal();
 }
 
-test("server-renders the project home and its safety posture", async () => {
+test("server-renders the environment status page", async () => {
   const response = await render();
   assert.equal(response.status, 200);
   assert.match(response.headers.get("content-type") ?? "", /^text\/html\b/i);
 
   const html = await response.text();
-  assert.match(html, /<title>Validator Platform — Field Console<\/title>/i);
+  assert.match(html, /<title>Ethereum Validator Platform<\/title>/i);
   assert.match(
     html,
     new RegExp(`property="og:image" content="${CANONICAL_ORIGIN_RE}/og\\.png"`, "i"),
@@ -57,16 +55,12 @@ test("server-renders the project home and its safety posture", async () => {
     new RegExp(`rel="canonical" href="${CANONICAL_ORIGIN_RE}/?"`, "i"),
   );
   assert.match(html, /name="twitter:card" content="summary_large_image"/i);
-  assert.match(html, /One view of the system/);
-  assert.match(html, /None of the comforting lies/);
-  assert.match(html, /Ready is not authorized/);
-  assert.match(html, /signing<\/span><strong>OFF/);
-  assert.match(html, /Three answers, never one blended status/);
-  assert.match(html, /Scan status belongs beside runtime health/);
-  assert.match(html, /Vulnerability alerts/);
-  assert.match(html, /Container image scanning/);
-  assert.match(html, /The front door, not another replacement dashboard/);
-  assert.match(html, /not a production staking service/i);
+  assert.match(html, /Environment status/);
+  assert.match(html, /System nodes/);
+  assert.match(html, /Ethereum nodes/);
+  assert.match(html, /Signing<\/span><strong>Disabled/);
+  assert.match(html, /Geth \+ Lighthouse/);
+  assert.match(html, /Project links/);
   assert.equal(
     response.headers.get("strict-transport-security"),
     "max-age=31536000; includeSubDomains",
@@ -96,18 +90,11 @@ test("serves content only on the canonical HTTPS origin", async () => {
   });
   const html = await canonical.text();
   assert.equal(canonical.status, 200);
-  assert.match(
-    html,
-    new RegExp(`${CANONICAL_ORIGIN_RE}/og\\.png`, "i"),
-  );
+  assert.match(html, new RegExp(`${CANONICAL_ORIGIN_RE}/og\\.png`, "i"));
   assert.doesNotMatch(html, /attacker\.invalid/i);
 });
 
-test("redirect stays on canonical origin for a //host/path network-path reference", async () => {
-  // Regression: `new URL(pathname + search, base)` treats a leading `//`
-  // as a network-path reference and would produce an open redirect
-  // off-canonical. The Worker must construct the destination by
-  // assigning pathname/search onto a URL parsed from CANONICAL_ORIGIN.
+test("redirect stays on canonical origin for a network-path reference", async () => {
   const response = await requestPortal(
     "https://preview.invalid//attacker.example/collect?stealing=1",
     {
@@ -118,18 +105,11 @@ test("redirect stays on canonical origin for a //host/path network-path referenc
   );
   assert.equal(response.status, 308);
   const location = new URL(response.headers.get("location") ?? "");
-  assert.equal(
-    location.origin,
-    CANONICAL_ORIGIN,
-    `open redirect: got ${location.origin} instead of ${CANONICAL_ORIGIN}`,
-  );
+  assert.equal(location.origin, CANONICAL_ORIGIN);
   assert.notEqual(location.origin, "https://attacker.example");
 });
 
-test("build-time origin is baked into the compiled Worker; runtime env has no effect", async () => {
-  // If Vite `define` correctly injects the validated literal into the
-  // bundle, mutating process.env AFTER build (and after this test file
-  // loaded) must not change the Worker's canonical-origin behavior.
+test("build-time origin is baked into the compiled Worker", async () => {
   const previous = process.env.PORTAL_CANONICAL_ORIGIN;
   process.env.PORTAL_CANONICAL_ORIGIN =
     "https://runtime-should-be-ignored.example";
@@ -139,11 +119,7 @@ test("build-time origin is baked into the compiled Worker; runtime env has no ef
     );
     assert.equal(response.status, 308);
     const location = new URL(response.headers.get("location") ?? "");
-    assert.equal(
-      location.origin,
-      CANONICAL_ORIGIN,
-      `Worker used runtime env (${location.origin}) instead of build-time literal (${CANONICAL_ORIGIN})`,
-    );
+    assert.equal(location.origin, CANONICAL_ORIGIN);
     assert.notEqual(
       location.origin,
       "https://runtime-should-be-ignored.example",
@@ -157,7 +133,46 @@ test("build-time origin is baked into the compiled Worker; runtime env has no ef
   }
 });
 
-test("removes the disposable starter and labels non-live evidence", async () => {
+test("renders only functional navigation", async () => {
+  const response = await render();
+  const html = await response.text();
+  const anchors = [...html.matchAll(/<a\b[^>]*>/gi)].map((match) => match[0]);
+
+  assert.ok(anchors.length > 0);
+  for (const anchor of anchors) {
+    const href = anchor.match(/\bhref="([^"]+)"/i)?.[1];
+    assert.ok(href, `anchor is missing href: ${anchor}`);
+
+    if (href.startsWith("#")) {
+      assert.match(html, new RegExp(`\\bid="${escapeForRegex(href.slice(1))}"`));
+      continue;
+    }
+
+    const destination = new URL(href);
+    assert.equal(destination.protocol, "https:");
+    assert.equal(destination.hostname, "github.com");
+  }
+
+  assert.doesNotMatch(html, /<button\b|role="button"/i);
+  assert.doesNotMatch(html, /aria-disabled="true"|href=""|href="#"/i);
+});
+
+test("source links point to tracked repository paths", async () => {
+  const registry = await readFile(
+    new URL("../lib/portal-registry.ts", import.meta.url),
+    "utf8",
+  );
+  const linkedPaths = [
+    ...registry.matchAll(/\$\{repository\}\/(?:blob|tree)\/main\/([^`]+)`/g),
+  ].map((match) => match[1]);
+
+  assert.ok(linkedPaths.length >= 8);
+  for (const linkedPath of linkedPaths) {
+    await access(new URL(`../../../${linkedPath}`, import.meta.url));
+  }
+});
+
+test("excludes placeholders and marketing copy", async () => {
   const [htmlResponse, page, layout, registry, packageJson] = await Promise.all([
     render(),
     readFile(new URL("../app/page.tsx", import.meta.url), "utf8"),
@@ -166,15 +181,16 @@ test("removes the disposable starter and labels non-live evidence", async () => 
     readFile(new URL("../package.json", import.meta.url), "utf8"),
   ]);
   const html = await htmlResponse.text();
+  const portalSource = `${page}\n${layout}\n${registry}`;
 
+  assert.doesNotMatch(
+    `${html}\n${portalSource}`,
+    /ethereum validator operations|hoodi \/ us-west-2|one view of the system|none of the comforting lies|spec-built|field console|evidence mode|fleet posture|ready is not authorized|front door|roadmap|explore the platform|planned adapter|coming soon|connect ↗/i,
+  );
   assert.doesNotMatch(html, /codex-preview|Your site is taking shape|react-loading-skeleton/i);
   assert.doesNotMatch(page, /SkeletonPreview|codex-preview/);
   assert.doesNotMatch(layout, /Starter Project|codex-preview/);
   assert.doesNotMatch(packageJson, /react-loading-skeleton/);
-  assert.match(page, /evidence mode/);
-  assert.match(page, /not yet a live control plane/i);
-  assert.match(registry, /state: "connect"/);
-  assert.match(registry, /state: "planned"/);
 
   await assert.rejects(
     access(new URL("../app/_sites-preview/SkeletonPreview.tsx", import.meta.url)),
@@ -184,7 +200,7 @@ test("removes the disposable starter and labels non-live evidence", async () => 
   );
 });
 
-test("keeps private specialist endpoints out of the static registry", async () => {
+test("keeps private endpoints and identifiers out of portal source", async () => {
   const registry = await readFile(
     new URL("../lib/portal-registry.ts", import.meta.url),
     "utf8",
@@ -192,48 +208,19 @@ test("keeps private specialist endpoints out of the static registry", async () =
 
   assert.doesNotMatch(registry, /amazonaws\.com|grafana\.(?:internal|local)|127\.0\.0\.1/);
   assert.doesNotMatch(registry, /\b\d{12}\b/);
-  assert.doesNotMatch(registry, /validatorPublicKey|secretRef|secretKeyRef|keystore/i);
-  assert.match(registry, /eth-fleet-overview/);
-  assert.match(registry, /eth-validator-detail/);
-  assert.match(registry, /eth-validator-geth-lighthouse/);
-  assert.match(registry, /eth-signer-slashing/);
-  assert.match(registry, /eth-platform-logs/);
-  assert.match(registry, /eth-platform-local-smoke/);
-  assert.match(registry, /\/security\/dependabot/);
-  assert.match(registry, /blob\/main\/\.github\/dependabot\.yml/);
-  assert.match(registry, /\/issues\/43/);
-  assert.match(registry, /GitHub admin API · verified 2026-08-02/);
-  assert.match(registry, /ECR basic scan-on-push/);
-  assert.doesNotMatch(registry, /\b(?:zero|0) (?:open )?(?:alerts|vulnerabilities|findings)\b/i);
+  assert.doesNotMatch(
+    registry,
+    /validatorPublicKey|secretRef|secretKeyRef|keystore/i,
+  );
 });
 
-test("Worker imports the validated canonical origin (not a duplicate constant)", async () => {
+test("Worker imports the shared canonical origin", async () => {
   const worker = await readFile(
     new URL("../worker/index.ts", import.meta.url),
     "utf8",
   );
 
-  // Worker must import from the shared module.
   assert.match(worker, /from\s+["']\.\.\/lib\/canonical-origin["']/);
-  // Worker must compare full origins, not just hostname+protocol.
   assert.match(worker, /requestUrl\.origin\s*!==\s*CANONICAL_ORIGIN/);
-  // Worker must not carry its own hardcoded origin literal.
   assert.doesNotMatch(worker, /"https:\/\/[a-z0-9.-]+"/i);
-});
-
-test("labels operational evidence and removes fabricated progress magnitudes", async () => {
-  const [htmlResponse, page, vite] = await Promise.all([
-    render(),
-    readFile(new URL("../app/page.tsx", import.meta.url), "utf8"),
-    readFile(new URL("../vite.config.ts", import.meta.url), "utf8"),
-  ]);
-  const html = await htmlResponse.text();
-
-  assert.doesNotMatch(page, /amount:\s*"\d+%"/);
-  assert.doesNotMatch(html, /\b(?:34|58|72|100)%\b/);
-  assert.match(page, /Web3Signer key bundle · reviewed 2026-08-02/i);
-  assert.match(page, /Terraform \+ EKS · observed 2026-08-02/i);
-  assert.match(page, /source · operator handoff · 2026-08-02/i);
-  assert.match(page, /tabIndex=\{0\}/);
-  assert.doesNotMatch(vite, /site-creator-d1|site-creator-r2|PLACEHOLDER_DATABASE/);
 });

@@ -13,9 +13,9 @@ const geistMono = Geist_Mono({
   subsets: ["latin"],
 });
 
-const title = "Validator Platform — Field Console";
+const title = "Ethereum Validator Platform";
 const description =
-  "The project home and operating index for a spec-built, GitOps-operated Ethereum validator platform lab.";
+  "Current EKS development environment status and project documentation.";
 const origin = CANONICAL_URL;
 const socialImage = new URL("/og.png", origin).toString();
 
@@ -32,9 +32,9 @@ export const metadata: Metadata = {
     images: [
       {
         url: socialImage,
-        width: 1734,
-        height: 907,
-        alt: "Validator Platform field console — ready is not authorized",
+        width: 1731,
+        height: 909,
+        alt: "Ethereum Validator Platform status page",
       },
     ],
   },
