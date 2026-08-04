@@ -177,6 +177,7 @@ spec:
               exec geth \
                 --networkid={{ printf "%.0f" .Values.networkProfile.identity.executionNetworkId }} \
                 --bootnodes="$bootnodes" \
+                --syncmode={{ $execution.syncMode }} \
                 --datadir=/data \
                 --http \
                 --http.addr=0.0.0.0 \
@@ -191,6 +192,7 @@ spec:
           {{- else }}
           args:
             - {{ printf "--%s" $gethAdapter.network | quote }}
+            - {{ printf "--syncmode=%s" $execution.syncMode | quote }}
             - --datadir=/data
             - --http
             - --http.addr=0.0.0.0

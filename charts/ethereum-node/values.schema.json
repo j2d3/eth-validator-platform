@@ -7,6 +7,7 @@
     "networkArtifactLoader",
     "executionClient",
     "consensusClient",
+    "executionClients",
     "identity",
     "telemetry",
     "storageClassName",
@@ -110,6 +111,20 @@
     },
     "consensusClient": {
       "const": "lighthouse"
+    },
+    "executionClients": {
+      "type": "object",
+      "required": ["geth"],
+      "properties": {
+        "geth": {
+          "type": "object",
+          "required": ["image", "syncMode"],
+          "properties": {
+            "image": {"type": "string", "pattern": "@sha256:[0-9a-f]{64}$"},
+            "syncMode": {"enum": ["snap", "full"]}
+          }
+        }
+      }
     },
     "identity": {
       "type": "object",

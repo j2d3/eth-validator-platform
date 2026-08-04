@@ -10,6 +10,13 @@ storage:
   consensus: 20Gi
   validator: 5Gi
 
+# Ephemery is a short, resetting chain. Replaying its bounded history is an
+# acceptable trade for avoiding the snap-pivot failure surface observed during
+# the first EKS restart exercise. This is not the default for permanent chains.
+executionClients:
+  geth:
+    syncMode: full
+
 # One public Network Load Balancer carries only Ethereum P2P traffic for this
 # one-pair lab. Kubernetes allocates valid NodePorts; fixed client port numbers
 # are retained only at the Service and container edges. JSON-RPC, Engine API,

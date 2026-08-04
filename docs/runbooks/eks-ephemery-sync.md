@@ -84,6 +84,14 @@ The processes establish one local peer relationship, proving a non-zero metric
 sample without contacting a public Ethereum network. Public-network peer health
 remains an EKS runtime gate below.
 
+The chart default remains Geth snap sync for permanent networks. The EKS
+Ephemery overlay explicitly renders `--syncmode=full`: generation 162 is a
+small, resetting chain, so replaying its bounded history is preferable to
+carrying the snap-pivot recovery path observed in the first run. This setting
+is a profile-specific mitigation, not evidence that every snap-sync restart
+corrupts Geth and not proof that full sync survives interruption. Section 9
+contains the runtime drill for that claim.
+
 Stop if any rendered object contains a validator Deployment, a signing-key
 reference, static AWS credentials, a NodePort outside Kubernetes allocation,
 or a public port other than `30303/TCP+UDP`, `9000/TCP+UDP`, and `9001/UDP`.
@@ -134,6 +142,14 @@ measurement; expand before exhaustion, never try to shrink it in place.
 
 The EKS overlay admits only the Ephemery assignment. The Hoodi assignment and
 every local-only dashboard remain outside this node layer.
+
+The retained generation-162 execution claim was populated by the earlier snap
+run. It cannot serve as evidence for a fresh full-sync start. Before the next
+activation, while the assignment is stopped and no Pod exists, record both PVC
+and PV identities and delete only the disposable execution claim. Flux/Helm
+must recreate that same generation-addressed claim; retain the consensus claim
+and its volume unchanged. This is a reviewed one-time test reset, not an
+automatic recovery policy and never applies to validator keys or signer data.
 
 ## 5. Resume one bounded Spot worker
 
@@ -285,6 +301,23 @@ kubectl get pvc,pv -n ethereum
 Stopped retains the encrypted gp3 volumes and their storage cost. Resume the
 same Availability Zone, reactivate through another reviewed PR, and prove that
 the same PVC/PV identities reattach before collecting recovery evidence.
+
+During the fresh full-sync qualification run, perform one deliberate graceful
+restart while the execution head is advancing:
+
+```bash
+kubectl get pvc -n ethereum -o custom-columns=NAME:.metadata.name,UID:.metadata.uid,VOLUME:.spec.volumeName
+kubectl delete pod -n ethereum pair-ephemery-162-synthetic-0
+kubectl wait -n ethereum --for=condition=Ready \
+  pod/pair-ephemery-162-synthetic-0 --timeout=15m
+```
+
+Do not use `--force` or override the 30-second grace period. After the Pod is
+Ready, prove both PVC UIDs and PV names are unchanged, verify exact chain
+identity again, and observe both heads resume advancing. A missing-trie error,
+claim replacement, identity mismatch, or stalled head fails the drill and
+leaves #84 open. One passing Ephemery drill qualifies this profile only; it is
+not a general durability claim for Geth, EBS, or Spot interruption.
 
 When generation 162 is retired, `archived` removes its reproducible chain-data
 claims and the `Delete` reclaim policy releases the EBS volumes. Add the
