@@ -118,11 +118,25 @@ h1 {
 }
 
 .signing-state {
+  display: block;
   min-width: 190px;
   padding: 18px 20px;
   background: var(--off-bg);
   border: 1px solid #e6c8c8;
   border-radius: 10px;
+  color: inherit;
+  text-decoration: none;
+}
+
+.signing-state:hover,
+.signing-state:focus-visible {
+  border-color: var(--link);
+  outline: none;
+}
+
+.signing-state--ready {
+  background: var(--ready-bg);
+  border-color: #b9ddc8;
 }
 
 .signing-state span,
@@ -141,6 +155,17 @@ h1 {
   margin-top: 4px;
   color: var(--off);
   font-size: 1.15rem;
+}
+
+.signing-state--ready strong {
+  color: var(--ready);
+}
+
+.signing-state small {
+  display: block;
+  margin-top: 4px;
+  color: var(--link);
+  font-size: 0.72rem;
 }
 
 .summary-grid {
@@ -172,6 +197,17 @@ h1 {
   font-family: var(--font-geist-mono), monospace;
   font-size: 2rem;
   letter-spacing: -0.05em;
+}
+
+.signing-summary-grid {
+  grid-template-columns: repeat(3, 1fr);
+  margin-bottom: 0;
+  border: 0;
+  border-radius: 0 0 12px 12px;
+}
+
+.signing-summary-grid .summary-item {
+  min-height: 126px;
 }
 
 .detail,
@@ -352,7 +388,8 @@ footer {
 }
 
 @media (max-width: 880px) {
-  .summary-grid {
+  .summary-grid,
+  .signing-summary-grid {
     grid-template-columns: repeat(2, 1fr);
   }
 
@@ -404,7 +441,8 @@ footer {
     min-width: 0;
   }
 
-  .summary-grid {
+  .summary-grid,
+  .signing-summary-grid {
     grid-template-columns: 1fr;
   }
 

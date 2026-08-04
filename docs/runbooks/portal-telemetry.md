@@ -24,7 +24,10 @@ instead of the Service ClusterIP.
 - observation time, cache age, and stale state;
 - ready nodes, allocatable and used CPU and memory, Pod counts, and restarts;
 - aggregate Ethereum Pod CPU, memory, restart, and persistent-volume usage;
-- client-pair target state, peers, sync progress, lag, CPU, and memory; and
+- enabled validator count, signer target state, loaded-key count, permitted and
+  prevented slashing checks, and unknown-key signing requests;
+- client-pair target state, peers, sync progress, lag, CPU, and memory;
+- the enabled-validator count for each active client pair; and
 - a per-pair Grafana URL only when the configured Grafana base URL passes the
   HTTPS and path checks.
 

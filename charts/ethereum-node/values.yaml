@@ -170,6 +170,8 @@ consensusClients:
       # the rule sums; other CLs may use a single gauge (metric shape is
       # per-CL; the rule uses each map's peers name inside `sum`).
       peers: sync_peers_per_status
+      # Enabled validator keys in Lighthouse's separate validator client.
+      validatorEnabled: vc_validators_enabled_count
 
 resources:
   execution:

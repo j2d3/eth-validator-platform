@@ -461,7 +461,8 @@
         "presentSlot": {"$ref": "#/$defs/prometheusMetricName"},
         "presentEpoch": {"$ref": "#/$defs/prometheusMetricName"},
         "finalizedEpoch": {"$ref": "#/$defs/prometheusMetricName"},
-        "peers": {"$ref": "#/$defs/prometheusMetricName"}
+        "peers": {"$ref": "#/$defs/prometheusMetricName"},
+        "validatorEnabled": {"$ref": "#/$defs/prometheusMetricName"}
       }
     },
     "bundlePath": {

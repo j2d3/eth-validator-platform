@@ -65,6 +65,12 @@ def base_results() -> dict[str, list[dict]]:
         "ethereumRestarts": 1,
         "ethereumVolumeUsedBytes": 80_000_000_000,
         "ethereumVolumeCapacityBytes": 200_000_000_000,
+        "signerUp": 1,
+        "signerKeysLoaded": 1,
+        "signingValidatorsEnabled": 1,
+        "signingPermittedTotal": 2,
+        "signingPreventedTotal": 0,
+        "signingMissingIdentifierTotal": 0,
     }
     for name, value in scalar_values.items():
         results[SERVER.SCALAR_QUERIES[name]] = vector(value)
@@ -94,6 +100,9 @@ class PortalStatusApiResponseTests(unittest.TestCase):
         ]
         results[SERVER.PAIR_QUERIES["executionPeers"]] = vector(14, **pair_labels)
         results[SERVER.PAIR_QUERIES["consensusPeers"]] = vector(31, **pair_labels)
+        results[SERVER.PAIR_QUERIES["validatorEnabled"]] = vector(
+            1, **pair_labels
+        )
         results[SERVER.PAIR_QUERIES["processCpuCores"]] = vector(
             0.08, **pair_labels, component="execution"
         )
@@ -117,7 +126,19 @@ class PortalStatusApiResponseTests(unittest.TestCase):
         self.assertEqual(pair["targets"], {"execution": 1, "consensus": 1})
         self.assertEqual(pair["sync"]["executionPeers"], 14)
         self.assertEqual(pair["sync"]["consensusPeers"], 31)
+        self.assertEqual(pair["signing"]["validatorsEnabled"], 1)
         self.assertEqual(pair["resources"]["cpuCores"]["execution"], 0.08)
+        self.assertEqual(
+            snapshot["signing"],
+            {
+                "validatorsEnabled": 1,
+                "signerUp": 1,
+                "keysLoaded": 1,
+                "slashingPermittedTotal": 2,
+                "slashingPreventedTotal": 0,
+                "missingIdentifierTotal": 0,
+            },
+        )
 
         grafana = urlsplit(pair["grafanaUrl"])
         self.assertEqual((grafana.scheme, grafana.netloc), ("https", "ops.g.j2d3.com"))

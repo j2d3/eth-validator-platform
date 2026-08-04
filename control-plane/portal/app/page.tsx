@@ -29,17 +29,6 @@ export default function Home() {
       </header>
 
       <main id="main">
-        <section className="environment-heading" aria-labelledby="page-title">
-          <div>
-            <p className="context">Development · EKS · AWS us-west-2</p>
-            <h1 id="page-title">Environment status</h1>
-          </div>
-          <div className="signing-state" aria-label="Signing disabled">
-            <span>Signing</span>
-            <strong>Disabled</strong>
-          </div>
-        </section>
-
         <LiveStatus />
 
         <section className="panel" aria-labelledby="dashboards-title">
