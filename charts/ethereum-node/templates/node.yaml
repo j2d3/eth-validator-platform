@@ -239,15 +239,31 @@ spec:
         - name: consensus
           image: {{ $consensus.image }}
           imagePullPolicy: {{ .Values.imagePullPolicy }}
+          {{- if $artifactMode }}
+          command: [/bin/sh, -ec]
+          args:
+            - |
+              set -eu
+              bootnodes="$(paste -sd, {{ printf "/network/files/%s" .Values.networkProfile.artifactBundle.files.consensusBootnodesText | quote }})"
+              test -n "$bootnodes"
+              exec lighthouse bn \
+                {{ printf "--testnet-dir=/network/files" | quote }} \
+                {{ printf "--checkpoint-sync-url=%s" .Values.networkProfile.checkpointSync.primaryUrl | quote }} \
+                --boot-nodes="$bootnodes" \
+                --datadir=/data \
+                --execution-endpoint=http://127.0.0.1:8551 \
+                --execution-jwt=/jwt/jwt.hex \
+                --http \
+                --http-address=0.0.0.0 \
+                --http-port=5052 \
+                --metrics \
+                --metrics-address=0.0.0.0 \
+                --metrics-port=8008
+          {{- else }}
           command: [lighthouse]
           args:
             - bn
-            {{- if $artifactMode }}
-            - {{ printf "--testnet-dir=/network/files" | quote }}
-            - {{ printf "--checkpoint-sync-url=%s" .Values.networkProfile.checkpointSync.primaryUrl | quote }}
-            {{- else }}
             - {{ printf "--network=%s" $lighthouseAdapter.network | quote }}
-            {{- end }}
             - --datadir=/data
             - --execution-endpoint=http://127.0.0.1:8551
             - --execution-jwt=/jwt/jwt.hex
@@ -257,6 +273,7 @@ spec:
             - --metrics
             - --metrics-address=0.0.0.0
             - --metrics-port=8008
+          {{- end }}
           ports:
             - {name: cl-api, containerPort: 5052, protocol: TCP}
             - {name: cl-p2p-tcp, containerPort: 9000, protocol: TCP}
