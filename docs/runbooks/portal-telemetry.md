@@ -11,6 +11,10 @@ The first deployment is a ClusterIP service in `portal-system`. There is no
 public ingress in this slice. A Grafana URL is `null` until a tested HTTPS
 Grafana endpoint is configured.
 
+The adapter uses the Prometheus Operator's headless `prometheus-operated`
+Service so AWS VPC CNI NetworkPolicy evaluates the selected Prometheus Pod IP
+instead of the Service ClusterIP.
+
 ## Response
 
 `GET /v1/status` returns:

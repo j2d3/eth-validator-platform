@@ -33,7 +33,7 @@ spec:
           command: [/usr/local/bin/python, /app/server.py]
           env:
             - name: PROMETHEUS_URL
-              value: http://monitoring-prometheus.observability.svc.cluster.local:9090
+              value: http://prometheus-operated.observability.svc.cluster.local:9090
             - name: ALLOWED_ORIGIN
               value: https://g.j2d3.com
             - name: CLUSTER_NAME

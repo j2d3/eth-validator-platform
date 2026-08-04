@@ -207,6 +207,15 @@ class PortalStatusApiManifestTests(unittest.TestCase):
         env_names = {item["name"] for item in container["env"]}
         self.assertNotIn("GRAFANA_BASE_URL", env_names)
         self.assertNotIn("valueFrom", yaml.safe_dump(container["env"]))
+        prometheus_url = next(
+            item["value"]
+            for item in container["env"]
+            if item["name"] == "PROMETHEUS_URL"
+        )
+        self.assertEqual(
+            prometheus_url,
+            "http://prometheus-operated.observability.svc.cluster.local:9090",
+        )
 
     def test_service_is_cluster_private_and_no_ingress_is_declared(self) -> None:
         service = self.object("Service", "portal-status-api")
