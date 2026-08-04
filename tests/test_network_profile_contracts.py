@@ -290,13 +290,14 @@ class NetworkProfileRenderingTests(unittest.TestCase):
         self.assertNotIn("args:", values.split("executionClients:", 1)[1])
         self.assertNotIn("$execution.args", node)
         self.assertNotIn("$consensus.args", node)
-        # The chart's mode-detection variable was renamed from $gethAdapter
-        # to $executionAdapter so a second EL adapter (e.g. Reth) reads its
-        # own network entry rather than always Geth's. The intent — args
-        # come from the internal per-EL network adapter, not a raw values
+        # The chart's mode-detection variables were renamed from $gethAdapter
+        # to $executionAdapter and from $lighthouseAdapter to $consensusAdapter
+        # so second EL/CL adapters (e.g. Reth, Teku) read their own network
+        # entries rather than always Geth's or Lighthouse's. The intent — args
+        # come from the internal per-client network adapter, not a raw values
         # array — is preserved.
         self.assertIn("$executionAdapter.network", node)
-        self.assertIn("$lighthouseAdapter.network", node)
+        self.assertIn("$consensusAdapter.network", node)
         self.assertIn("command: [lighthouse]", node)
         validator = (
             ROOT / "charts" / "ethereum-node" / "templates" / "validator-client.yaml"

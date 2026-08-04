@@ -7,17 +7,28 @@
 {{- if not $executionAdapter -}}
 {{- fail (printf "networkProfile.clients.%s is required when executionClient=%q" .Values.executionClient .Values.executionClient) -}}
 {{- end -}}
-{{- $lighthouseAdapter := .Values.networkProfile.clients.lighthouse -}}
-{{- if ne $executionAdapter.mode $lighthouseAdapter.mode -}}
-{{- fail (printf "%s and Lighthouse network adapter modes must match" .Values.executionClient) -}}
+{{- /* Adapter for the currently selected CL — dispatched on consensusClient so
+     a Teku pair reads its own network adapter rather than always Lighthouse's.
+     Lighthouse is required by the network-profile schema and so is always
+     present as a fallback, but the mode-consistency check below must compare
+     the EL's mode to the CL that will actually run. */ -}}
+{{- $consensusAdapter := index .Values.networkProfile.clients .Values.consensusClient -}}
+{{- if not $consensusAdapter -}}
+{{- fail (printf "networkProfile.clients.%s is required when consensusClient=%q" .Values.consensusClient .Values.consensusClient) -}}
+{{- end -}}
+{{- if ne $executionAdapter.mode $consensusAdapter.mode -}}
+{{- fail (printf "%s and %s network adapter modes must match" .Values.executionClient .Values.consensusClient) -}}
 {{- end -}}
 {{- $artifactMode := eq $executionAdapter.mode "artifact-bundle" -}}
-{{- /* Built-in-mode is currently Geth-only; the args block for that path
-     hard-codes Geth's flag names. Fail loudly if someone tries to render a
-     Reth pair on a built-in network — a future PR can extract those args
-     behind a per-EL helper. */ -}}
+{{- /* Built-in-mode is currently Geth+Lighthouse only; the args blocks for
+     that path hard-code Geth and Lighthouse flag names. Fail loudly if
+     someone tries to render a Reth or Teku pair on a built-in network — a
+     future PR can extract those args behind per-client helpers. */ -}}
 {{- if and (eq .Values.executionClient "reth") (not $artifactMode) -}}
 {{- fail "executionClient=reth requires networkProfile.clients.reth.mode = artifact-bundle in this chart version" -}}
+{{- end -}}
+{{- if and (eq .Values.consensusClient "teku") (not $artifactMode) -}}
+{{- fail "consensusClient=teku requires networkProfile.clients.teku.mode = artifact-bundle in this chart version" -}}
 {{- end -}}
 apiVersion: apps/v1
 kind: StatefulSet
@@ -223,7 +234,7 @@ spec:
           command: [lighthouse]
           args:
             - bn
-            - {{ printf "--network=%s" $lighthouseAdapter.network | quote }}
+            - {{ printf "--network=%s" $consensusAdapter.network | quote }}
             - --datadir=/data
             - --execution-endpoint=http://127.0.0.1:8551
             - --execution-jwt=/jwt/jwt.hex

@@ -156,6 +156,8 @@ touching node.yaml.
 {{- $client := .Values.consensusClient -}}
 {{- if eq $client "lighthouse" -}}
 {{- include "ethereum-node.lighthouseRunCommand" . -}}
+{{- else if eq $client "teku" -}}
+{{- include "ethereum-node.tekuRunCommand" . -}}
 {{- else -}}
 {{- fail (printf "no run-command adapter for consensusClient=%q" $client) -}}
 {{- end -}}
@@ -178,6 +180,26 @@ exec lighthouse bn \
   --metrics \
   --metrics-address=0.0.0.0 \
   --metrics-port=8008
+{{- end -}}
+
+{{- define "ethereum-node.tekuRunCommand" -}}
+set -eu
+bootnodes="$(paste -sd, {{ printf "/network/files/%s" .Values.networkProfile.artifactBundle.files.consensusBootnodesText | quote }})"
+test -n "$bootnodes"
+exec /opt/teku/bin/teku \
+  {{ printf "--network=/network/files/%s" .Values.networkProfile.artifactBundle.files.consensusConfig | quote }} \
+  {{ printf "--checkpoint-sync-url=%s" .Values.networkProfile.checkpointSync.primaryUrl | quote }} \
+  --p2p-discovery-bootnodes="$bootnodes" \
+  --data-path=/data \
+  --ee-endpoint=http://127.0.0.1:8551 \
+  --ee-jwt-secret-file=/jwt/jwt.hex \
+  --rest-api-enabled=true \
+  --rest-api-interface=0.0.0.0 \
+  --rest-api-port=5052 \
+  --metrics-enabled=true \
+  --metrics-interface=0.0.0.0 \
+  --metrics-port=8008 \
+  --metrics-host-allowlist=*
 {{- end -}}
 
 {{/*
