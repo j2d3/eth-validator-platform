@@ -18,6 +18,7 @@ APPLICATIONS = ROOT / "applications"
 SCHEMAS = ROOT / "schemas"
 SCHEMA_FILES = {
     "Customer": "customer.schema.json",
+    "NetworkProfile": "network-profile.schema.json",
     "ServiceProfile": "service-profile.schema.json",
     "ValidatorIdentity": "validator-identity.schema.json",
     "ValidatorAssignment": "validator-assignment.schema.json",
@@ -80,11 +81,98 @@ def relational_errors(documents: list[tuple[Path, dict[str, Any]]]) -> list[str]
             errors.append(f"Customer/{name}: customerId duplicates Customer/{customer_ids[customer_id]}")
         customer_ids[customer_id] = name
 
+    for name, network_profile in by_kind["NetworkProfile"].items():
+        spec = network_profile["spec"]
+        adapter_modes = {
+            adapter["mode"]
+            for adapter in (
+                *spec["clients"].values(),
+                spec["signer"]["web3signer"],
+            )
+        }
+        if len(adapter_modes) > 1:
+            errors.append(
+                f"NetworkProfile/{name}: client and signer adapter modes disagree: "
+                f"{', '.join(sorted(adapter_modes))}"
+            )
+        if spec["resetPolicy"] == "replace-data":
+            expected_name = f"{spec['family']}-{spec['generation']}"
+            if name != expected_name:
+                errors.append(
+                    f"NetworkProfile/{name}: replace-data profile name must be "
+                    f"generation-addressed as {expected_name!r}"
+                )
+            if adapter_modes != {"artifact-bundle"}:
+                errors.append(
+                    f"NetworkProfile/{name}: replace-data profiles require artifact-bundle "
+                    "client and signer adapters"
+                )
+        artifact = spec.get("artifactBundle")
+        client_artifact_mode = any(
+            adapter["mode"] == "artifact-bundle" for adapter in spec["clients"].values()
+        )
+        if client_artifact_mode and spec["resetPolicy"] != "replace-data":
+            errors.append(
+                f"NetworkProfile/{name}: artifact client adapters require resetPolicy "
+                "'replace-data'"
+            )
+        if client_artifact_mode and "checkpointSync" not in spec:
+            errors.append(
+                f"NetworkProfile/{name}: artifact client adapters require checkpointSync"
+            )
+        if artifact and "/latest/" in artifact["url"].lower():
+            errors.append(
+                f"NetworkProfile/{name}: artifactBundle.url must pin a generation, not /latest/"
+            )
+        if artifact:
+            expected_release_path = f"/releases/download/{name}/"
+            if expected_release_path not in artifact["url"]:
+                errors.append(
+                    f"NetworkProfile/{name}: artifactBundle.url must contain immutable "
+                    f"release path {expected_release_path!r}"
+                )
+            paths = list(artifact["files"].values())
+            if len(paths) != len(set(paths)):
+                errors.append(
+                    f"NetworkProfile/{name}: artifactBundle.files paths must be unique"
+                )
+            for path_name, path in artifact["files"].items():
+                if ".." in Path(path).parts:
+                    errors.append(
+                        f"NetworkProfile/{name}: artifactBundle.files.{path_name} "
+                        "may not traverse directories"
+                    )
+        builtin_networks = {
+            adapter["network"]
+            for adapter in (
+                *spec["clients"].values(),
+                spec["signer"]["web3signer"],
+            )
+            if adapter["mode"] == "builtin"
+        }
+        if len(builtin_networks) > 1:
+            errors.append(
+                f"NetworkProfile/{name}: built-in client and signer adapters "
+                f"disagree: {', '.join(sorted(builtin_networks))}"
+            )
+        if builtin_networks and spec["family"] in {"hoodi", "sepolia"}:
+            builtin_network = next(iter(builtin_networks))
+            if builtin_network != spec["family"]:
+                errors.append(
+                    f"NetworkProfile/{name}: built-in adapter {builtin_network!r} "
+                    f"does not match family {spec['family']!r}"
+                )
+
     for name, identity in by_kind["ValidatorIdentity"].items():
         spec = identity["spec"]
         customer = spec["customerRef"]
         if customer not in by_kind["Customer"]:
             errors.append(f"ValidatorIdentity/{name}: unknown customerRef {customer!r}")
+        network_profile = spec["networkProfileRef"]
+        if network_profile not in by_kind["NetworkProfile"]:
+            errors.append(
+                f"ValidatorIdentity/{name}: unknown networkProfileRef {network_profile!r}"
+            )
         public_key = spec.get("publicKey")
         if public_key:
             normalized = public_key.lower()
@@ -99,13 +187,25 @@ def relational_errors(documents: list[tuple[Path, dict[str, Any]]]) -> list[str]
     for name, assignment in by_kind["ValidatorAssignment"].items():
         spec = assignment["spec"]
         validator_name = spec["validatorRef"]
+        network_profile_name = spec["networkProfileRef"]
         profile_name = spec["serviceProfileRef"]
         identity = by_kind["ValidatorIdentity"].get(validator_name)
+        network_profile = by_kind["NetworkProfile"].get(network_profile_name)
         profile = by_kind["ServiceProfile"].get(profile_name)
         if identity is None:
             errors.append(f"ValidatorAssignment/{name}: unknown validatorRef {validator_name!r}")
         if profile is None:
             errors.append(f"ValidatorAssignment/{name}: unknown serviceProfileRef {profile_name!r}")
+        if network_profile is None:
+            errors.append(
+                f"ValidatorAssignment/{name}: unknown networkProfileRef {network_profile_name!r}"
+            )
+        if identity and identity["spec"]["networkProfileRef"] != network_profile_name:
+            errors.append(
+                f"ValidatorAssignment/{name}: networkProfileRef {network_profile_name!r} "
+                f"does not match ValidatorIdentity/{validator_name} binding "
+                f"{identity['spec']['networkProfileRef']!r}"
+            )
         if spec["lifecycle"] in LIVE_ASSIGNMENT_STATES:
             live_assignments[validator_name].append(name)
             node_pair = spec.get("nodePairRef")
@@ -122,6 +222,15 @@ def relational_errors(documents: list[tuple[Path, dict[str, Any]]]) -> list[str]
                     errors.append(f"ValidatorAssignment/{name}: signing requires an active customer")
             if profile and not profile["spec"]["signingAllowed"]:
                 errors.append(f"ValidatorAssignment/{name}: profile does not allow signing")
+            if (
+                network_profile
+                and network_profile["spec"]["signer"]["web3signer"]["mode"]
+                != "builtin"
+            ):
+                errors.append(
+                    f"ValidatorAssignment/{name}: signing is not qualified for "
+                    f"NetworkProfile/{network_profile_name}"
+                )
 
     for validator_name, assignment_names in live_assignments.items():
         if len(assignment_names) > 1:

@@ -12,5 +12,8 @@ data:
   environment: local
   profile: platform-smoke
   network: hoodi
+  networkProfile: hoodi
+  networkGeneration: permanent
+  networkIdentity: c7484b91cd367b3b99a8e6dbfc92fe637ee435fa8a4d55cc5904777bf0e574b2
   signingEnabled: "false"
   explanation: "Platform services are active; validator clients and signing are disabled."

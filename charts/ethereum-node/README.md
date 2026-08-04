@@ -1,6 +1,6 @@
 # Ethereum node-pair chart
 
-This chart is the first executable slice of the normalized node-pair contract. Version `0.2.0` intentionally supports only Geth + Lighthouse on Hoodi or Sepolia. The product catalog already models all sixteen EL/CL combinations; adding an enum here would make a combination deployable, so the other adapters remain absent until their flags, ports, probes, metrics, remote-signing behavior, and lifecycle tests exist.
+This chart is the first executable slice of the normalized node-pair contract. Version `0.3.0` intentionally supports only Geth + Lighthouse with two reviewed testnet adapters: the clients' built-in Hoodi configuration and the digest-pinned `ephemery-162` custom-network bundle. The schema reserves the built-in Sepolia selector for a later reviewed profile. Mainnet is deliberately not deployable through this lab chart. The product catalog already models all sixteen EL/CL combinations; adding an enum here would make a combination deployable, so the other adapters remain absent until their flags, ports, probes, metrics, remote-signing behavior, and lifecycle tests exist.
 
 ## Safety properties
 
@@ -11,10 +11,15 @@ This chart is the first executable slice of the normalized node-pair contract. V
 - `stopped` retains lifecycle metadata and PVCs; `archived` removes pair PVC declarations but does not remove validator identity, signing-key custody, or shared slashing history.
 - The lifecycle record emits `platform.galaxy-lab/signing-enabled`, which binds any future signing profile to the guarded local-cluster teardown path.
 - Images used by this vertical slice are pinned by human-readable tag and immutable multi-architecture digest.
+- Network selection comes from a reviewed `NetworkProfile`; the chart receives immutable chain identity and typed client selectors, not a friendly string or operator-supplied argument list.
+- Pods and retained PVCs are annotated with the full network-identity fingerprint. Resetting networks also include a deterministic hash of the full node-pair reference and a fingerprint prefix in every PVC name, so long pair names cannot collide and a later generation cannot silently mount the old generation's databases.
+- The Ephemery loader downloads only the immutable generation URL, limits transfer size/time, verifies the full bundle SHA-256, and extracts an allowlisted member set before either client starts.
+- Geth custom-genesis initialization refuses an unmarked non-empty volume and rejects a marker for any other network identity. Lighthouse reads the verified generation directory through `--testnet-dir`.
+- Artifact-mode profiles are node-only in this slice: chart schema and templates reject `validator.enabled=true`, and the shared Web3Signer deployment remains bound to Hoodi.
 
-The local Flux application overlay now includes one catalog-generated HelmRelease in the safe `stopped` state. The stopped first install disables Helm's readiness wait because a WaitForFirstConsumer StorageClass has no Pod to bind its retained PVCs; a stopped → active upgrade uses the normal waiting upgrade action. The GitHub lifecycle form can request active or stopped desired state, but its active projection keeps `validator.enabled=false`: it starts only Geth and the Lighthouse beacon node for sync qualification.
+The local Flux application overlay includes Hoodi and Ephemery catalog-generated HelmReleases in the safe `stopped` state. A stopped first install disables Helm's readiness wait because a WaitForFirstConsumer StorageClass has no Pod to bind its retained PVCs; a stopped → active upgrade uses the normal waiting upgrade action. The GitHub lifecycle form can request active or stopped desired state for either assignment, but its active projection keeps `validator.enabled=false`: it starts only Geth and the Lighthouse beacon node for sync qualification.
 
-That is declared implementation, not runtime evidence. The pair has not yet completed a Flux-managed lifecycle or chain sync on this workstation.
+That is declared implementation, not runtime evidence. The immutable Ephemery bundle and non-root Geth initialization path were exercised in throwaway containers while developing this slice, but neither network has completed a Flux-managed lifecycle or chain sync yet.
 
 ## Storage
 

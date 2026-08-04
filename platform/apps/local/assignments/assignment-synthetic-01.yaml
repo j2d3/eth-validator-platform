@@ -32,7 +32,26 @@ spec:
   values:
     fullnameOverride: pair-validator-synthetic-01
     lifecycleState: stopped
-    network: hoodi
+    networkProfile:
+      name: hoodi
+      family: hoodi
+      generation: permanent
+      resetPolicy: persistent
+      identityFingerprint: c7484b91cd367b3b99a8e6dbfc92fe637ee435fa8a4d55cc5904777bf0e574b2
+      identity:
+        executionChainId: 560048
+        executionNetworkId: 560048
+        executionGenesisHash: '0xbbe312868b376a3001692a646dd2d7d1e4406380dfd86b98aa8a34d1557c971b'
+        consensusGenesisValidatorsRoot: '0x212f13fc4df078b6cb7db228f1c8307566dcecf900867401a92023d7ba99cb5f'
+        genesisForkVersion: '0x10000910'
+        consensusGenesisTime: 1742213400
+      clients:
+        geth:
+          mode: builtin
+          network: hoodi
+        lighthouse:
+          mode: builtin
+          network: hoodi
     executionClient: geth
     consensusClient: lighthouse
     telemetry:

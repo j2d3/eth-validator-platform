@@ -93,6 +93,21 @@ spec:
             }
 
             rule {
+              source_labels = ["__meta_kubernetes_pod_label_platform_galaxy_lab_network_profile"]
+              target_label  = "network_profile"
+            }
+
+            rule {
+              source_labels = ["__meta_kubernetes_pod_label_platform_galaxy_lab_network_generation"]
+              target_label  = "network_generation"
+            }
+
+            rule {
+              source_labels = ["__meta_kubernetes_pod_annotation_platform_galaxy_lab_network_identity"]
+              target_label  = "network_identity"
+            }
+
+            rule {
               source_labels = ["__meta_kubernetes_pod_label_platform_galaxy_lab_customer_id"]
               target_label  = "customer_id"
             }

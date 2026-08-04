@@ -7,7 +7,16 @@ metadata:
     platform.galaxy-lab/signing-enabled: {{ .Values.validator.enabled | quote }}
 data:
   lifecycleState: {{ .Values.lifecycleState | quote }}
-  network: {{ .Values.network | quote }}
+  network: {{ .Values.networkProfile.family | quote }}
+  networkProfile: {{ .Values.networkProfile.name | quote }}
+  networkGeneration: {{ .Values.networkProfile.generation | quote }}
+  networkIdentity: {{ .Values.networkProfile.identityFingerprint | quote }}
+  executionChainId: {{ printf "%.0f" .Values.networkProfile.identity.executionChainId | quote }}
+  executionNetworkId: {{ printf "%.0f" .Values.networkProfile.identity.executionNetworkId | quote }}
+  executionGenesisHash: {{ .Values.networkProfile.identity.executionGenesisHash | quote }}
+  consensusGenesisValidatorsRoot: {{ .Values.networkProfile.identity.consensusGenesisValidatorsRoot | quote }}
+  genesisForkVersion: {{ .Values.networkProfile.identity.genesisForkVersion | quote }}
+  consensusGenesisTime: {{ printf "%.0f" .Values.networkProfile.identity.consensusGenesisTime | quote }}
   executionClient: {{ .Values.executionClient | quote }}
   consensusClient: {{ .Values.consensusClient | quote }}
   validatorEnabled: {{ .Values.validator.enabled | quote }}

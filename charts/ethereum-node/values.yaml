@@ -5,7 +5,33 @@ fullnameOverride: ""
 # The first qualified vertical slice is deliberately Geth + Lighthouse. Other pair adapters land
 # only after their flags, ports, probes, signer integration, and metrics have dedicated tests.
 lifecycleState: stopped
-network: hoodi
+networkProfile:
+  name: hoodi
+  family: hoodi
+  generation: permanent
+  resetPolicy: persistent
+  identityFingerprint: c7484b91cd367b3b99a8e6dbfc92fe637ee435fa8a4d55cc5904777bf0e574b2
+  identity:
+    executionChainId: 560048
+    executionNetworkId: 560048
+    executionGenesisHash: "0xbbe312868b376a3001692a646dd2d7d1e4406380dfd86b98aa8a34d1557c971b"
+    consensusGenesisValidatorsRoot: "0x212f13fc4df078b6cb7db228f1c8307566dcecf900867401a92023d7ba99cb5f"
+    genesisForkVersion: "0x10000910"
+    consensusGenesisTime: 1742213400
+  clients:
+    geth:
+      mode: builtin
+      network: hoodi
+    lighthouse:
+      mode: builtin
+      network: hoodi
+
+# Custom/resetting networks use these digest-pinned tools to fetch and verify
+# one immutable release bundle before either client starts. Built-in networks
+# do not create these init containers.
+networkArtifactLoader:
+  downloadImage: curlimages/curl:8.16.0@sha256:463eaf6072688fe96ac64fa623fe73e1dbe25d8ad6c34404a669ad3ce1f104b6
+  verifyImage: busybox:1.37.0@sha256:9db7b59979c38555a39def84a31fb98b5296952f9e3afd4f6f11f05b07adfab0
 executionClient: geth
 consensusClient: lighthouse
 
@@ -62,34 +88,9 @@ validatorClient:
 executionClients:
   geth:
     image: ethereum/client-go:v1.17.5@sha256:523d3ba26623a619e912019068dc2784f02934070ac46bdae4d5b9df0d917814
-    args:
-      - "--{{ .Values.network }}"
-      - --datadir=/data
-      - --http
-      - --http.addr=0.0.0.0
-      - --http.api=eth,net,web3
-      - --authrpc.addr=0.0.0.0
-      - --authrpc.port=8551
-      - --authrpc.vhosts=*
-      - --authrpc.jwtsecret=/jwt/jwt.hex
-      - --metrics
-      - --metrics.addr=0.0.0.0
-      - --metrics.port=6060
 consensusClients:
   lighthouse:
     image: sigp/lighthouse:v8.2.1@sha256:9538f53d8e11766e3cb5de1889b292074f8e518e0dabe6df13d9054d504d1d62
-    args:
-      - bn
-      - "--network={{ .Values.network }}"
-      - --datadir=/data
-      - --execution-endpoint=http://127.0.0.1:8551
-      - --execution-jwt=/jwt/jwt.hex
-      - --http
-      - --http-address=0.0.0.0
-      - --http-port=5052
-      - --metrics
-      - --metrics-address=0.0.0.0
-      - --metrics-port=8008
 
 resources:
   execution:

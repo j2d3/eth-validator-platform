@@ -2,7 +2,9 @@
 apiVersion: v1
 kind: PersistentVolumeClaim
 metadata:
-  name: {{ include "ethereum-node.fullname" . }}-execution
+  name: {{ include "ethereum-node.executionPvcName" . }}
+  annotations:
+    platform.galaxy-lab/network-identity: {{ .Values.networkProfile.identityFingerprint | quote }}
   labels:
     {{- include "ethereum-node.labels" . | nindent 4 }}
 spec:
@@ -15,7 +17,9 @@ spec:
 apiVersion: v1
 kind: PersistentVolumeClaim
 metadata:
-  name: {{ include "ethereum-node.fullname" . }}-consensus
+  name: {{ include "ethereum-node.consensusPvcName" . }}
+  annotations:
+    platform.galaxy-lab/network-identity: {{ .Values.networkProfile.identityFingerprint | quote }}
   labels:
     {{- include "ethereum-node.labels" . | nindent 4 }}
 spec:
@@ -29,7 +33,9 @@ spec:
 apiVersion: v1
 kind: PersistentVolumeClaim
 metadata:
-  name: {{ include "ethereum-node.fullname" . }}-validator
+  name: {{ include "ethereum-node.validatorPvcName" . }}
+  annotations:
+    platform.galaxy-lab/network-identity: {{ .Values.networkProfile.identityFingerprint | quote }}
   labels:
     {{- include "ethereum-node.labels" . | nindent 4 }}
 spec:

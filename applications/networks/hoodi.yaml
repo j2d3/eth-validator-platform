@@ -1,0 +1,30 @@
+apiVersion: platform.galaxy-lab/v1alpha1
+kind: NetworkProfile
+metadata:
+  name: hoodi
+spec:
+  family: hoodi
+  generation: permanent
+  resetPolicy: persistent
+  identity:
+    executionChainId: 560048
+    executionNetworkId: 560048
+    executionGenesisHash: "0xbbe312868b376a3001692a646dd2d7d1e4406380dfd86b98aa8a34d1557c971b"
+    consensusGenesisValidatorsRoot: "0x212f13fc4df078b6cb7db228f1c8307566dcecf900867401a92023d7ba99cb5f"
+    genesisForkVersion: "0x10000910"
+    consensusGenesisTime: 1742213400
+  clients:
+    geth:
+      mode: builtin
+      network: hoodi
+    lighthouse:
+      mode: builtin
+      network: hoodi
+  signer:
+    web3signer:
+      mode: builtin
+      network: hoodi
+  deposit:
+    contractAddress: "0x00000000219ab540356cBB839Cbe05303d7705Fa"
+    deployBlock: 0
+    launchpadUrl: https://hoodi.launchpad.ethereum.org/

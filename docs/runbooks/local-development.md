@@ -273,9 +273,11 @@ central collection does not make unsafe logging acceptable.
 
 ## 8. Request a non-signing node-pair lifecycle change
 
-The repository contains one generated `HelmRelease` for
-`assignment-synthetic-01`. Its source of truth is the assignment, identity,
-customer, and service-profile catalog under `applications/`; direct edits to
+The repository contains stopped generated `HelmRelease` objects for the Hoodi
+`assignment-synthetic-01` and Ephemery
+`assignment-ephemery-162-synthetic` node pairs. Their source of truth is the
+assignment, identity, customer, service-profile, and network-profile catalog
+under `applications/`; direct edits to
 `platform/apps/local/assignments/` fail `make check`.
 
 While the assignment is stopped, its execution and consensus PVCs remain
@@ -303,11 +305,12 @@ AWS or GitHub credential in the workflow.
 From the GitHub Actions tab, run **Request non-signing node-pair lifecycle**
 with:
 
-- assignment: `assignment-synthetic-01`;
+- assignment: `assignment-synthetic-01` (Hoodi) or
+  `assignment-ephemery-162-synthetic` (the pinned Ephemery generation);
 - action: `activate` or `stop`;
 - reason: an auditable explanation between 3 and 256 characters.
 
-The workflow updates the assignment and regenerates its Flux HelmRelease, runs
+The workflow updates the selected assignment and regenerates its Flux HelmRelease, runs
 the catalog/tests, and opens a PR. It has `contents: write` and
 `pull-requests: write` only—no AWS credential, kubeconfig, OIDC token, or
 cluster access. After CI and review, merge through `hack/merge-pr.sh`; Flux is
@@ -318,8 +321,8 @@ For an activation request, verify the declared boundary before review:
 ```bash
 python3 tools/render_local_assignments.py --check
 git diff origin/main -- \
-  applications/validators/assignments/assignment-synthetic-01.yaml \
-  platform/apps/local/assignments/assignment-synthetic-01.yaml
+  applications/validators/assignments/<assignment>.yaml \
+  platform/apps/local/assignments/<assignment>.yaml
 ```
 
 `lifecycleState: active` must be paired with `validator.enabled: false`. This
@@ -327,13 +330,19 @@ starts Geth and the Lighthouse beacon node for sync practice; it does **not**
 start the Lighthouse validator client and cannot sign. The initial workflow
 refuses assignments whose catalog state already enables signing.
 
+For Ephemery, activation first downloads and verifies the immutable generation
+bundle, initializes a generation-specific execution PVC, and mounts the same
+verified config/genesis directory into Lighthouse. A new Ephemery generation
+requires a new profile and new PVC names; never edit the old profile in place.
+
 After Flux reconciles an approved activation, observe rather than infer:
 
 ```bash
 flux get helmreleases -n ethereum
 kubectl -n ethereum get helmrelease,statefulset,pod,pvc,externalsecret
-kubectl -n ethereum logs statefulset/assignment-synthetic-01 -c execution --tail=100
-kubectl -n ethereum logs statefulset/assignment-synthetic-01 -c consensus --tail=100
+kubectl -n ethereum logs statefulset/pair-validator-synthetic-01 -c execution --tail=100
+kubectl -n ethereum logs statefulset/pair-validator-synthetic-01 -c consensus --tail=100
+# Ephemery uses statefulset/pair-ephemery-162-synthetic.
 ```
 
 A successful first exercise is stopped → active → stopped through two reviewed
