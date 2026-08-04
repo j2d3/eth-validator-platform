@@ -47,6 +47,12 @@ missing database/signing role or Pod security-group ID. The ConfigMap is annotat
 `kustomize.toolkit.fluxcd.io/prune=disabled` because it is a bootstrap input,
 not a Git-managed application object.
 
+The controller Kustomization also requires the separate
+`flux-system/aws-ingress-inputs` ConfigMap containing only the exact-hostname
+ACM certificate ARN from the DNS Terraform root. It is non-secret but
+account-specific, uses the same prune-disabled bootstrap-input boundary, and
+must exist before ingress-nginx reconciliation.
+
 Before the separately suspended `signer-infrastructure-configs` layer is
 resumed, the operator adds the database/signing reader fields and distinct
 non-secret
