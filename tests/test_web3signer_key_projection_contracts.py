@@ -137,6 +137,7 @@ class Web3SignerKeyProjectionContracts(unittest.TestCase):
         )
         generated_name = network_volume["configMap"]["name"]
         network_config_map = object_named(self.documents, "ConfigMap", generated_name)
+        self.assertEqual(network_config_map["metadata"]["namespace"], "signing")
         config_text = network_config_map["data"]["config.yaml"]
         active_config = "\n".join(
             line for line in config_text.splitlines() if not line.lstrip().startswith("#")

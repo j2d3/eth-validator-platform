@@ -116,6 +116,14 @@ patches:
         path: /metadata/namespace
         value: signing
   - target:
+      version: v1
+      kind: ConfigMap
+      name: web3signer-network-config-ephemery-162
+    patch: |-
+      - op: add
+        path: /metadata/namespace
+        value: signing
+  - target:
       group: networking.k8s.io
       version: v1
       kind: NetworkPolicy
