@@ -109,9 +109,10 @@ Terraform creates secret **containers**, never secret versions:
   JSON (`host`, `port`, `database`, `username`, `password`); the EKS adapter
   projects the canonical `database` property to target `dbname` only where a
   Flyway/Web3Signer environment requires that alias; and
-- one identity-addressed container per validator signing key. The first two are
+- one identity-addressed container per validator signing key. The first three are
   `.../signing/validator-keystore` and
-  `.../signing/validator-keystore-02`. Each stores one encrypted testnet
+  `.../signing/validator-keystore-02`, and
+  `.../signing/validator-keystore-03`. Each stores one encrypted testnet
   keystore bundle and its password; adding an identity never rotates or
   overwrites another identity's container.
 
