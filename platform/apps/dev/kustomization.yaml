@@ -4,6 +4,7 @@ resources:
   - ../base/web3signer
   - ../base/aws-rds-ca
   - profile.yaml
+  - validator-keystore-secret.yaml
 
 patches:
   - path: signer-telemetry-patch.yaml
@@ -43,6 +44,32 @@ patches:
       - op: replace
         path: /spec/template/spec/containers/0/args/11
         value: --slashing-protection-db-url=jdbc:postgresql://$(DB_HOST):$(DB_PORT)/$(DB_NAME)?sslmode=verify-full&sslrootcert=/var/run/aws-rds-ca/rds-ca.pem
+      - op: replace
+        path: /spec/template/spec/containers/0/args/9
+        value: --network=ephemery
+      - op: add
+        path: /spec/template/spec/securityContext/fsGroup
+        value: 999
+      - op: add
+        path: /spec/template/spec/securityContext/fsGroupChangePolicy
+        value: OnRootMismatch
+      - op: add
+        path: /spec/template/spec/containers/0/volumeMounts/0/readOnly
+        value: true
+      - op: replace
+        path: /spec/template/spec/volumes/0
+        value:
+          name: key-store
+          secret:
+            secretName: web3signer-validator-keystore
+            defaultMode: 0440
+            items:
+              - key: validator.json
+                path: validator.json
+              - key: validator.password
+                path: validator.password
+              - key: validator.yaml
+                path: validator.yaml
       - op: add
         path: /spec/template/spec/containers/0/volumeMounts/-
         value:
