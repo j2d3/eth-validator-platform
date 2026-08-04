@@ -98,10 +98,25 @@ SCALAR_QUERIES = {
         'sum(kubelet_volume_stats_capacity_bytes{namespace="ethereum"}) '
         "or vector(0)"
     ),
+    "signerUp": "max(validator_platform_signer_up)",
+    "signerKeysLoaded": "max(validator_platform_signer_keys_loaded)",
+    "signingValidatorsEnabled": (
+        "sum(validator_platform_validator_enabled) or vector(0)"
+    ),
+    "signingPermittedTotal": (
+        "max(validator_platform_signer_slashing_permitted_total)"
+    ),
+    "signingPreventedTotal": (
+        "max(validator_platform_signer_slashing_prevented_total)"
+    ),
+    "signingMissingIdentifierTotal": (
+        "max(validator_platform_signer_missing_identifier_total)"
+    ),
 }
 
 PAIR_QUERIES = {
     "targetUp": "validator_platform_pair_target_up",
+    "validatorEnabled": "validator_platform_validator_enabled",
     "executionPeers": "validator_platform_execution_peers",
     "consensusPeers": "validator_platform_consensus_peers",
     "executionHeadBlock": "validator_platform_execution_head_block",
@@ -269,6 +284,7 @@ def _pair_snapshot(results: dict[str, list[dict[str, Any]]]) -> list[dict[str, A
                 "consensusClient": labels.get("consensus_client"),
                 "lifecycleState": labels.get("lifecycle_state"),
                 "targets": {},
+                "signing": {},
                 "sync": {},
                 "resources": {"cpuCores": {}, "memoryBytes": {}},
                 "grafanaUrl": _grafana_url(labels),
@@ -277,6 +293,7 @@ def _pair_snapshot(results: dict[str, list[dict[str, Any]]]) -> list[dict[str, A
         pair["targets"][component] = value
 
     scalar_pair_fields = {
+        "validatorEnabled": ("signing", "validatorsEnabled"),
         "executionPeers": ("sync", "executionPeers"),
         "consensusPeers": ("sync", "consensusPeers"),
         "executionHeadBlock": ("sync", "executionHeadBlock"),
@@ -369,6 +386,14 @@ def build_snapshot(client: PrometheusClient | Any) -> dict[str, Any]:
                     "capacity": scalars["ethereumVolumeCapacityBytes"],
                 },
             },
+        },
+        "signing": {
+            "validatorsEnabled": scalars["signingValidatorsEnabled"],
+            "signerUp": scalars["signerUp"],
+            "keysLoaded": scalars["signerKeysLoaded"],
+            "slashingPermittedTotal": scalars["signingPermittedTotal"],
+            "slashingPreventedTotal": scalars["signingPreventedTotal"],
+            "missingIdentifierTotal": scalars["signingMissingIdentifierTotal"],
         },
         "pairs": pairs,
     }

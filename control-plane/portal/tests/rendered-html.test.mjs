@@ -58,7 +58,12 @@ test("server-renders the environment status page", async () => {
   assert.match(html, /Environment status/);
   assert.match(html, /Loading live status/);
   assert.match(html, /Kubernetes and node dashboards/);
-  assert.match(html, /Signing<\/span><strong>Disabled/);
+  assert.match(html, /Signing validators<\/span><strong>Unavailable/);
+  assert.match(
+    html,
+    /href="https:\/\/ops\.g\.j2d3\.com\/grafana\/d\/eth-eks-ephemery-sync\/ethereum-platform-eks-ephemery-sync-evidence\?orgId=1"/,
+  );
+  assert.doesNotMatch(html, /Signing<\/span><strong>Disabled/);
   assert.match(html, /Client-pair sync/);
   assert.match(html, /Project links/);
   assert.equal(

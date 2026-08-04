@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useState } from "react";
-import { statusEndpoint } from "../lib/portal-registry";
+import { signingDashboard, statusEndpoint } from "../lib/portal-registry";
 
 type NullableNumber = number | null;
 
@@ -13,12 +13,24 @@ type PairSnapshot = {
   consensusClient: string | null;
   lifecycleState: string | null;
   targets: Record<string, NullableNumber | undefined>;
+  signing?: {
+    validatorsEnabled: NullableNumber;
+  };
   sync: Record<string, NullableNumber | undefined>;
   resources: {
     cpuCores: Record<string, NullableNumber | undefined>;
     memoryBytes: Record<string, NullableNumber | undefined>;
   };
   grafanaUrl: string | null;
+};
+
+type SigningSnapshot = {
+  validatorsEnabled: NullableNumber;
+  signerUp: NullableNumber;
+  keysLoaded: NullableNumber;
+  slashingPermittedTotal: NullableNumber;
+  slashingPreventedTotal: NullableNumber;
+  missingIdentifierTotal: NullableNumber;
 };
 
 type StatusSnapshot = {
@@ -63,6 +75,7 @@ type StatusSnapshot = {
       };
     };
   };
+  signing?: SigningSnapshot;
   pairs: PairSnapshot[];
 };
 
@@ -91,6 +104,12 @@ function isPair(value: unknown): value is PairSnapshot {
   if (!isRecord(value.targets) || !isRecord(value.sync)) return false;
   if (!isRecord(value.resources)) return false;
   if (!isRecord(value.resources.cpuCores) || !isRecord(value.resources.memoryBytes)) {
+    return false;
+  }
+  if (
+    value.signing !== undefined &&
+    !hasNullableNumbers(value.signing, ["validatorsEnabled"])
+  ) {
     return false;
   }
   for (const name of [
@@ -156,6 +175,19 @@ function isSnapshot(value: unknown): value is StatusSnapshot {
   ) {
     return false;
   }
+  if (
+    value.signing !== undefined &&
+    !hasNullableNumbers(value.signing, [
+      "validatorsEnabled",
+      "signerUp",
+      "keysLoaded",
+      "slashingPermittedTotal",
+      "slashingPreventedTotal",
+      "missingIdentifierTotal",
+    ])
+  ) {
+    return false;
+  }
   return value.pairs.every(isPair);
 }
 
@@ -208,6 +240,40 @@ function pairTarget(value: NullableNumber | undefined): string {
   return "Unavailable";
 }
 
+function validatorsEnabled(value: NullableNumber | undefined): string {
+  if (value === null || value === undefined) return "Unavailable";
+  return `${formatNumber(value, 0)} enabled`;
+}
+
+function EnvironmentHeading({ signing }: { signing?: SigningSnapshot }) {
+  const validators = signing?.validatorsEnabled;
+  const signerUp = signing?.signerUp;
+  const available = validators !== null && validators !== undefined;
+  const healthy = available && validators > 0 && signerUp === 1;
+  const signerLabel =
+    signerUp === 1 ? "Signer up" : signerUp === 0 ? "Signer down" : "Signer unavailable";
+
+  return (
+    <section className="environment-heading" aria-labelledby="page-title">
+      <div>
+        <p className="context">Development · EKS · AWS us-west-2</p>
+        <h1 id="page-title">Environment status</h1>
+      </div>
+      <a
+        className={`signing-state ${healthy ? "signing-state--ready" : "signing-state--off"}`}
+        href={signingDashboard}
+        aria-label={`Open signing metrics in Grafana: ${
+          validatorsEnabled(validators).toLowerCase()
+        }, ${signerLabel.toLowerCase()}`}
+      >
+        <span>Signing validators</span>
+        <strong>{validatorsEnabled(validators)}</strong>
+        <small>{signerLabel} · Grafana ↗</small>
+      </a>
+    </section>
+  );
+}
+
 export default function LiveStatus() {
   const [snapshot, setSnapshot] = useState<StatusSnapshot | null>(null);
   const [error, setError] = useState<string | null>(null);
@@ -243,9 +309,12 @@ export default function LiveStatus() {
 
   if (!snapshot) {
     return (
-      <section className="panel telemetry-message" aria-live="polite">
-        {error ?? "Loading live status…"}
-      </section>
+      <>
+        <EnvironmentHeading />
+        <section className="panel telemetry-message" aria-live="polite">
+          {error ?? "Loading live status…"}
+        </section>
+      </>
     );
   }
 
@@ -255,6 +324,8 @@ export default function LiveStatus() {
 
   return (
     <>
+      <EnvironmentHeading signing={snapshot.signing} />
+
       <section className="summary-grid" aria-label="Live cluster summary">
         <article className="summary-item">
           <span className="summary-item__label">Ready nodes</span>
@@ -315,6 +386,39 @@ export default function LiveStatus() {
         </article>
       </section>
 
+      <section className="panel" aria-labelledby="signing-title">
+        <div className="panel-heading">
+          <h2 id="signing-title">Signing</h2>
+          <a href={signingDashboard}>Open in Grafana</a>
+        </div>
+        <div className="summary-grid signing-summary-grid">
+          <article className="summary-item">
+            <span className="summary-item__label">Validators enabled</span>
+            <strong>{formatNumber(snapshot.signing?.validatorsEnabled, 0)}</strong>
+          </article>
+          <article className="summary-item">
+            <span className="summary-item__label">Signer target</span>
+            <strong>{pairTarget(snapshot.signing?.signerUp)}</strong>
+          </article>
+          <article className="summary-item">
+            <span className="summary-item__label">Keys loaded</span>
+            <strong>{formatNumber(snapshot.signing?.keysLoaded, 0)}</strong>
+          </article>
+          <article className="summary-item">
+            <span className="summary-item__label">Permitted checks</span>
+            <strong>{formatNumber(snapshot.signing?.slashingPermittedTotal, 0)}</strong>
+          </article>
+          <article className="summary-item">
+            <span className="summary-item__label">Prevented checks</span>
+            <strong>{formatNumber(snapshot.signing?.slashingPreventedTotal, 0)}</strong>
+          </article>
+          <article className="summary-item">
+            <span className="summary-item__label">Unknown-key requests</span>
+            <strong>{formatNumber(snapshot.signing?.missingIdentifierTotal, 0)}</strong>
+          </article>
+        </div>
+      </section>
+
       <section className="panel" aria-labelledby="pairs-title">
         <div className="panel-heading">
           <h2 id="pairs-title">Client pairs</h2>
@@ -331,6 +435,7 @@ export default function LiveStatus() {
                 <th scope="col">Clients</th>
                 <th scope="col">Network</th>
                 <th scope="col">Targets</th>
+                <th scope="col">Signing</th>
                 <th scope="col">Peers</th>
                 <th scope="col">Sync</th>
                 <th scope="col">Resources</th>
@@ -340,7 +445,7 @@ export default function LiveStatus() {
             <tbody>
               {snapshot.pairs.length === 0 ? (
                 <tr>
-                  <td colSpan={8}>No active client pairs observed.</td>
+                  <td colSpan={9}>No active client pairs observed.</td>
                 </tr>
               ) : (
                 snapshot.pairs.map((pair) => {
@@ -368,6 +473,9 @@ export default function LiveStatus() {
                       <td>
                         EL {pairTarget(pair.targets.execution)} · CL{" "}
                         {pairTarget(pair.targets.consensus)}
+                      </td>
+                      <td>
+                        {validatorsEnabled(pair.signing?.validatorsEnabled)}
                       </td>
                       <td>
                         EL {formatNumber(pair.sync.executionPeers, 0)} · CL{" "}

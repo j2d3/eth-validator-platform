@@ -123,9 +123,23 @@ spec:
             {{- end }}
             {{ join " or " $exprs }}
 
-        {{- /* Validator-client + process-generic (client-agnostic) rules. */}}
+        {{- /* Validator-client + process-generic rules. */}}
+        {{- $validatorClients := dict -}}
+        {{- range $client, $spec := $consClients -}}
+        {{- if hasKey $spec.metrics "validatorEnabled" -}}
+        {{- $_ := set $validatorClients $client $spec -}}
+        {{- end -}}
+        {{- end }}
+        {{- if $validatorClients }}
         - record: validator_platform_validator_enabled
-          expr: max by ({{ $telemetryLabels }}) (validator_enabled_count{platform="ethereum-validator",component="validator"})
+          expr: >-
+            {{- $exprs := list -}}
+            {{- range $client, $spec := $validatorClients -}}
+            {{- $one := printf "max by (%s) (%s{platform=\"ethereum-validator\",component=\"validator\",consensus_client=\"%s\"})" $telemetryLabels $spec.metrics.validatorEnabled $client -}}
+            {{- $exprs = append $exprs $one -}}
+            {{- end }}
+            {{ join " or " $exprs }}
+        {{- end }}
         - record: validator_platform_process_cpu_cores
           expr: sum by ({{ $telemetryLabels }}, component) (rate(process_cpu_seconds_total{platform="ethereum-validator"}[5m]))
         - record: validator_platform_process_resident_memory_bytes

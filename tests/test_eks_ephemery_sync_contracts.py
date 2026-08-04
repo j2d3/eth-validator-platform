@@ -335,6 +335,16 @@ class EksEphemeryRenderTests(unittest.TestCase):
         self.assertIn("sync_peers_per_status", peer_rule["expr"])
         self.assertNotIn("libp2p_peers", peer_rule["expr"])
 
+    def test_validator_rule_uses_the_observed_lighthouse_metric(self) -> None:
+        rules = self.by_kind["PrometheusRule"][0]["spec"]["groups"][0]["rules"]
+        validator_rule = next(
+            rule
+            for rule in rules
+            if rule.get("record") == "validator_platform_validator_enabled"
+        )
+        self.assertIn("vc_validators_enabled_count", validator_rule["expr"])
+        self.assertNotIn("validator_enabled_count{", validator_rule["expr"])
+
     def test_lighthouse_receives_digest_verified_ephemery_bootnodes(self) -> None:
         stateful_set = self.by_kind["StatefulSet"][0]
         consensus = next(
