@@ -497,6 +497,12 @@ database-creation, role-creation, or replication authority. It then writes the
 five-field application JSON to the existing Secrets Manager container and
 deletes its Job, NetworkPolicy, Secret, and CA ConfigMap.
 
+RDS master users are members of the AWS-managed `rds_superuser` role but are
+not PostgreSQL superusers. The bootstrap therefore verifies that any existing
+application role already has every privileged attribute disabled before it
+sets `LOGIN` and the generated password; it never attempts a superuser-only
+`ALTER ROLE ... NOSUPERUSER` operation.
+
 Run from a clean checkout with the project-local Terraform binary first on
 `PATH`. Do not add tracing, redirect AWS output, or inspect either secret
 value:

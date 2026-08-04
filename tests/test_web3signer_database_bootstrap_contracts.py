@@ -70,7 +70,16 @@ class Web3SignerDatabaseBootstrapContracts(unittest.TestCase):
         self.assertIn('export PGPASSWORD="$MASTER_PASSWORD"', command)
         self.assertNotIn("--password=", command)
         self.assertNotIn("--set=app_password", command)
-        self.assertIn("NOSUPERUSER NOCREATEDB NOCREATEROLE NOREPLICATION", command)
+        self.assertIn("ALTER ROLE %I WITH LOGIN PASSWORD %L", command)
+        self.assertNotIn("ALTER ROLE %I WITH LOGIN INHERIT NOSUPERUSER", command)
+
+    def test_sql_refuses_a_preexisting_privileged_role_before_altering_it(self) -> None:
+        command = self.by_kind["Job"]["spec"]["template"]["spec"]["containers"][0]["args"][0]
+        safety_check = command.index("AS role_attributes_are_safe")
+        alter_role = command.index("ALTER ROLE %I WITH LOGIN PASSWORD %L")
+        self.assertLess(safety_check, alter_role)
+        for attribute in ("rolsuper", "rolcreatedb", "rolcreaterole", "rolreplication"):
+            self.assertIn(f"NOT {attribute}", command)
 
     def test_tls_and_egress_are_fail_closed(self) -> None:
         command = self.by_kind["Job"]["spec"]["template"]["spec"]["containers"][0]["args"][0]
