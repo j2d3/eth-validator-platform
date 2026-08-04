@@ -68,6 +68,14 @@ class Web3SignerKeyProjectionContracts(unittest.TestCase):
                     "key": "eth-validator-platform-dev/signing/validator-keystore-02",
                     "property": "password",
                 },
+                "keystore03": {
+                    "key": "eth-validator-platform-dev/signing/validator-keystore-03",
+                    "property": "keystore",
+                },
+                "password03": {
+                    "key": "eth-validator-platform-dev/signing/validator-keystore-03",
+                    "property": "password",
+                },
             },
         )
 
@@ -84,10 +92,13 @@ class Web3SignerKeyProjectionContracts(unittest.TestCase):
             "validator-02.json",
             "validator-02.password",
             "validator-02.yaml",
+            "validator-03.json",
+            "validator-03.password",
+            "validator-03.yaml",
         })
         descriptors = {
             name: yaml.safe_load(template["data"][name])
-            for name in ("validator.yaml", "validator-02.yaml")
+            for name in ("validator.yaml", "validator-02.yaml", "validator-03.yaml")
         }
         self.assertEqual(
             descriptors,
@@ -103,6 +114,12 @@ class Web3SignerKeyProjectionContracts(unittest.TestCase):
                     "keyType": "BLS",
                     "keystoreFile": "/var/run/web3signer/keys/validator-02.json",
                     "keystorePasswordFile": "/var/run/web3signer/keys/validator-02.password",
+                },
+                "validator-03.yaml": {
+                    "type": "file-keystore",
+                    "keyType": "BLS",
+                    "keystoreFile": "/var/run/web3signer/keys/validator-03.json",
+                    "keystorePasswordFile": "/var/run/web3signer/keys/validator-03.password",
                 },
             },
         )
@@ -131,6 +148,9 @@ class Web3SignerKeyProjectionContracts(unittest.TestCase):
                     {"key": "validator-02.json", "path": "validator-02.json"},
                     {"key": "validator-02.password", "path": "validator-02.password"},
                     {"key": "validator-02.yaml", "path": "validator-02.yaml"},
+                    {"key": "validator-03.json", "path": "validator-03.json"},
+                    {"key": "validator-03.password", "path": "validator-03.password"},
+                    {"key": "validator-03.yaml", "path": "validator-03.yaml"},
                 ],
             },
         )

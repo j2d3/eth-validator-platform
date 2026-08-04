@@ -77,6 +77,12 @@ patches:
                 path: validator-02.password
               - key: validator-02.yaml
                 path: validator-02.yaml
+              - key: validator-03.json
+                path: validator-03.json
+              - key: validator-03.password
+                path: validator-03.password
+              - key: validator-03.yaml
+                path: validator-03.yaml
       - op: add
         path: /spec/template/spec/containers/0/volumeMounts/-
         value:
