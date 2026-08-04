@@ -75,22 +75,27 @@ What this changes in practice:
 
 ## Repository visibility and the Git-source credential
 
-This repository is public as a portfolio and disclosure choice, not because a production operator repository would be. A real operator repository would be private, and the Git-source credential Flux uses would change shape accordingly.
+This repository is public as a portfolio and disclosure choice, not because a production operator repository would be. A production instance would be private, and — more importantly — the cluster would not authenticate to Git at all. The production shape moves the reconciliation source from Git to a signed OCI artifact in ECR, and the cluster-edge credential from a static Git secret to a short-lived AWS role assumed via EKS Pod Identity.
 
-The change is on two axes: what makes the repository safe to share, and what the cluster uses to fetch from it.
+The two shapes side by side:
 
-| Concern | This demo (public) | Production target (private) |
+| Concern | This demo | Production target |
 |---|---|---|
 | Repository visibility | Public, audited free of keys, personal identifiers, company references, and load-bearing operational strings | Private, with the same content hygiene held as a precondition rather than a demonstration |
-| Git-source credential | Read-only ECDSA deploy key created once from a trusted workstation, private half held only in the EKS `flux-system` Secret; documented in [eks-flux-bootstrap.md §4](runbooks/eks-flux-bootstrap.md) | A GitHub App installed on the repository with `Contents: read`; App private key held in AWS Secrets Manager, synced into `flux-system` by External Secrets. Flux exchanges the private key for a 1-hour installation token per fetch |
-| Bootstrap ordering | Anonymous HTTPS reaches the repository, so External Secrets can be reconciled from the same source without a chicken-and-egg problem | Two-stage bootstrap: a one-time manual `kubectl create secret` seeds the App key so Flux can reach the private repository; External Secrets takes over rotation from that point forward |
-| Credential rotation | Delete and regenerate the deploy key; re-run the bootstrap runbook | Update the Secrets Manager version; External Secrets propagates; no bootstrap re-run |
-| Blast radius on credential compromise | Read-only access to one public repository whose content is already publicly disclosed | Read-only access to one private repository via a scoped, revocable App installation |
+| What the cluster reconciles from | The Git repository directly, over SSH | An `OCIRepository` in ECR, containing rendered, validated, and cosign-signed manifests published by CI |
+| Cluster-edge credential | A read-only ECDSA deploy key created once from a trusted workstation, private half held in the EKS `flux-system` Secret; documented in [eks-flux-bootstrap.md §4](runbooks/eks-flux-bootstrap.md) | A short-lived AWS role assumed by the Flux `source-controller` Pod through EKS Pod Identity. No Git credential lives in the cluster at all |
+| Where the private-repo credential does live | N/A — repo is public | Only in CI. CI uses a GitHub App installation (private key held in AWS Secrets Manager) to react to PRs, render manifests, and push OCI artifacts to ECR. That credential never enters the cluster |
+| Provenance gate on reconciliation | Reconciles whatever is on `main` at fetch time | Flux verifies the cosign signature on the OCI artifact before reconciling; unsigned or mis-signed artifacts fail closed |
+| Bootstrap ordering | Anonymous HTTPS reaches the repository, so External Secrets can be reconciled from the same source without a chicken-and-egg problem | The cluster only needs to assume its Pod Identity role and reach ECR. No manual key-seeding step; no bootstrap circularity between External Secrets and its own Git source |
+| Credential rotation | Delete and regenerate the deploy key; re-run the bootstrap runbook | Rotate the AWS role, or the App private key in Secrets Manager that CI uses. The cluster's Git-source credential does not exist to rotate |
+| Blast radius on credential compromise | Read-only access to one public repository whose content is already publicly disclosed | Compromise of the cluster's Pod Identity role gives read on signed OCI artifacts — not Git history, not write on manifests. Compromise of the CI GitHub App gives repo read and ECR write under CI's scoped, revocable role |
 | Approval and merge policy | Two-agent cross-review with the fail-closed `hack/merge-pr.sh` wrapper | The same wrapper, plus branch protection with required human approvers on protected paths (Terraform, cluster manifests, signing configuration) |
 
-The GitHub App migration is tracked as a follow-up. It is a strict improvement over the deploy-key path but explicitly not on the visibility critical path today.
+**Why the production target moves the trust boundary this far rather than stopping at "GitHub App for Flux too."** A GitHub App installation is a strict improvement over a deploy key — repo-scoped, permission-scoped, short-lived installation tokens per fetch, revocable in one click — but it still requires a long-lived private key inside the cluster (or somewhere the cluster can reach). Splitting reconciliation so that **CI holds the Git credential** and **the cluster holds only an AWS role** removes that credential from the cluster edge entirely. It also introduces cosign verification as a hard gate, so a compromised CI cannot silently push a malicious artifact that a passive Flux would accept.
 
-One structural note that is easy to miss: **there is no OIDC federation into GitHub**. GitHub issues OIDC tokens — that is how the CI role assumes AWS — but does not accept them for calls into its own API. A truly credential-free path from an EKS workload to a GitHub repository does not exist today; the GitHub App pattern is the closest available substitute.
+**One structural fact that shapes both choices:** there is no OIDC federation *into* GitHub. GitHub issues OIDC tokens — that is how CI itself assumes an AWS role — but it does not accept them for calls into its own API. A truly credential-free path from an EKS workload to a GitHub repository does not exist today. The production target routes around that by making the cluster's reconciliation source AWS-native (ECR + Pod Identity) rather than trying to authenticate the cluster to GitHub with something better than a static credential.
+
+**The migration is a follow-up, not on the visibility critical path today.** It requires: a GitHub App installation on the repository; an ECR repository with a lifecycle policy for the manifest artifact; a CI workflow that renders, validates, cosign-signs, and pushes; an EKS Pod Identity association for `flux-system` with an IAM role granting `ecr:GetAuthorizationToken` and read on the artifact repository; and a `Flux OCIRepository` resource with `verify.provider: cosign` and the intended signer's public key. Each of those is a normal, well-supported control; the aggregate is what removes the "cluster has to hold a Git credential" problem.
 
 ## The invariants do not change — their enforcement mechanism does
 
