@@ -23,6 +23,12 @@ The repository builds this platform in a way that would carry over to a regulate
 
 It is a lab, not a production service.
 
+## Why this repository is public
+
+Public visibility is a deliberate portfolio and disclosure choice, not the shape a production operator repository would take. A production instance would be private, and the Flux Git-source credential would change accordingly (a GitHub App installation with the private key held in AWS Secrets Manager and synced into the cluster by External Secrets, rather than the read-only deploy key documented for this demo). The specific differences between the two shapes — visibility, credential, bootstrap ordering, rotation, blast radius, and merge policy — are captured in [production-evolution.md — Repository visibility and the Git-source credential](docs/production-evolution.md).
+
+The other half of the choice is what a repository has to look like to *be* safe to share: no keys, no personal identifiers, no company references, no credential-bearing configuration, and no operational strings that would leak infrastructure shape. That standard applies whether a repository is public or private; the public artifact is the evidence.
+
 ## Design principles
 
 Distilled from the seventeen safety invariants in PRD §5. These are product requirements — a change that violates one is rejected, not negotiated.

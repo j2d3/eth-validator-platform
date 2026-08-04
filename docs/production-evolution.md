@@ -73,6 +73,25 @@ What this changes in practice:
 - **Workload identity replaces "everything in one namespace."** Production requires EKS Pod Identity or IRSA with one role per responsibility (PRD §13.1). There is no local equivalent to get wrong, which means there is also no local test that catches getting it wrong.
 - **Network policy and filesystem isolation are different controls, and it is not NetworkPolicy that protects the keystore.** NetworkPolicy constrains network paths. It cannot stop a compromised process from reading a volume already projected into its own pod, and the validator client is *supposed* to reach the signer API — that path is the design, not a leak. What protects signer material is that the keystore is projected only into the signing namespace, plus pod isolation, service-account and RBAC separation, and runtime identity. NetworkPolicy's job is the narrower one of keeping everything else off the signer, database, and metrics paths (PRD §13.2). Locally it is also only *declared*: the default `kind` CNI does not implement NetworkPolicy, so the manifests are validated but their runtime behavior is not exercised at all.
 
+## Repository visibility and the Git-source credential
+
+This repository is public as a portfolio and disclosure choice, not because a production operator repository would be. A real operator repository would be private, and the Git-source credential Flux uses would change shape accordingly.
+
+The change is on two axes: what makes the repository safe to share, and what the cluster uses to fetch from it.
+
+| Concern | This demo (public) | Production target (private) |
+|---|---|---|
+| Repository visibility | Public, audited free of keys, personal identifiers, company references, and load-bearing operational strings | Private, with the same content hygiene held as a precondition rather than a demonstration |
+| Git-source credential | Read-only ECDSA deploy key created once from a trusted workstation, private half held only in the EKS `flux-system` Secret; documented in [eks-flux-bootstrap.md §4](runbooks/eks-flux-bootstrap.md) | A GitHub App installed on the repository with `Contents: read`; App private key held in AWS Secrets Manager, synced into `flux-system` by External Secrets. Flux exchanges the private key for a 1-hour installation token per fetch |
+| Bootstrap ordering | Anonymous HTTPS reaches the repository, so External Secrets can be reconciled from the same source without a chicken-and-egg problem | Two-stage bootstrap: a one-time manual `kubectl create secret` seeds the App key so Flux can reach the private repository; External Secrets takes over rotation from that point forward |
+| Credential rotation | Delete and regenerate the deploy key; re-run the bootstrap runbook | Update the Secrets Manager version; External Secrets propagates; no bootstrap re-run |
+| Blast radius on credential compromise | Read-only access to one public repository whose content is already publicly disclosed | Read-only access to one private repository via a scoped, revocable App installation |
+| Approval and merge policy | Two-agent cross-review with the fail-closed `hack/merge-pr.sh` wrapper | The same wrapper, plus branch protection with required human approvers on protected paths (Terraform, cluster manifests, signing configuration) |
+
+The GitHub App migration is tracked as a follow-up. It is a strict improvement over the deploy-key path but explicitly not on the visibility critical path today.
+
+One structural note that is easy to miss: **there is no OIDC federation into GitHub**. GitHub issues OIDC tokens — that is how the CI role assumes AWS — but does not accept them for calls into its own API. A truly credential-free path from an EKS workload to a GitHub repository does not exist today; the GitHub App pattern is the closest available substitute.
+
 ## The invariants do not change — their enforcement mechanism does
 
 This is the distinction worth internalizing. None of the seventeen PRD §5 invariants get weaker, stricter, or renegotiated in production. What changes is what enforces them.
@@ -85,7 +104,7 @@ This is the distinction worth internalizing. None of the seventeen PRD §5 invar
 | 6 — no key generation on pod restart | An `ExternalSecret` reference to a pre-existing secret. The workload contains no generation path, and it fails when the identity is absent rather than creating one | The same reference contract, with Secrets Manager versioning and a documented encrypted recovery copy behind it |
 | 7 / 9 — readiness is not authorization; fail closed | **Partial today.** Schema-enforced desired state: `signingEnabled: true` requires `lifecycle: active`, a `nodePairRef`, and `slashingProtectionConfirmed` / `doppelgangerProtectionConfirmed`, plus the Lighthouse `--enable-doppelganger-protection` flag. Those confirmations are *self-attested fields*, not runtime checks | The same declarative gates, plus the runtime qualification that is still planned — sync distance, clock health, network identity, signer health, uniqueness, and runtime doppelganger — and signer/database HA across AZs |
 | 8 — slashing history outlives workloads | Database survives Helm uninstall | Database is in a different service, VPC path, and failure domain entirely |
-| 12 — merge is deployment authorization | Flux from a private repo, with branch protection, required status checks, CODEOWNERS review, and linear history already enabled on `main` | The same controls, plus environment approval for sensitive workflows |
+| 12 — merge is deployment authorization | Flux reconciliation from the repository, with branch protection, required status checks, CODEOWNERS review, and linear history already enabled on `main`. This demo repository is public; a production instance would be private, and the Git-source credential path changes as described above | The same controls, plus environment approval for sensitive workflows |
 
 The invariants that are cheapest to satisfy locally — 2, 6, 8 — are the ones whose production enforcement is most complex. That inversion is worth watching: local ease is not a signal of production simplicity.
 
