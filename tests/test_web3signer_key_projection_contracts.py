@@ -1,4 +1,4 @@
-"""Contracts for projecting one encrypted EIP-2335 key into Web3Signer."""
+"""Contracts for projecting identity-separated EIP-2335 keys into Web3Signer."""
 
 from __future__ import annotations
 
@@ -60,10 +60,18 @@ class Web3SignerKeyProjectionContracts(unittest.TestCase):
                     "key": "eth-validator-platform-dev/signing/validator-keystore",
                     "property": "password",
                 },
+                "keystore02": {
+                    "key": "eth-validator-platform-dev/signing/validator-keystore-02",
+                    "property": "keystore",
+                },
+                "password02": {
+                    "key": "eth-validator-platform-dev/signing/validator-keystore-02",
+                    "property": "password",
+                },
             },
         )
 
-    def test_secret_template_is_one_file_keystore_descriptor(self) -> None:
+    def test_secret_template_has_one_descriptor_per_validator_identity(self) -> None:
         external = object_named(
             self.documents, "ExternalSecret", "web3signer-validator-keystore"
         )
@@ -73,15 +81,29 @@ class Web3SignerKeyProjectionContracts(unittest.TestCase):
             "validator.json",
             "validator.password",
             "validator.yaml",
+            "validator-02.json",
+            "validator-02.password",
+            "validator-02.yaml",
         })
-        descriptor = yaml.safe_load(template["data"]["validator.yaml"])
+        descriptors = {
+            name: yaml.safe_load(template["data"][name])
+            for name in ("validator.yaml", "validator-02.yaml")
+        }
         self.assertEqual(
-            descriptor,
+            descriptors,
             {
-                "type": "file-keystore",
-                "keyType": "BLS",
-                "keystoreFile": "/var/run/web3signer/keys/validator.json",
-                "keystorePasswordFile": "/var/run/web3signer/keys/validator.password",
+                "validator.yaml": {
+                    "type": "file-keystore",
+                    "keyType": "BLS",
+                    "keystoreFile": "/var/run/web3signer/keys/validator.json",
+                    "keystorePasswordFile": "/var/run/web3signer/keys/validator.password",
+                },
+                "validator-02.yaml": {
+                    "type": "file-keystore",
+                    "keyType": "BLS",
+                    "keystoreFile": "/var/run/web3signer/keys/validator-02.json",
+                    "keystorePasswordFile": "/var/run/web3signer/keys/validator-02.password",
+                },
             },
         )
 
@@ -106,6 +128,9 @@ class Web3SignerKeyProjectionContracts(unittest.TestCase):
                     {"key": "validator.json", "path": "validator.json"},
                     {"key": "validator.password", "path": "validator.password"},
                     {"key": "validator.yaml", "path": "validator.yaml"},
+                    {"key": "validator-02.json", "path": "validator-02.json"},
+                    {"key": "validator-02.password", "path": "validator-02.password"},
+                    {"key": "validator-02.yaml", "path": "validator-02.yaml"},
                 ],
             },
         )
