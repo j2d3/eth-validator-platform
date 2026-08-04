@@ -106,6 +106,8 @@ namespacing, JWT mount, network artifact layout, security context).
 {{- include "ethereum-node.gethInitCommand" . -}}
 {{- else if eq $client "reth" -}}
 {{- include "ethereum-node.rethInitCommand" . -}}
+{{- else if eq $client "erigon" -}}
+{{- include "ethereum-node.erigonInitCommand" . -}}
 {{- else -}}
 {{- fail (printf "no init-command adapter for executionClient=%q" $client) -}}
 {{- end -}}
@@ -117,6 +119,8 @@ namespacing, JWT mount, network artifact layout, security context).
 {{- include "ethereum-node.gethRunCommand" . -}}
 {{- else if eq $client "reth" -}}
 {{- include "ethereum-node.rethRunCommand" . -}}
+{{- else if eq $client "erigon" -}}
+{{- include "ethereum-node.erigonRunCommand" . -}}
 {{- else -}}
 {{- fail (printf "no run-command adapter for executionClient=%q" $client) -}}
 {{- end -}}
@@ -126,6 +130,7 @@ namespacing, JWT mount, network artifact layout, security context).
 {{- $client := .Values.executionClient -}}
 {{- if eq $client "geth" -}}geth
 {{- else if eq $client "reth" -}}db
+{{- else if eq $client "erigon" -}}chaindata
 {{- else -}}
 {{- fail (printf "no dataDirMarker for executionClient=%q" $client) -}}
 {{- end -}}
@@ -305,6 +310,65 @@ exec geth \
   --bootnodes="$bootnodes" \
   --syncmode={{ $execution.syncMode }} \
   --datadir=/data \
+  --http \
+  --http.addr=0.0.0.0 \
+  --http.api=eth,net,web3 \
+  --authrpc.addr=0.0.0.0 \
+  --authrpc.port=8551 \
+  --authrpc.vhosts='*' \
+  --authrpc.jwtsecret=/jwt/jwt.hex \
+  --metrics \
+  --metrics.addr=0.0.0.0 \
+  --metrics.port=6060
+{{- end -}}
+
+{{/*
+Erigon-specific adapters. Erigon 3.x accepts the same Geth-compatible
+genesis.json (digest-verified from the artifact bundle) via `erigon init`.
+Its persistent state lives under /data/chaindata/ (the marker); `erigon init`
+creates that directory. Erigon uses a staged-sync pipeline architecturally
+different from both Geth's snap and Reth's staged pipeline. Metrics bind to
+:6060 for the same PodMonitor/PrometheusRule contract the other EL adapters
+follow; series names differ (recording-rule runtime verification is the same
+loop PR #96/#124 established).
+*/}}
+{{- define "ethereum-node.erigonInitCommand" -}}
+set -eu
+marker=/data/.platform-network-identity
+expected={{ .Values.networkProfile.identityFingerprint | quote }}
+test "$(cat /network/.verified-identity)" = "$expected"
+if [ -f "$marker" ]; then
+  test "$(cat "$marker")" = "$expected" || {
+    echo "execution PVC belongs to another network identity" >&2
+    exit 1
+  }
+  test -d /data/{{ include "ethereum-node.executionDataDirMarker" . }} || {
+    echo "execution PVC marker exists without initialized Erigon data" >&2
+    exit 1
+  }
+  exit 0
+fi
+for entry in /data/.[!.]* /data/..?* /data/*; do
+  [ -e "$entry" ] || continue
+  [ "$entry" = /data/lost+found ] && continue
+  echo "refusing to initialize an unmarked non-empty execution PVC" >&2
+  exit 1
+done
+erigon init \
+  --datadir=/data \
+  {{ printf "/network/files/%s" .Values.networkProfile.artifactBundle.files.executionGenesis | quote }}
+printf '%s\n' "$expected" > "$marker"
+{{- end -}}
+
+{{- define "ethereum-node.erigonRunCommand" -}}
+set -eu
+bootnodes="$(tr '\n' ',' < {{ printf "/network/files/%s" .Values.networkProfile.artifactBundle.files.executionBootnodes }})"
+bootnodes="${bootnodes%,}"
+test -n "$bootnodes"
+exec erigon \
+  --datadir=/data \
+  --networkid={{ printf "%.0f" .Values.networkProfile.identity.executionNetworkId }} \
+  --bootnodes="$bootnodes" \
   --http \
   --http.addr=0.0.0.0 \
   --http.api=eth,net,web3 \
