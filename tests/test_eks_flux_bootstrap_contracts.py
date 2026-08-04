@@ -135,12 +135,13 @@ class EksFluxEntrypointTests(unittest.TestCase):
         # test_eks_ephemery_sync_contracts.
         self.assertIn("suspend", self.layers["node-apps"]["spec"])
         self.assertFalse(self.layers["node-apps"]["spec"]["suspend"])
-        # The signer adapter and prerequisite layer have been separately
-        # reviewed after the RDS credential bootstrap and migration branch-ENI
-        # path were qualified. The signer workload layer remains suspended.
+        # The signer adapter, prerequisite layer, and empty-key workload have
+        # been separately reviewed after the RDS credential bootstrap, TLS,
+        # migration, and branch-ENI paths were qualified. Validator duties are
+        # gated separately from this shared signer release.
         self.assertFalse(self.layers["signer-infrastructure-configs"]["spec"]["suspend"])
         self.assertFalse(self.layers["signer-prerequisites"]["spec"]["suspend"])
-        self.assertTrue(self.layers["apps"]["spec"]["suspend"])
+        self.assertFalse(self.layers["apps"]["spec"]["suspend"])
 
     def test_every_layer_is_dev_labeled_and_waits_for_health(self) -> None:
         for name, layer in self.layers.items():
@@ -533,6 +534,21 @@ class EksApplicationSafetyTests(unittest.TestCase):
         self.assertEqual(
             profile["metadata"]["labels"]["platform.galaxy-lab/signing-enabled"],
             "false",
+        )
+
+    def test_released_signer_still_has_an_empty_ephemeral_key_store(self) -> None:
+        documents = render_all(APPS)
+        deployment = object_named(documents, "Deployment", "web3signer")
+        pod = deployment["spec"]["template"]["spec"]
+        key_store = next(
+            volume for volume in pod["volumes"] if volume["name"] == "key-store"
+        )
+
+        self.assertEqual(key_store, {"name": "key-store", "emptyDir": {}})
+        self.assertNotIn("validator-keystore", yaml.safe_dump_all(documents))
+        self.assertFalse(
+            load_one(APPS / "profile.yaml")["data"]["signingEnabled"]
+            == "true"
         )
 
     def test_eks_surfaces_are_owned_by_separate_signer_and_node_layers(self) -> None:

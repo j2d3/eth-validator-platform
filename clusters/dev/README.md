@@ -21,20 +21,20 @@ infrastructure-configs
                                       |
                                       v
                            signer-prerequisites
-                                (suspended)
+                                  (active)
                                       |
                                       v
                                     apps
-                                (suspended)
+                                  (active)
 ```
 
-Controllers, common Engine-JWT/storage configuration, the stopped node branch,
-and the signer infrastructure adapter reconcile continuously. The adapter adds
-only scoped SecretStores and Pod security-group policies; it does not launch a
-signer or migration workload. `signer-prerequisites` and `apps` remain
-suspended until the database credential, TLS, migration, empty-keystore, and
-runtime gates in the runbook are proven. Removing either remaining suspension
-is deployment authorization and must be a separate reviewed Git change.
+Controllers, common Engine-JWT/storage configuration, the node branch, signer
+infrastructure, database prerequisites, and the shared signer reconcile
+continuously. The RDS credential, TLS path, Flyway migration, and migration
+branch ENI were qualified before the signer application was released. The
+signer still mounts an empty key directory: it can expose health and metrics,
+but it cannot sign. Key projection and validator duties require separate
+reviewed Git changes and the runtime gates in the runbook.
 
 The three scoped reader-role ARNs are non-secret Terraform outputs, but they are
 account-specific and therefore are not committed here. The trusted local
