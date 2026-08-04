@@ -7,6 +7,19 @@ signing activation. Its chain-identity, P2P, sync, and recovery checks still
 apply. The current catalog now contains one deposited signing identity, and the
 non-signing lifecycle workflow deliberately refuses that assignment.
 
+Current state on 2026-08-04:
+
+- Geth + Lighthouse is active with one signing validator;
+- Reth + Lighthouse is active without validator duties;
+- both pairs have non-zero peers and advancing heads; and
+- the first Web3Signer-backed attestation is recorded in
+  [the signing evidence](../evidence/2026-08-04-first-signing-validator.md).
+
+Sections 2–6 preserve the sequence used to qualify the original node-only
+slice. They are historical evidence, not commands to replay against the active
+signing assignment. Current lifecycle changes must start from the live catalog
+and must not use the non-signing workflow for the deposited identity.
+
 At the start of that node-only exercise, the committed state was inert:
 
 - `clusters/dev/node-apps.yaml` contains `suspend: true`;
@@ -46,10 +59,12 @@ The successor policy is another reviewed generation-addressed profile and
 assignment. A mutable `/latest/` artifact, an in-place digest edit, or deleting
 old data by hand fails the lifecycle-identity contract.
 
-## 2. Client/runtime preflight
+## 2. Historical client/runtime preflight
 
-Start from current, clean `main` and use the dedicated EKS kubeconfig described
-in [`eks-capacity.md`](eks-capacity.md):
+The node-only exercise started from clean `main` and used the dedicated EKS
+kubeconfig described in [`eks-capacity.md`](eks-capacity.md). The following
+assertions describe that earlier stopped state; they intentionally fail against
+the current signing catalog:
 
 ```bash
 make check
@@ -94,7 +109,7 @@ Stop if any rendered object contains a validator Deployment, a signing-key
 reference, static AWS credentials, a NodePort outside Kubernetes allocation,
 or a public port other than `30303/TCP+UDP`, `9000/TCP+UDP`, and `9001/UDP`.
 
-## 3. Prove the substrate without starting a pair
+## 3. Historical substrate check before starting a pair
 
 Complete the controller/configuration stages of
 [`eks-flux-bootstrap.md`](eks-flux-bootstrap.md). Keep the node layer and all
@@ -119,7 +134,7 @@ runbook does not create or retrieve that value.
 The signer layers are an independent branch of the Flux graph. A node-only sync
 does not require RDS or Web3Signer and does not remove any signer suspension.
 
-## 4. Admit only the stopped node layer
+## 4. Historical admission of the stopped node layer
 
 Open and merge a reviewed PR changing only `clusters/dev/node-apps.yaml` to
 `suspend: false`. Do not activate the assignment in the same PR.
@@ -149,7 +164,7 @@ must recreate that same generation-addressed claim; retain the consensus claim
 and its volume unchanged. This is a reviewed one-time test reset, not an
 automatic recovery policy and never applies to validator keys or signer data.
 
-## 5. Resume one bounded Spot worker
+## 5. Capacity procedure used by the qualification
 
 For an unbound first run, choose one zone with available Spot capacity. For a
 restart, use the same Availability Zone recorded on the bound PVs. The guarded
