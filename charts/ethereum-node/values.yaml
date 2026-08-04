@@ -22,6 +22,12 @@ networkProfile:
     geth:
       mode: builtin
       network: hoodi
+    # Reth adapter default: mirrors Geth's builtin+hoodi shape so a Reth pair
+    # renders correctly against the default Hoodi profile if selected. Networks
+    # that only intend to run one EL can drop the unused adapter locally.
+    reth:
+      mode: builtin
+      network: hoodi
     lighthouse:
       mode: builtin
       network: hoodi
@@ -103,6 +109,13 @@ executionClients:
     # environment profiles may select full sync when replaying their bounded
     # chain is cheaper than carrying snap-sync recovery complexity.
     syncMode: snap
+  # Reth adapter. Genesis format is Geth-compatible (same digest-verified
+  # genesis.json). State lives under /data/db/ (rethInitCommand asserts this
+  # marker directory). No `--syncmode` — Reth's pipelined-staged sync is
+  # always full-derivation. Image pin is the ghcr.io/paradigmxyz/reth v1.6.0
+  # manifest digest resolved 2026-08-04.
+  reth:
+    image: ghcr.io/paradigmxyz/reth:v1.6.0@sha256:5b283f65853d32b240c8f639939bd6f9a8c6918b6dfc3148d0ba97e57d7f8da4
 consensusClients:
   lighthouse:
     image: sigp/lighthouse:v8.2.1@sha256:9538f53d8e11766e3cb5de1889b292074f8e518e0dabe6df13d9054d504d1d62

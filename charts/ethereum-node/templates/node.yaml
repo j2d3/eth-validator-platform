@@ -1,14 +1,26 @@
 {{- if eq .Values.lifecycleState "active" }}
 {{- $execution := index .Values.executionClients .Values.executionClient -}}
 {{- $consensus := index .Values.consensusClients .Values.consensusClient -}}
-{{- $gethAdapter := .Values.networkProfile.clients.geth -}}
-{{- $lighthouseAdapter := .Values.networkProfile.clients.lighthouse -}}
-{{- if ne $gethAdapter.mode $lighthouseAdapter.mode -}}
-{{- fail "Geth and Lighthouse network adapter modes must match" -}}
+{{- /* Adapter for the currently selected EL — dispatched on executionClient so
+     a Reth pair reads its own network adapter, not always Geth's. */ -}}
+{{- $executionAdapter := index .Values.networkProfile.clients .Values.executionClient -}}
+{{- if not $executionAdapter -}}
+{{- fail (printf "networkProfile.clients.%s is required when executionClient=%q" .Values.executionClient .Values.executionClient) -}}
 {{- end -}}
-{{- $artifactMode := eq $gethAdapter.mode "artifact-bundle" -}}
+{{- $lighthouseAdapter := .Values.networkProfile.clients.lighthouse -}}
+{{- if ne $executionAdapter.mode $lighthouseAdapter.mode -}}
+{{- fail (printf "%s and Lighthouse network adapter modes must match" .Values.executionClient) -}}
+{{- end -}}
+{{- $artifactMode := eq $executionAdapter.mode "artifact-bundle" -}}
 {{- if and $artifactMode .Values.validator.enabled -}}
 {{- fail "validator duties are not qualified for artifact-bundle network profiles" -}}
+{{- end -}}
+{{- /* Built-in-mode is currently Geth-only; the args block for that path
+     hard-codes Geth's flag names. Fail loudly if someone tries to render a
+     Reth pair on a built-in network — a future PR can extract those args
+     behind a per-EL helper. */ -}}
+{{- if and (eq .Values.executionClient "reth") (not $artifactMode) -}}
+{{- fail "executionClient=reth requires networkProfile.clients.reth.mode = artifact-bundle in this chart version" -}}
 {{- end -}}
 apiVersion: apps/v1
 kind: StatefulSet
@@ -150,8 +162,12 @@ spec:
             - |
 {{ include "ethereum-node.executionRunCommand" . | indent 14 }}
           {{- else }}
+          {{- /* Built-in-network mode currently supports only Geth's argument
+               shape. A future adapter can extract these args behind a per-EL
+               helper, matching the artifact-mode command dispatch. Until then
+               the schema constrains Reth to artifact-bundle mode. */}}
           args:
-            - {{ printf "--%s" $gethAdapter.network | quote }}
+            - {{ printf "--%s" $executionAdapter.network | quote }}
             - {{ printf "--syncmode=%s" $execution.syncMode | quote }}
             - --datadir=/data
             - --http
