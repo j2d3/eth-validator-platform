@@ -5,7 +5,7 @@ metadata:
 spec:
   validatorRef: validator-ephemery-162-synthetic
   networkProfileRef: ephemery-162
-  lifecycle: active
+  lifecycle: stopped
   serviceProfileRef: dedicated-geth-lighthouse
   nodePairRef: pair-ephemery-162-synthetic
   signerRef: shared-web3signer
@@ -14,4 +14,5 @@ spec:
     slashingProtectionConfirmed: false
     doppelgangerProtectionConfirmed: false
   maintenance:
-    reason: Fresh generation-162 full-sync retry on the retained consensus volume; keep the non-signing pair running.
+    reason: Retained Lighthouse database refuses checkpoint sync and its head is stalled; replace only the disposable consensus
+      claim, then reactivate.
