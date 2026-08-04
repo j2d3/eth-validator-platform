@@ -49,7 +49,7 @@ kustomize-build: ## Build every Kustomize layer, reconciled or not, without cont
 	kubectl kustomize platform/infrastructure/configs/local > /dev/null
 	kubectl kustomize platform/apps/prerequisites/local > /dev/null
 	kubectl kustomize platform/apps/local > /dev/null
-	# The EKS entrypoint is declared but not bootstrapped onto the live cluster.
+	# Validate the Git source currently reconciled by the EKS dev cluster.
 	kubectl kustomize clusters/dev > /dev/null
 	kubectl kustomize platform/infrastructure/overlays/dev/controllers > /dev/null
 	kubectl kustomize platform/infrastructure/configs/dev > /dev/null
