@@ -102,8 +102,39 @@ class Web3SignerDatabaseBootstrapContracts(unittest.TestCase):
         for token in forbidden:
             with self.subTest(token=token):
                 self.assertNotIn(token, self.script)
-        self.assertIn('"--cli-input-json", "file:///dev/stdin"', self.script)
+        self.assertIn('"--secret-string",\n            "file:///dev/stdin"', self.script)
         self.assertNotRegex(self.script, re.compile(r"--secret-string[^\n]*app_password"))
+
+    def test_application_secret_value_uses_stdin_not_argv(self) -> None:
+        database = {
+            "address": "db.example",
+            "port": 5432,
+            "database": "web3signer",
+        }
+        expected = {
+            "host": "db.example",
+            "port": "5432",
+            "database": "web3signer",
+            "username": "web3signer",
+            "password": "generated-app-password",
+        }
+        with patch.object(
+            self.bootstrap,
+            "run",
+            side_effect=(
+                CompletedProcess([], 0, stdout="{}"),
+                CompletedProcess([], 0, stdout=json.dumps(expected)),
+            ),
+        ) as mocked:
+            self.bootstrap.put_and_verify_application_secret(
+                "target-secret", database, "generated-app-password"
+            )
+
+        put_call = mocked.call_args_list[0]
+        argv = put_call.args[0]
+        self.assertEqual(argv[-2:], ["--secret-string", "file:///dev/stdin"])
+        self.assertNotIn("generated-app-password", argv)
+        self.assertEqual(json.loads(put_call.kwargs["input_text"]), expected)
 
     def test_tool_refuses_implicit_rotation_and_cleans_exact_names(self) -> None:
         self.assertIn("refusing implicit rotation", self.script)

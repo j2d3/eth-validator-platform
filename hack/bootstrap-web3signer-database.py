@@ -346,9 +346,17 @@ def put_and_verify_application_secret(
         "username": APP_USERNAME,
         "password": app_password,
     }
-    aws_json(
-        ["secretsmanager", "put-secret-value", "--cli-input-json", "file:///dev/stdin"],
-        input_object={"SecretId": secret_id, "SecretString": json.dumps(secret_value, separators=(",", ":"))},
+    run(
+        [
+            "aws",
+            "secretsmanager",
+            "put-secret-value",
+            "--secret-id",
+            secret_id,
+            "--secret-string",
+            "file:///dev/stdin",
+        ],
+        input_text=json.dumps(secret_value, separators=(",", ":")),
     )
     result = run(
         [
