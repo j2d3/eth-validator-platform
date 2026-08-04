@@ -142,6 +142,7 @@ class Web3SignerKeystoreOnboardingContracts(unittest.TestCase):
             "networkProfile": "ephemery-162",
             "password": "not-on-the-command-line",
             "publicKey": "0x" + "ab" * 48,
+            "validatorId": "validator-ephemery-162-02",
         }
         calls: list[tuple[list[str], str | None]] = []
 
@@ -160,6 +161,33 @@ class Web3SignerKeystoreOnboardingContracts(unittest.TestCase):
         self.assertEqual(json.loads(put_stdin or ""), payload)
         for command, _ in calls:
             self.assertNotIn(payload["password"], "\0".join(command))
+
+    def test_validator_identity_selects_one_declared_secret_container(self) -> None:
+        outputs = {
+            "database_connection": "database-arn",
+            "signing_key_bundles": {
+                "validator-ephemery-162-01": "first-key-arn",
+                "validator-ephemery-162-02": "second-key-arn",
+            },
+        }
+
+        self.assertEqual(
+            self.module.signing_secret_for_validator(
+                outputs, "validator-ephemery-162-02"
+            ),
+            "second-key-arn",
+        )
+        with self.assertRaisesRegex(
+            self.module.OnboardingError, "has no declared signing-key container"
+        ):
+            self.module.signing_secret_for_validator(
+                outputs, "validator-not-declared"
+            )
+
+        with self.assertRaisesRegex(
+            self.module.OnboardingError, "signing_key_bundles is absent"
+        ):
+            self.module.signing_secret_for_validator({}, "validator-ephemery-162-02")
 
     def test_existing_secret_version_refuses_implicit_rotation(self) -> None:
         result = subprocess.CompletedProcess(

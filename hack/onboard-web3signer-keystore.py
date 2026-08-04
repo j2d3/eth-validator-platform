@@ -25,6 +25,7 @@ from typing import Any
 ROOT = Path(__file__).resolve().parents[1]
 TERRAFORM_ROOT = ROOT / "terraform" / "environments" / "dev"
 NETWORK_PROFILE_PATTERN = re.compile(r"^[a-z][a-z0-9-]{2,62}$")
+VALIDATOR_ID_PATTERN = re.compile(r"^[a-z][a-z0-9-]{2,62}$")
 PUBLIC_KEY_PATTERN = re.compile(r"^[0-9a-fA-F]{96}$")
 VALIDATOR_PATH_PATTERN = re.compile(r"^m/12381/3600/[0-9]+/0/0$")
 MAX_KEYSTORE_BYTES = 64 * 1024
@@ -245,6 +246,22 @@ def store_secret(secret_id: str, payload: dict[str, str]) -> None:
         raise OnboardingError("Stored secret readback did not match the in-memory payload")
 
 
+def signing_secret_for_validator(outputs: Any, validator_id: str) -> str:
+    if not isinstance(outputs, dict):
+        raise OnboardingError("Terraform output web3signer_secret_arns is invalid")
+    signing_keys = outputs.get("signing_key_bundles")
+    if not isinstance(signing_keys, dict):
+        raise OnboardingError(
+            "Terraform output web3signer_secret_arns.signing_key_bundles is absent"
+        )
+    secret_id = signing_keys.get(validator_id)
+    if not isinstance(secret_id, str) or not secret_id:
+        raise OnboardingError(
+            f"Validator identity {validator_id!r} has no declared signing-key container"
+        )
+    return secret_id
+
+
 def parse_args(argv: list[str]) -> argparse.Namespace:
     parser = argparse.ArgumentParser(
         description="Store one encrypted validator keystore for Web3Signer."
@@ -260,6 +277,11 @@ def parse_args(argv: list[str]) -> argparse.Namespace:
         required=True,
         help="Generation-addressed NetworkProfile, for example ephemery-162.",
     )
+    parser.add_argument(
+        "--validator-id",
+        required=True,
+        help="Declared ValidatorIdentity whose empty signing-key container receives this keystore.",
+    )
     return parser.parse_args(argv)
 
 
@@ -267,18 +289,14 @@ def main(argv: list[str]) -> int:
     args = parse_args(argv)
     if not NETWORK_PROFILE_PATTERN.fullmatch(args.network_profile):
         raise OnboardingError("Network profile is not a valid repository identifier")
+    if not VALIDATOR_ID_PATTERN.fullmatch(args.validator_id):
+        raise OnboardingError("Validator identity is not a valid repository identifier")
     keystore, public_key = validate_keystore(args.keystore)
     password = prompt_password()
     verify_keystore_password(keystore, password)
 
     outputs = terraform_output("web3signer_secret_arns")
-    if not isinstance(outputs, dict) or not isinstance(
-        outputs.get("signing_key_bundle"), str
-    ):
-        raise OnboardingError(
-            "Terraform output web3signer_secret_arns.signing_key_bundle is absent"
-        )
-    secret_id = outputs["signing_key_bundle"]
+    secret_id = signing_secret_for_validator(outputs, args.validator_id)
     versions = existing_version_count(secret_id)
     if versions != 0:
         raise OnboardingError(
@@ -293,11 +311,12 @@ def main(argv: list[str]) -> int:
             "networkProfile": args.network_profile,
             "password": password,
             "publicKey": public_key,
+            "validatorId": args.validator_id,
         },
     )
     print(
         "Stored one encrypted Web3Signer keystore with exact readback; "
-        f"public key: {public_key}"
+        f"validator identity: {args.validator_id}; public key: {public_key}"
     )
     return 0
 

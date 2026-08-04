@@ -248,6 +248,30 @@ class EksSignerFoundationContractTests(unittest.TestCase):
         self.assertIn('resource "aws_secretsmanager_secret" "web3signer_signing_key"', SIGNER)
         self.assertIn("No password expression or secret version enters Terraform state", SIGNER)
 
+    def test_each_validator_identity_has_an_independent_signing_key_container(self) -> None:
+        signing_key = resource_block(
+            "aws_secretsmanager_secret", "web3signer_signing_key"
+        )
+        compact_signer = " ".join(SIGNER.split())
+        compact_outputs = " ".join(OUTPUTS.split())
+
+        self.assertIn("for_each = local.web3signer_signing_key_names", signing_key)
+        self.assertIn(
+            'validator-ephemery-162-01 = "validator-keystore"', SIGNER
+        )
+        self.assertIn(
+            'validator-ephemery-162-02 = "validator-keystore-02"', SIGNER
+        )
+        self.assertIn(
+            'to = aws_secretsmanager_secret.web3signer_signing_key["validator-ephemery-162-01"]',
+            compact_signer,
+        )
+        self.assertIn(
+            "for validator_id, signing_key in aws_secretsmanager_secret.web3signer_signing_key",
+            compact_outputs,
+        )
+        self.assertIn("validator_id => signing_key.arn", compact_outputs)
+
     def test_database_secret_matches_flux_source_contract(self) -> None:
         database_secret = resource_block("aws_secretsmanager_secret", "web3signer_database")
 
@@ -306,13 +330,16 @@ class EksSignerFoundationContractTests(unittest.TestCase):
         signing_data = data_block("external_secrets_signing_reader")
         self.assertIn("aws_secretsmanager_secret.engine_jwt.arn", engine_data)
         self.assertNotIn("aws_secretsmanager_secret.web3signer_database.arn", engine_data)
-        self.assertNotIn("aws_secretsmanager_secret.web3signer_signing_key.arn", engine_data)
+        self.assertNotIn("web3signer_signing_key", engine_data)
 
         self.assertIn("aws_secretsmanager_secret.web3signer_database.arn", database_data)
-        self.assertNotIn("aws_secretsmanager_secret.web3signer_signing_key.arn", database_data)
+        self.assertNotIn("web3signer_signing_key", database_data)
         self.assertNotIn("aws_secretsmanager_secret.engine_jwt.arn", database_data)
 
-        self.assertIn("aws_secretsmanager_secret.web3signer_signing_key.arn", signing_data)
+        self.assertIn(
+            "values(aws_secretsmanager_secret.web3signer_signing_key)",
+            signing_data,
+        )
         self.assertNotIn("aws_secretsmanager_secret.web3signer_database.arn", signing_data)
         self.assertNotIn("aws_secretsmanager_secret.engine_jwt.arn", signing_data)
         for policy in (engine_data, database_data, signing_data):

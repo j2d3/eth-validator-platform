@@ -109,8 +109,11 @@ Terraform creates secret **containers**, never secret versions:
   JSON (`host`, `port`, `database`, `username`, `password`); the EKS adapter
   projects the canonical `database` property to target `dbname` only where a
   Flyway/Web3Signer environment requires that alias; and
-- `.../signing/validator-keystore` for the first encrypted testnet keystore
-  bundle and its password.
+- one identity-addressed container per validator signing key. The first two are
+  `.../signing/validator-keystore` and
+  `.../signing/validator-keystore-02`. Each stores one encrypted testnet
+  keystore bundle and its password; adding an identity never rotates or
+  overwrites another identity's container.
 
 RDS generates its master password and stores it in an RDS-managed Secrets
 Manager secret. Terraform state receives the secret ARN, not the password. The
@@ -130,7 +133,8 @@ later select one of three target roles:
 
 - the engine reader can read only the Engine JWT; and
 - the database reader can read only the Web3Signer application credential; and
-- the signing reader can read only the encrypted validator-keystore bundle.
+- the signing reader can read only the declared encrypted validator-keystore
+  containers.
 
 The `external_secrets_reader_role_arns` output exposes map fields `engine`,
 `database`, and `signing`. The trusted Flux bootstrap maps them to
