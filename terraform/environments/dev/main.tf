@@ -237,7 +237,7 @@ data "aws_iam_policy_document" "external_secrets" {
   statement {
     sid     = "AssumeSecretReaderRoles"
     effect  = "Allow"
-    actions = ["sts:AssumeRole"]
+    actions = ["sts:AssumeRole", "sts:TagSession"]
     resources = [
       aws_iam_role.external_secrets_engine_reader.arn,
       aws_iam_role.external_secrets_database_reader.arn,
@@ -249,7 +249,7 @@ data "aws_iam_policy_document" "external_secrets" {
 resource "aws_iam_role_policy" "external_secrets" {
   # Keep the applied inline-policy name stable so the permission transition is
   # an in-place update. Its contents, not this legacy AWS identifier, define
-  # the current assume-role-only contract.
+  # the current role-session-establishment contract.
   name   = "read-engine-jwt"
   role   = aws_iam_role.external_secrets.id
   policy = data.aws_iam_policy_document.external_secrets.json

@@ -265,8 +265,31 @@ class EksSignerFoundationContractTests(unittest.TestCase):
         assert base_policy is not None
         compact_base = " ".join(base_policy.group("body").split())
 
-        self.assertIn('actions = ["sts:AssumeRole"]', compact_base)
+        self.assertIn(
+            'actions = ["sts:AssumeRole", "sts:TagSession"]', compact_base
+        )
+        self.assertNotIn("sts:SetSourceIdentity", compact_base)
         self.assertNotIn("secretsmanager:GetSecretValue", compact_base)
+
+        reader_trust = data_block("external_secrets_reader_trust")
+        self.assertIn(
+            'actions = ["sts:AssumeRole", "sts:TagSession"]', reader_trust
+        )
+        self.assertNotIn("sts:SetSourceIdentity", reader_trust)
+        self.assertIn(
+            "identifiers = [aws_iam_role.external_secrets.arn]", reader_trust
+        )
+
+        for role_name in (
+            "external_secrets_engine_reader",
+            "external_secrets_database_reader",
+            "external_secrets_signing_reader",
+        ):
+            reader_role = resource_block("aws_iam_role", role_name)
+            self.assertIn(
+                "data.aws_iam_policy_document.external_secrets_reader_trust.json",
+                reader_role,
+            )
 
         engine = resource_block("aws_iam_role_policy", "external_secrets_engine_reader")
         database = resource_block("aws_iam_role_policy", "external_secrets_database_reader")

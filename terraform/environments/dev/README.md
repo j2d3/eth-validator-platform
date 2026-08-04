@@ -120,9 +120,12 @@ writes encrypted keystore material directly to its container. Neither procedure
 is implemented by this declaration and neither may pass a secret through a
 Terraform variable, plan, output value, shell argument, GitHub log, or Git.
 
-External Secrets has one Pod Identity base role with only `sts:AssumeRole`.
-Environment-specific AWS `SecretStore` resources later select one of three target
-roles:
+External Secrets has one Pod Identity base role with only the
+`sts:AssumeRole` and `sts:TagSession` actions needed to establish sessions on
+the scoped reader roles. EKS Pod Identity marks its workload session tags as
+transitive, so role chaining requires both actions on the base policy and each
+target role's trust policy. Environment-specific AWS `SecretStore` resources
+later select one of three target roles:
 
 - the engine reader can read only the Engine JWT; and
 - the database reader can read only the Web3Signer application credential; and

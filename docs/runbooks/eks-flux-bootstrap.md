@@ -142,7 +142,7 @@ The EKS manifests contain references, never secret values:
 |---|---|
 | Engine JWT | Secrets Manager object `eth-validator-platform-dev/ethereum/engine-jwt`, JSON property `jwt.hex`; Terraform creates only the object |
 | Web3Signer database | Secrets Manager object `eth-validator-platform-dev/signing/web3signer-database`, JSON properties `host`, `port`, `database`, `username`, `password`; the EKS adapters project `database` to `dbname` for Flyway and retain `database` for Web3Signer |
-| External Secrets identity | Terraform associates the base `external_secrets_role_arn` with ServiceAccount `external-secrets` only for `sts:AssumeRole`; the non-secret `external_secrets_reader_role_arns` output supplies separate engine, database, and signing-key reader roles through the Flux substitution ConfigMap |
+| External Secrets identity | Terraform associates the base `external_secrets_role_arn` with ServiceAccount `external-secrets`; its only target-role permissions are `sts:AssumeRole` and `sts:TagSession`, which EKS Pod Identity requires when its transitive workload tags cross the role chain. The non-secret `external_secrets_reader_role_arns` output supplies separate engine, database, and signing-key reader roles through the Flux substitution ConfigMap |
 | RDS network | Private endpoint resolves inside the `dev` VPC; TCP/5432 is admitted by both the Kubernetes egress policy and the dedicated runtime-or-migration Pod security-group path |
 | TLS | Both JDBC URLs require `sslmode=verify-full`; the RDS slice must also prove an AWS RDS CA trust path for both the Flyway and Web3Signer images (image trust store or an explicitly mounted CA bundle) before either signer suspension changes |
 
