@@ -118,6 +118,36 @@ class EksEphemeryRenderTests(unittest.TestCase):
                     "1607eeafd1831115cd81bfd3aed07ea9a154ec688776a25f3395c960756a048c",
                 )
 
+    def test_geth_uses_validated_full_sync_only_in_the_eks_ephemery_profile(
+        self,
+    ) -> None:
+        stateful_set = self.by_kind["StatefulSet"][0]
+        execution = next(
+            container
+            for container in stateful_set["spec"]["template"]["spec"]["containers"]
+            if container["name"] == "execution"
+        )
+        self.assertEqual(execution["command"], ["/bin/sh", "-ec"])
+        self.assertIn("--syncmode=full", execution["args"][0])
+
+        defaults = yaml.safe_load(
+            (CHART / "values.yaml").read_text(encoding="utf-8")
+        )
+        eks_profile = yaml.safe_load(EKS_VALUES.read_text(encoding="utf-8"))
+        self.assertEqual(defaults["executionClients"]["geth"]["syncMode"], "snap")
+        self.assertEqual(
+            eks_profile["executionClients"]["geth"]["syncMode"], "full"
+        )
+
+        schema = json.loads(
+            (CHART / "values.schema.json").read_text(encoding="utf-8")
+        )
+        self.assertIn("executionClients", schema["required"])
+        sync_mode = schema["properties"]["executionClients"]["properties"][
+            "geth"
+        ]["properties"]["syncMode"]
+        self.assertEqual(sync_mode["enum"], ["snap", "full"])
+
     def test_p2p_has_one_public_nlb_and_never_exposes_http_or_metrics(self) -> None:
         services = self.by_kind["Service"]
         p2p = next(
