@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import re
 import subprocess
 import unittest
 from pathlib import Path
@@ -112,11 +113,50 @@ class Web3SignerKeyProjectionContracts(unittest.TestCase):
 
     def test_signer_network_matches_ephemery_but_duties_stay_disabled(self) -> None:
         deployment = object_named(self.documents, "Deployment", "web3signer")
-        args = deployment["spec"]["template"]["spec"]["containers"][0]["args"]
+        pod = deployment["spec"]["template"]["spec"]
+        container = pod["containers"][0]
+        args = container["args"]
         profile = object_named(self.documents, "ConfigMap", "platform-profile")
 
-        self.assertIn("--network=ephemery", args)
+        self.assertIn("--network=/var/run/web3signer/network/config.yaml", args)
+        self.assertNotIn("--network=ephemery", args)
         self.assertNotIn("--network=hoodi", args)
+        network_mount = next(
+            mount for mount in container["volumeMounts"] if mount["name"] == "network-config"
+        )
+        network_volume = next(
+            volume for volume in pod["volumes"] if volume["name"] == "network-config"
+        )
+        self.assertEqual(
+            network_mount,
+            {
+                "name": "network-config",
+                "mountPath": "/var/run/web3signer/network",
+                "readOnly": True,
+            },
+        )
+        generated_name = network_volume["configMap"]["name"]
+        network_config_map = object_named(self.documents, "ConfigMap", generated_name)
+        config_text = network_config_map["data"]["config.yaml"]
+        active_config = "\n".join(
+            line for line in config_text.splitlines() if not line.lstrip().startswith("#")
+        )
+        self.assertNotRegex(active_config, r"https?://|BOOT_ENR|BOOTNODE")
+
+        network_profile = yaml.safe_load(
+            (ROOT / "applications" / "networks" / "ephemery-162.yaml").read_text()
+        )
+        identity = network_profile["spec"]["identity"]
+        bundle_sha = network_profile["spec"]["artifactBundle"]["sha256"]
+        self.assertIn(f"# Bundle SHA256: {bundle_sha}", config_text)
+        self.assertRegex(
+            config_text,
+            rf"(?m)^GENESIS_FORK_VERSION: {re.escape(identity['genesisForkVersion'])}$",
+        )
+        self.assertRegex(
+            config_text,
+            rf"(?m)^DEPOSIT_CHAIN_ID: {identity['executionChainId']}$",
+        )
         self.assertEqual(profile["data"]["signingEnabled"], "false")
         self.assertNotIn("validator-client", yaml.safe_dump_all(self.documents))
 
