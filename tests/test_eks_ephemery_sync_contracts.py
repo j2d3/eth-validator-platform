@@ -118,38 +118,65 @@ class EksEphemeryRenderTests(unittest.TestCase):
                     "1607eeafd1831115cd81bfd3aed07ea9a154ec688776a25f3395c960756a048c",
                 )
 
-    def test_p2p_has_one_public_nlb_and_never_exposes_http_or_metrics(self) -> None:
+    def test_p2p_has_two_public_nlbs_split_by_protocol_and_never_exposes_http_or_metrics(
+        self,
+    ) -> None:
+        # The AWS in-tree cloud-provider service-controller rejects mixed
+        # protocols on a single NLB ("mixed protocol is not supported for
+        # LoadBalancer"). This chart therefore renders one TCP-only P2P
+        # Service and one UDP-only P2P Service in LoadBalancer mode, so the
+        # legacy controller can provision each. When the AWS Load Balancer
+        # Controller is later installed on the cluster this can collapse
+        # back to one Service; the test asserts the split shape that works
+        # today.
         services = self.by_kind["Service"]
-        p2p = next(
+        p2p_tcp = next(
             service
             for service in services
-            if service["metadata"]["name"].endswith("-p2p")
+            if service["metadata"]["name"].endswith("-p2p-tcp")
         )
-        internal = next(service for service in services if service is not p2p)
+        p2p_udp = next(
+            service
+            for service in services
+            if service["metadata"]["name"].endswith("-p2p-udp")
+        )
+        internal = next(
+            service
+            for service in services
+            if service is not p2p_tcp and service is not p2p_udp
+        )
 
-        self.assertEqual(p2p["spec"]["type"], "LoadBalancer")
-        self.assertEqual(p2p["spec"]["externalTrafficPolicy"], "Local")
-        self.assertEqual(p2p["spec"]["loadBalancerSourceRanges"], ["0.0.0.0/0"])
-        self.assertEqual(
-            p2p["metadata"]["annotations"][
-                "service.beta.kubernetes.io/aws-load-balancer-type"
-            ],
-            "nlb",
-        )
-        p2p_ports = {
-            (port["port"], port.get("protocol", "TCP")) for port in p2p["spec"]["ports"]
+        for p2p in (p2p_tcp, p2p_udp):
+            with self.subTest(service=p2p["metadata"]["name"]):
+                self.assertEqual(p2p["spec"]["type"], "LoadBalancer")
+                self.assertEqual(p2p["spec"]["externalTrafficPolicy"], "Local")
+                self.assertEqual(
+                    p2p["spec"]["loadBalancerSourceRanges"], ["0.0.0.0/0"]
+                )
+                self.assertEqual(
+                    p2p["metadata"]["annotations"][
+                        "service.beta.kubernetes.io/aws-load-balancer-type"
+                    ],
+                    "nlb",
+                )
+                self.assertTrue(
+                    all("nodePort" not in port for port in p2p["spec"]["ports"])
+                )
+
+        # Ports partition cleanly by protocol; nothing internal (JSON-RPC,
+        # Engine API, beacon API, metrics) is exposed on either LB.
+        tcp_ports = {
+            (port["port"], port.get("protocol", "TCP"))
+            for port in p2p_tcp["spec"]["ports"]
         }
-        self.assertEqual(
-            p2p_ports,
-            {
-                (30303, "TCP"),
-                (30303, "UDP"),
-                (9000, "TCP"),
-                (9000, "UDP"),
-                (9001, "UDP"),
-            },
-        )
-        self.assertTrue(all("nodePort" not in port for port in p2p["spec"]["ports"]))
+        self.assertEqual(tcp_ports, {(30303, "TCP"), (9000, "TCP")})
+
+        udp_ports = {
+            (port["port"], port.get("protocol", "TCP"))
+            for port in p2p_udp["spec"]["ports"]
+        }
+        self.assertEqual(udp_ports, {(30303, "UDP"), (9000, "UDP"), (9001, "UDP")})
+
         self.assertEqual(internal["spec"]["type"], "ClusterIP")
         self.assertEqual(
             {port["port"] for port in internal["spec"]["ports"]},

@@ -198,25 +198,35 @@ node affinity must remain in that zone. The PVC names and annotations must
 retain the generation-162 identity fingerprint, and the on-disk identity marker
 must match it; dynamically provisioned PV names do not encode that fingerprint.
 
-The internal Service exposes only beacon API and client metrics. The P2P
-Service is one internet-facing AWS Network Load Balancer with
-`externalTrafficPolicy: Local`; Kubernetes chooses valid NodePorts. Its source
-range is deliberately public because Ethereum P2P is public, while JSON-RPC,
-Engine API, beacon API, and metrics are not on that LoadBalancer.
+The internal Service exposes only beacon API and client metrics. P2P is
+served through **two** internet-facing AWS Network Load Balancers with
+`externalTrafficPolicy: Local`; Kubernetes chooses valid NodePorts. The
+two-LB split is a workaround for the in-tree AWS cloud-provider
+service-controller, which rejects mixed protocols on a single NLB:
+
+- `pair-ephemery-162-synthetic-p2p-tcp` — TCP 30303 (execution) and TCP 9000 (consensus)
+- `pair-ephemery-162-synthetic-p2p-udp` — UDP 30303 (execution) and UDP 9000 + UDP 9001 (consensus discovery + QUIC)
+
+Both source ranges are deliberately public because Ethereum P2P is public,
+while JSON-RPC, Engine API, beacon API, and metrics are not on either
+LoadBalancer. When the AWS Load Balancer Controller is later installed on
+this cluster, the chart could emit one merged Service instead.
 
 ```bash
-kubectl get service -n ethereum pair-ephemery-162-synthetic-p2p \
-  -o jsonpath='{.spec.type}{"\n"}{.status.loadBalancer.ingress[0].hostname}{"\n"}'
-kubectl get endpointslice -n ethereum \
-  -l kubernetes.io/service-name=pair-ephemery-162-synthetic-p2p
+for svc in pair-ephemery-162-synthetic-p2p-tcp pair-ephemery-162-synthetic-p2p-udp; do
+  kubectl get service -n ethereum "$svc" \
+    -o jsonpath='{.metadata.name}: {.spec.type} {.status.loadBalancer.ingress[0].hostname}{"\n"}'
+  kubectl get endpointslice -n ethereum \
+    -l kubernetes.io/service-name="$svc"
+done
 ```
 
 A hostname and healthy endpoints prove only the Kubernetes/cloud-controller
 path. They do not prove UDP reachability, inbound peer traffic, or that the
 clients advertise a public address. Outbound peers are sufficient to begin a
 sync; count inbound traffic separately before claiming bidirectional P2P
-qualification. The NLB has a standing hourly cost, so remove it by returning
-the assignment to stopped when the exercise ends.
+qualification. Both NLBs have a standing hourly cost, so remove them by
+returning the assignment to stopped when the exercise ends.
 
 ## 7. Verify exact chain identity
 

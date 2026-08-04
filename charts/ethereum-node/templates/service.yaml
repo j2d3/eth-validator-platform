@@ -16,6 +16,78 @@ spec:
     - {name: cl-metrics, port: 8008, targetPort: cl-metrics}
 ---
 {{- if .Values.p2p.service.enabled }}
+{{/*
+  P2P Services.
+
+  For ClusterIP (local/dev), a single Service carries both TCP and UDP ports.
+  Kubernetes accepts mixed protocols on a ClusterIP Service.
+
+  For LoadBalancer, we render two Services — one TCP-only, one UDP-only —
+  because AWS's in-tree cloud-provider service-controller rejects mixed
+  protocols on a single NLB. The AWS Load Balancer Controller v2.7+ can
+  handle mixed protocols on a single NLB via its own annotation shape;
+  when that controller is installed on the cluster, this chart could later
+  emit one merged Service instead. Until then, the two-Service pattern is
+  what the legacy controller supports, and it is the shape the AWS docs
+  recommend for the mixed-protocol case.
+
+  See issue #84 (chart HelmRelease-restart pattern) — because this template
+  change rolls the Pod, do not apply while a Geth snap-sync is mid-flight
+  on the affected pair.
+*/}}
+{{- $splitPerProtocol := eq .Values.p2p.service.type "LoadBalancer" -}}
+{{- if $splitPerProtocol }}
+apiVersion: v1
+kind: Service
+metadata:
+  name: {{ include "ethereum-node.fullname" . }}-p2p-tcp
+  labels:
+    {{- include "ethereum-node.labels" . | nindent 4 }}
+    platform.galaxy-lab/p2p-protocol: tcp
+  {{- with .Values.p2p.service.annotations }}
+  annotations:
+    {{- toYaml . | nindent 4 }}
+  {{- end }}
+spec:
+  type: LoadBalancer
+  externalTrafficPolicy: {{ .Values.p2p.service.externalTrafficPolicy }}
+  {{- with .Values.p2p.service.loadBalancerSourceRanges }}
+  loadBalancerSourceRanges:
+    {{- toYaml . | nindent 4 }}
+  {{- end }}
+  selector:
+    {{- include "ethereum-node.selectorLabels" . | nindent 4 }}
+    platform.galaxy-lab/component: node
+  ports:
+    - {name: el-p2p-tcp, port: 30303, targetPort: el-p2p-tcp, protocol: TCP}
+    - {name: cl-p2p-tcp, port: 9000, targetPort: cl-p2p-tcp, protocol: TCP}
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: {{ include "ethereum-node.fullname" . }}-p2p-udp
+  labels:
+    {{- include "ethereum-node.labels" . | nindent 4 }}
+    platform.galaxy-lab/p2p-protocol: udp
+  {{- with .Values.p2p.service.annotations }}
+  annotations:
+    {{- toYaml . | nindent 4 }}
+  {{- end }}
+spec:
+  type: LoadBalancer
+  externalTrafficPolicy: {{ .Values.p2p.service.externalTrafficPolicy }}
+  {{- with .Values.p2p.service.loadBalancerSourceRanges }}
+  loadBalancerSourceRanges:
+    {{- toYaml . | nindent 4 }}
+  {{- end }}
+  selector:
+    {{- include "ethereum-node.selectorLabels" . | nindent 4 }}
+    platform.galaxy-lab/component: node
+  ports:
+    - {name: el-p2p-udp, port: 30303, targetPort: el-p2p-udp, protocol: UDP}
+    - {name: cl-p2p-udp, port: 9000, targetPort: cl-p2p-udp, protocol: UDP}
+    - {name: cl-quic, port: 9001, targetPort: cl-quic, protocol: UDP}
+{{- else }}
 apiVersion: v1
 kind: Service
 metadata:
@@ -31,10 +103,6 @@ spec:
   {{- if ne .Values.p2p.service.type "ClusterIP" }}
   externalTrafficPolicy: {{ .Values.p2p.service.externalTrafficPolicy }}
   {{- end }}
-  {{- if and (eq .Values.p2p.service.type "LoadBalancer") .Values.p2p.service.loadBalancerSourceRanges }}
-  loadBalancerSourceRanges:
-    {{- toYaml .Values.p2p.service.loadBalancerSourceRanges | nindent 4 }}
-  {{- end }}
   selector:
     {{- include "ethereum-node.selectorLabels" . | nindent 4 }}
     platform.galaxy-lab/component: node
@@ -44,5 +112,6 @@ spec:
     - {name: cl-p2p-tcp, port: 9000, targetPort: cl-p2p-tcp, protocol: TCP}
     - {name: cl-p2p-udp, port: 9000, targetPort: cl-p2p-udp, protocol: UDP}
     - {name: cl-quic, port: 9001, targetPort: cl-quic, protocol: UDP}
+{{- end }}
 {{- end }}
 {{- end }}
