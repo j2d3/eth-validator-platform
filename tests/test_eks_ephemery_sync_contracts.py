@@ -240,6 +240,26 @@ class EksEphemeryRenderTests(unittest.TestCase):
         self.assertIn("sync_peers_per_status", peer_rule["expr"])
         self.assertNotIn("libp2p_peers", peer_rule["expr"])
 
+    def test_lighthouse_receives_digest_verified_ephemery_bootnodes(self) -> None:
+        stateful_set = self.by_kind["StatefulSet"][0]
+        consensus = next(
+            container
+            for container in stateful_set["spec"]["template"]["spec"]["containers"]
+            if container["name"] == "consensus"
+        )
+        self.assertEqual(consensus["command"], ["/bin/sh", "-ec"])
+        command = consensus["args"][0]
+        self.assertIn(
+            'paste -sd, "/network/files/boot_enr.txt"',
+            command,
+        )
+        self.assertIn('--boot-nodes="$bootnodes"', command)
+        self.assertIn("--testnet-dir=/network/files", command)
+        self.assertIn(
+            "--checkpoint-sync-url=https://checkpoint-sync.ephemery.ethpandaops.io/",
+            command,
+        )
+
 
 class EksEphemeryFluxAndTelemetryTests(unittest.TestCase):
     def test_node_layer_is_independent_and_non_signing(self) -> None:
