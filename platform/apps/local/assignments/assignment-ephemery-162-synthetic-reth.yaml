@@ -3,12 +3,12 @@
 apiVersion: helm.toolkit.fluxcd.io/v2
 kind: HelmRelease
 metadata:
-  name: assignment-ephemery-162-synthetic
+  name: assignment-ephemery-162-synthetic-reth
   namespace: ethereum
   labels:
     app.kubernetes.io/part-of: ethereum-validator-platform
-    platform.galaxy-lab/assignment-id: assignment-ephemery-162-synthetic
-    platform.galaxy-lab/validator-id: validator-ephemery-162-synthetic
+    platform.galaxy-lab/assignment-id: assignment-ephemery-162-synthetic-reth
+    platform.galaxy-lab/validator-id: validator-ephemery-162-synthetic-reth
 spec:
   interval: 10m
   timeout: 10m
@@ -30,7 +30,7 @@ spec:
     remediation:
       retries: 3
   values:
-    fullnameOverride: pair-ephemery-162-synthetic
+    fullnameOverride: pair-ephemery-162-synthetic-reth
     lifecycleState: stopped
     networkProfile:
       name: ephemery-162
@@ -76,15 +76,15 @@ spec:
         primaryUrl: https://checkpoint-sync.ephemery.ethpandaops.io/
         verificationUrls:
         - https://ephemery.beaconstate.ethstaker.cc/
-    executionClient: geth
+    executionClient: reth
     consensusClient: lighthouse
     telemetry:
       cluster: kind-eth-validator-local
       environment: local
     identity:
       customerId: customer-synthetic-lab
-      validatorId: validator-ephemery-162-synthetic
-      assignmentId: assignment-ephemery-162-synthetic
+      validatorId: validator-ephemery-162-synthetic-reth
+      assignmentId: assignment-ephemery-162-synthetic-reth
     validator:
       enabled: false
       slashingProtectionConfirmed: false

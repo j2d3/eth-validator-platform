@@ -314,11 +314,22 @@ class EksEphemeryFluxAndTelemetryTests(unittest.TestCase):
         releases = [
             document for document in documents if document["kind"] == "HelmRelease"
         ]
+        # Both the Geth+Lighthouse and Reth+Lighthouse Ephemery pairs are
+        # rendered by this overlay. Everything else in this test asserts on
+        # the Geth pair specifically (its stopped/non-signing shape); the
+        # Reth pair is covered separately in
+        # test_chart_reth_adapter_contracts and test_local_assignment_projection.
         self.assertEqual(
-            [release["metadata"]["name"] for release in releases],
-            ["assignment-ephemery-162-synthetic"],
+            sorted(release["metadata"]["name"] for release in releases),
+            [
+                "assignment-ephemery-162-synthetic",
+                "assignment-ephemery-162-synthetic-reth",
+            ],
         )
-        release = releases[0]
+        release = next(
+            r for r in releases
+            if r["metadata"]["name"] == "assignment-ephemery-162-synthetic"
+        )
         # The assignment has been reviewed-activated per the sync runbook §6.
         # The real non-signing safety property is that the *validator client*
         # stays disabled and slashing protection remains unconfirmed even when

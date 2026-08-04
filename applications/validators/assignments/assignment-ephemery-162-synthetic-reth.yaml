@@ -1,0 +1,15 @@
+apiVersion: platform.galaxy-lab/v1alpha1
+kind: ValidatorAssignment
+metadata:
+  name: assignment-ephemery-162-synthetic-reth
+spec:
+  validatorRef: validator-ephemery-162-synthetic-reth
+  networkProfileRef: ephemery-162
+  lifecycle: stopped
+  serviceProfileRef: dedicated-reth-lighthouse
+  nodePairRef: pair-ephemery-162-synthetic-reth
+  signerRef: shared-web3signer
+  signingEnabled: false
+  safety:
+    slashingProtectionConfirmed: false
+    doppelgangerProtectionConfirmed: false
