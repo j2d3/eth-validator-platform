@@ -150,7 +150,9 @@ duration to answer; it is deliberately not answered here.
 `charts/ethereum-node/values-eks-hoodi-storage.yaml` carries the sizes. It is
 storage-only: lifecycle state, identity, and telemetry come from the
 catalog-generated HelmRelease. The intended wiring, once an EKS apps overlay
-exists, is `spec.chart.spec.valuesFiles` listing `values.yaml` and this profile.
+exists, is `spec.chart.spec.valuesFiles` listing `charts/ethereum-node/values.yaml`
+and this profile — Flux resolves those paths from the GitRepository artifact
+root, not the chart directory, so both entries need the chart prefix.
 
 | Claim | Local `kind` default | Hoodi on EKS | Reasoning |
 |---|---:|---:|---|

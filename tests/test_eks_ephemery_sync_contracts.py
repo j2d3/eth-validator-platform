@@ -275,9 +275,16 @@ class EksEphemeryFluxAndTelemetryTests(unittest.TestCase):
             release["spec"]["values"]["engineJwt"]["secretStoreName"],
             "aws-engine-secrets",
         )
+        # Flux resolves valuesFiles from the GitRepository artifact root
+        # when the chart source is a GitRepository, so entries include the
+        # chart directory prefix (verified against source-controller v1.8.5
+        # in dev on 2026-08-04).
         self.assertEqual(
             release["spec"]["chart"]["spec"]["valuesFiles"],
-            ["values.yaml", "values-eks-ephemery.yaml"],
+            [
+                "charts/ethereum-node/values.yaml",
+                "charts/ethereum-node/values-eks-ephemery.yaml",
+            ],
         )
         self.assertNotIn("web3signer", rendered.lower())
 

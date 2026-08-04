@@ -26,11 +26,17 @@ patches:
       kind: HelmRelease
       name: assignment-ephemery-162-synthetic
     patch: |-
+      # Flux resolves HelmRelease.spec.chart.spec.valuesFiles relative to the
+      # GitRepository artifact root (not the chart directory) when the chart
+      # source is a GitRepository. The paths therefore include the chart
+      # directory prefix. Verified against source-controller v1.8.5 in the dev
+      # cluster on 2026-08-04: bare filenames produce
+      # `no values file found at path '/values.yaml'` and the HelmChart stalls.
       - op: add
         path: /spec/chart/spec/valuesFiles
         value:
-          - values.yaml
-          - values-eks-ephemery.yaml
+          - charts/ethereum-node/values.yaml
+          - charts/ethereum-node/values-eks-ephemery.yaml
       - op: replace
         path: /spec/values/telemetry
         value:
