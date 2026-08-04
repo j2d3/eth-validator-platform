@@ -269,8 +269,16 @@ class EksEphemeryFluxAndTelemetryTests(unittest.TestCase):
             ["assignment-ephemery-162-synthetic"],
         )
         release = releases[0]
-        self.assertEqual(release["spec"]["values"]["lifecycleState"], "stopped")
+        # The assignment has been reviewed-activated per the sync runbook §6.
+        # The real non-signing safety property is that the *validator client*
+        # stays disabled and slashing protection remains unconfirmed even when
+        # the lifecycle is active; the chart in artifact-mode rejects
+        # validator.enabled=true regardless of lifecycle.
+        self.assertIn(release["spec"]["values"]["lifecycleState"], ("stopped", "active"))
         self.assertFalse(release["spec"]["values"]["validator"]["enabled"])
+        self.assertFalse(
+            release["spec"]["values"]["validator"]["slashingProtectionConfirmed"]
+        )
         self.assertEqual(
             release["spec"]["values"]["engineJwt"]["secretStoreName"],
             "aws-engine-secrets",

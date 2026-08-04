@@ -5,7 +5,7 @@ metadata:
 spec:
   validatorRef: validator-ephemery-162-synthetic
   networkProfileRef: ephemery-162
-  lifecycle: stopped
+  lifecycle: active
   serviceProfileRef: dedicated-geth-lighthouse
   nodePairRef: pair-ephemery-162-synthetic
   signerRef: shared-web3signer
