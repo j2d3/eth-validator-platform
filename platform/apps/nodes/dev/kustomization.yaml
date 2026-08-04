@@ -2,12 +2,12 @@ apiVersion: kustomize.config.k8s.io/v1beta1
 kind: Kustomization
 resources:
   # Five generation-pinned Ephemery pairs are admitted in this EKS node
-  # slice — Geth+Lighthouse and Reth+Lighthouse (signing), plus Geth+Teku,
-  # Reth+Teku, and Erigon+Lighthouse (non-signing). The generated catalog
-  # projection remains the source; the overlay only deletes the local-only
-  # synthetic-01 assignment and injects each pair's EKS-specific inputs
-  # (valuesFiles + telemetry + engineJwt). Every Ephemery release below
-  # must receive the same three patches so its ExternalSecret, PVC
+  # slice — Geth+Lighthouse, Reth+Lighthouse, and Geth+Teku (signing), plus
+  # Reth+Teku and Erigon+Lighthouse (non-signing). The generated
+  # catalog projection remains the source; the overlay only deletes the
+  # local-only synthetic-01 assignment and injects each pair's EKS-specific
+  # inputs (valuesFiles + telemetry + engineJwt). Every Ephemery release
+  # below must receive the same three patches so its ExternalSecret, PVC
   # StorageClass, and telemetry follow the reviewed dev contracts on EKS.
   - ../../local/assignments
   # The same generation-pinned consensus config is rendered separately into
