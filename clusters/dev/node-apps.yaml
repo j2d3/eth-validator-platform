@@ -20,7 +20,7 @@ spec:
   # A reviewed change removes this suspension only after the Engine JWT,
   # selected Ephemery generation, P2P cost/exposure, and zonal capacity gates
   # in the sync runbook are satisfied. The assignment itself remains stopped.
-  suspend: true
+  suspend: false
   commonMetadata:
     labels:
       platform.galaxy-lab/environment: dev

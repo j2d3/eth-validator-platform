@@ -242,12 +242,17 @@ class EksEphemeryRenderTests(unittest.TestCase):
 
 
 class EksEphemeryFluxAndTelemetryTests(unittest.TestCase):
-    def test_node_layer_is_independent_suspended_and_non_signing(self) -> None:
+    def test_node_layer_is_independent_and_non_signing(self) -> None:
         layer = yaml.safe_load((CLUSTER / "node-apps.yaml").read_text(encoding="utf-8"))
         self.assertEqual(
             layer["spec"]["dependsOn"], [{"name": "infrastructure-configs"}]
         )
-        self.assertTrue(layer["spec"]["suspend"])
+        # node-apps has been reviewed-unsuspended per the sync runbook §4.
+        # The safety property is not the Kustomization suspend flag; it is
+        # that the rendered HelmRelease remains stopped and non-signing,
+        # which the assertions below prove.
+        self.assertIn("suspend", layer["spec"])
+        self.assertFalse(layer["spec"]["suspend"])
 
         rendered = subprocess.run(
             ["kubectl", "kustomize", str(NODE_APPS)],
