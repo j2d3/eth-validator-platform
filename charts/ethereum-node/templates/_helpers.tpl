@@ -245,7 +245,10 @@ for entry in /data/.[!.]* /data/..?* /data/*; do
   echo "refusing to initialize an unmarked non-empty execution PVC" >&2
   exit 1
 done
-reth init --chain {{ printf "/network/files/%s" .Values.networkProfile.artifactBundle.files.executionGenesis | quote }} --datadir /data
+reth init \
+  --chain {{ printf "/network/files/%s" .Values.networkProfile.artifactBundle.files.executionGenesis | quote }} \
+  --datadir /data \
+  --log.file.max-files 0
 printf '%s\n' "$expected" > "$marker"
 {{- end -}}
 
@@ -257,6 +260,7 @@ test -n "$bootnodes"
 exec reth node \
   --chain {{ printf "/network/files/%s" .Values.networkProfile.artifactBundle.files.executionGenesis | quote }} \
   --datadir /data \
+  --log.file.max-files 0 \
   --bootnodes "$bootnodes" \
   --http \
   --http.addr 0.0.0.0 \

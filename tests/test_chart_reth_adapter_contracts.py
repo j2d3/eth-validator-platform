@@ -124,6 +124,7 @@ class RethAdapterRenderTests(unittest.TestCase):
         self.assertIn("exec reth node", script)
         self.assertIn("--chain ", script)
         self.assertIn("--datadir /data", script)
+        self.assertIn("--log.file.max-files 0", script)
         self.assertIn("--authrpc.jwtsecret /jwt/jwt.hex", script)
         self.assertIn("--metrics 0.0.0.0:6060", script)
         # No Geth signature leaks in.
@@ -141,7 +142,8 @@ class RethAdapterRenderTests(unittest.TestCase):
         # Marker check specific to Reth's on-disk layout.
         self.assertIn("test -d /data/db", script)
         self.assertNotIn("test -d /data/geth", script)
-        self.assertIn("reth init --chain ", script)
+        self.assertIn("reth init \\\n", script)
+        self.assertIn("--log.file.max-files 0", script)
 
     def test_geth_ephemery_still_renders_unchanged(self) -> None:
         # Flip the same profile to Geth and confirm we get the Geth shell wrap.
