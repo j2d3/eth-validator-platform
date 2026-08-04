@@ -269,7 +269,8 @@
           "additionalProperties": false,
           "required": ["mode"],
           "properties": {
-            "mode": {"const": "artifact-bundle"}
+            "mode": {"const": "artifact-bundle"},
+            "signingQualified": {"type": "boolean"}
           }
         }
       ]

@@ -52,6 +52,10 @@ spec:
         lighthouse:
           mode: builtin
           network: hoodi
+      signer:
+        web3signer:
+          mode: builtin
+          network: hoodi
     executionClient: geth
     consensusClient: lighthouse
     telemetry:

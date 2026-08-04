@@ -44,6 +44,7 @@ spec:
   signer:
     web3signer:
       mode: artifact-bundle
+      signingQualified: true
   checkpointSync:
     primaryUrl: https://checkpoint-sync.ephemery.ethpandaops.io/
     verificationUrls:

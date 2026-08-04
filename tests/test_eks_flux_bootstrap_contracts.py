@@ -114,7 +114,7 @@ class EksFluxEntrypointTests(unittest.TestCase):
         self.assertEqual(dependencies["infrastructure-controllers"], [])
         self.assertEqual(dependencies["infrastructure-configs"], ["infrastructure-controllers"])
         self.assertEqual(dependencies["portal-observability"], ["infrastructure-configs"])
-        self.assertEqual(dependencies["node-apps"], ["infrastructure-configs"])
+        self.assertEqual(dependencies["node-apps"], ["apps"])
         self.assertEqual(
             dependencies["signer-infrastructure-configs"],
             ["infrastructure-configs"],
@@ -508,35 +508,42 @@ class EksApplicationSafetyTests(unittest.TestCase):
                 self.assertFalse(container["securityContext"]["allowPrivilegeEscalation"])
                 self.assertEqual(container["securityContext"]["capabilities"]["drop"], ["ALL"])
 
-    def test_dev_overlay_preserves_non_signing_assignment(self) -> None:
-        # The assignment has been reviewed-activated per the sync runbook §6.
-        # The real non-signing safety property is validator.enabled=false and
-        # slashingProtectionConfirmed=false — lifecycleState is an operational
-        # flag, not a signing gate. Accept either stopped or active; reject
-        # any release that flips a signing-related field.
-        release = load_one(ROOT / "platform" / "apps" / "local" / "assignments" / "assignment-ephemery-162-synthetic.yaml")
+    def test_catalog_signing_assignment_is_disabled_by_the_local_overlay(self) -> None:
+        generated = load_one(
+            ROOT
+            / "platform"
+            / "apps"
+            / "local"
+            / "assignments"
+            / "assignment-ephemery-162-synthetic.yaml"
+        )
+        self.assertTrue(generated["spec"]["values"]["validator"]["enabled"])
+
+        local_documents = render_all(ROOT / "platform" / "apps" / "local")
+        release = object_named(
+            local_documents,
+            "HelmRelease",
+            "assignment-ephemery-162-synthetic",
+        )
         values = release["spec"]["values"]
-        self.assertIn(values["lifecycleState"], ("stopped", "active"))
         self.assertFalse(values["validator"]["enabled"])
         self.assertFalse(values["validator"]["slashingProtectionConfirmed"])
 
         overlay = (NODE_APPS / "kustomization.yaml").read_text(encoding="utf-8")
         self.assertNotIn("lifecycleState", overlay)
-        self.assertNotIn("signingEnabled: true", overlay)
-        self.assertNotIn("validator:\n          enabled: true", overlay)
         self.assertIn("values-eks-ephemery.yaml", overlay)
         self.assertIn("eth-validator-platform-dev", overlay)
 
-    def test_profile_is_explicitly_non_signing(self) -> None:
+    def test_profile_records_the_qualified_signing_state(self) -> None:
         profile = load_one(APPS / "profile.yaml")
         self.assertEqual(profile["data"]["environment"], "dev")
-        self.assertEqual(profile["data"]["signingEnabled"], "false")
+        self.assertEqual(profile["data"]["signingEnabled"], "true")
         self.assertEqual(
             profile["metadata"]["labels"]["platform.galaxy-lab/signing-enabled"],
-            "false",
+            "true",
         )
 
-    def test_released_signer_stays_non_signing_after_key_projection(self) -> None:
+    def test_released_signer_projects_only_the_encrypted_key_secret(self) -> None:
         documents = render_all(APPS)
         deployment = object_named(documents, "Deployment", "web3signer")
         pod = deployment["spec"]["template"]["spec"]
@@ -554,9 +561,9 @@ class EksApplicationSafetyTests(unittest.TestCase):
             next(arg for arg in args if arg.startswith("--http-host-allowlist=")),
             "--http-host-allowlist=web3signer,web3signer.signing.svc,web3signer.signing.svc.cluster.local",
         )
-        self.assertFalse(
-            load_one(APPS / "profile.yaml")["data"]["signingEnabled"]
-            == "true"
+        self.assertEqual(
+            load_one(APPS / "profile.yaml")["data"]["signingEnabled"],
+            "true",
         )
 
     def test_eks_surfaces_are_owned_by_separate_signer_and_node_layers(self) -> None:
@@ -566,6 +573,7 @@ class EksApplicationSafetyTests(unittest.TestCase):
             [
                 "../base/web3signer",
                 "../base/aws-rds-ca",
+                "../base/ephemery-162-network-config",
                 "profile.yaml",
                 "validator-keystore-secret.yaml",
             ],
@@ -575,7 +583,7 @@ class EksApplicationSafetyTests(unittest.TestCase):
         node_overlay = load_one(NODE_APPS / "kustomization.yaml")
         self.assertIn("../../local/assignments", node_overlay["resources"])
         self.assertIn("sync-dashboard.yaml", node_overlay["resources"])
-        self.assertNotIn("web3signer", yaml.safe_dump(node_overlay).lower())
+        self.assertNotIn("../base/web3signer", node_overlay["resources"])
 
     def test_dev_desired_state_contains_no_gke_contract(self) -> None:
         roots = (
@@ -688,7 +696,7 @@ class EksApplicationSafetyTests(unittest.TestCase):
         self.assertIn("Do not remove both suspensions in one change", runbook)
         self.assertIn("read_only: true", runbook)
         self.assertIn("sslmode=verify-full", runbook)
-        self.assertIn("zero loaded keys", runbook)
+        self.assertIn("reports exactly that public key", runbook)
         self.assertIn("GitHub Actions", runbook)
         self.assertIn("Do not pass `--allow-write`", runbook)
         self.assertNotIn("flux bootstrap github", runbook)

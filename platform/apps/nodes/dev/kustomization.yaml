@@ -2,13 +2,15 @@ apiVersion: kustomize.config.k8s.io/v1beta1
 kind: Kustomization
 resources:
   # Both generation-pinned Ephemery pairs are admitted in this EKS node
-  # slice — Geth+Lighthouse and Reth+Lighthouse. Both render `stopped`, so
-  # unsuspending node-apps creates two stopped HelmReleases and four
-  # Pending PVCs (execution + consensus per pair) and no Pods.
+  # slice — Geth+Lighthouse and Reth+Lighthouse. The Geth pair carries the
+  # qualified signing assignment; the Reth pair remains non-signing.
   # The generated catalog projection remains the source; the overlay only
   # deletes the local-only synthetic-01 assignment and injects each pair's
   # EKS-specific inputs (valuesFiles + telemetry + engineJwt).
   - ../../local/assignments
+  # The same generation-pinned consensus config is rendered separately into
+  # the ethereum namespace for Lighthouse validator duties.
+  - ../../base/ephemery-162-network-config
   - profile.yaml
   - sync-dashboard.yaml
 
@@ -53,6 +55,14 @@ patches:
           secretStoreName: aws-engine-secrets
           remoteSecretKey: eth-validator-platform-dev/ethereum/engine-jwt
           remoteSecretProperty: jwt.hex
+  - target:
+      version: v1
+      kind: ConfigMap
+      name: web3signer-network-config-ephemery-162
+    patch: |-
+      - op: add
+        path: /metadata/namespace
+        value: ethereum
   - target:
       group: helm.toolkit.fluxcd.io
       version: v2

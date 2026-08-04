@@ -2,7 +2,7 @@
 
 ## Purpose and current state
 
-This runbook connects the existing private GitHub repository to the single EKS
+This runbook connects the GitHub repository to the single EKS
 `dev` cluster from a trusted workstation. Terraform owns the AWS foundation;
 Flux becomes the only continuous writer of in-cluster platform state.
 
@@ -13,25 +13,23 @@ infrastructure-controllers
           |
           v
 infrastructure-configs
-          +--------------------------+
-          |                          |
-          v                          v
-      node-apps          signer-infrastructure-configs
-       (active)                    (active)
-                                      |
-                                      v
-                           signer-prerequisites
-                                  (active)
-                                      |
-                                      v
-                                    apps
-                                  (active)
+          |
+          v
+signer-infrastructure-configs
+          |
+          v
+signer-prerequisites
+          |
+          v
+        apps
+          |
+          v
+      node-apps
 ```
 
-The cluster is bootstrapped and the node, signer-infrastructure, and signer-
-prerequisite branches are admitted. The `apps` layer admits Web3Signer only
-after its database prerequisites were qualified. Its key directory remains
-empty and validator duties remain disabled.
+The cluster is bootstrapped and all listed layers reconcile. The `apps` layer
+admits Web3Signer only after its database prerequisites are Ready; `node-apps`
+waits for that signer layer before admitting validator duties.
 
 ## Ownership boundary
 
@@ -168,8 +166,9 @@ RDS CA trust mechanism before the signer-prerequisite suspension is removed.
 The database store is available in both `database` and `signing` because Flyway
 and Web3Signer consume the same database credential; its AWS role still cannot
 read a signing key. The signer-only layer declares a signing-key
-`ClusterSecretStore`, but no ExternalSecret consumes it and no key is loaded by
-this non-signing slice.
+`ClusterSecretStore`. The signer application consumes one encrypted keystore
+through an ExternalSecret; the node and validator namespaces cannot use that
+store.
 `sslmode=verify-full` in desired state is necessary but is not evidence that
 either image trusts the selected RDS CA. Confirm metadata without reading
 secret values:
@@ -576,12 +575,11 @@ If the Job ran but this assertion fails, leave `apps` suspended. A successful
 database connection is not a substitute for proving which network identity the
 Pod received.
 
-Only then open a third PR changing `clusters/dev/apps.yaml` to
-`suspend: false`. The committed assignment is still stopped and non-signing, so
-this admits Web3Signer with an empty key directory plus dashboards and retained
-PVC declarations—not validator duties. Verify zero loaded keys before any node
-activation request. Also prove the Web3Signer Pod has a branch ENI carrying only
-the expected runtime group before calling this layer qualified:
+Only after the migration gate passes may `clusters/dev/apps.yaml` reconcile.
+The current application layer projects exactly one encrypted validator
+keystore. Verify that Web3Signer reports exactly that public key without reading
+the keystore or password. Also prove the Web3Signer Pod has a branch ENI carrying
+only the expected runtime group before calling this layer qualified:
 
 ```bash
 kubectl -n signing rollout status deployment/web3signer --timeout=5m
@@ -604,7 +602,7 @@ unset WEB3SIGNER_POD_IP WEB3SIGNER_ENI_JSON
 Record both branch-ENI assertions in the same reviewed, sanitized EKS evidence
 series. The raw EC2 response must not be committed.
 
-## 7. Runtime gates still required for the first pair
+## 7. Runtime gates for the first signing pair
 
 Flux bootstrap alone does not authorize a sync or a validator:
 
@@ -614,14 +612,18 @@ Flux bootstrap alone does not authorize a sync or a validator:
 - the generation-addressed Ephemery adapter and artifact/checkpoint inputs are
   pinned and rendered for the selected clients;
 - inbound/outbound P2P behavior and its AWS security path are reviewed;
-- the non-signing lifecycle request is merged and Flux reports the pair Ready;
+- Flux reports the execution/beacon pair Ready on the exact Ephemery identity;
 - EL and CL report the correct network, healthy peer counts, decreasing sync
   distance, and finalized-chain progress;
-- validator duties remain disabled until the separate key, slashing-history
-  restore, doppelganger, uniqueness, clock, and activation gates pass.
+- Web3Signer exposes exactly the deposited public key, its RDS slashing schema
+  is current, and its runtime branch ENI is qualified;
+- the assignment is unique, registered, deposited, and carries explicit
+  slashing-protection and doppelganger acknowledgments; and
+- after reconciliation, the validator client reports the expected beacon state
+  and no signing or slashing-protection errors.
 
-Use [`eks-ephemery-sync.md`](eks-ephemery-sync.md) for the exact node-only
-admission, P2P, identity, sustained-sync, stop, and same-AZ resume gates.
+Use [`eks-ephemery-sync.md`](eks-ephemery-sync.md) for the node-pair P2P,
+identity, sustained-sync, and same-AZ recovery gates.
 
 ## 8. Pause and rollback
 

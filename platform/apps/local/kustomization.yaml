@@ -13,3 +13,17 @@ resources:
 
 patches:
   - path: signer-telemetry-patch.yaml
+  # Signing activation is environment-specific. The catalog projection feeds
+  # EKS, while the local kind profile remains incapable of validator duties.
+  - target:
+      group: helm.toolkit.fluxcd.io
+      version: v2
+      kind: HelmRelease
+      name: assignment-ephemery-162-synthetic
+    patch: |-
+      - op: replace
+        path: /spec/values/validator/enabled
+        value: false
+      - op: replace
+        path: /spec/values/validator/slashingProtectionConfirmed
+        value: false

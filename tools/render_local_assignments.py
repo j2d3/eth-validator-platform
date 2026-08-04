@@ -1,16 +1,16 @@
 #!/usr/bin/env python3
-"""Compile the declarative catalog into Flux-managed local Helm releases.
+"""Compile the declarative catalog into Flux-managed Helm releases.
 
-This is intentionally a narrow Phase 3 adapter. It projects every supported
-assignment into the in-repository ethereum-node chart, but it never enables a
-validator client or signing. The catalog remains the operator-facing source of
-truth; generated files are committed so Flux sees a reviewable, deterministic
-desired state and CI can reject projection drift.
+The catalog remains the operator-facing source of truth; generated files are
+committed so Flux sees a reviewable, deterministic desired state and CI can
+reject projection drift. Signing values are projected only after the catalog's
+identity, signer-binding, slashing-protection, and doppelganger gates pass.
 """
 
 from __future__ import annotations
 
 import argparse
+import copy
 import hashlib
 import json
 import sys
@@ -118,10 +118,6 @@ def build_release(
         raise ProjectionError(f"unknown ValidatorAssignment {assignment_name!r}") from error
 
     spec = assignment["spec"]
-    if spec["signingEnabled"]:
-        raise ProjectionError(
-            f"ValidatorAssignment/{assignment_name}: the local projection is non-signing only"
-        )
 
     validator_name = spec["validatorRef"]
     profile_name = spec["serviceProfileRef"]
@@ -164,6 +160,38 @@ def build_release(
             f"{network_profile_name!r} does not match ValidatorIdentity/{validator_name} "
             f"binding {identity_spec['networkProfileRef']!r}"
         )
+
+    signing_enabled = spec["signingEnabled"]
+    if signing_enabled:
+        if identity_spec["synthetic"]:
+            raise ProjectionError(
+                f"ValidatorAssignment/{assignment_name}: synthetic identity may not sign"
+            )
+        if identity_spec["lifecycle"] != "registered":
+            raise ProjectionError(
+                f"ValidatorAssignment/{assignment_name}: signing requires a registered identity"
+            )
+        if not identity_spec.get("publicKey"):
+            raise ProjectionError(
+                f"ValidatorIdentity/{validator_name}: signing requires publicKey"
+            )
+        if not identity_spec.get("signingSecretRef"):
+            raise ProjectionError(
+                f"ValidatorIdentity/{validator_name}: signing requires signingSecretRef"
+            )
+        if not spec.get("feeRecipient"):
+            raise ProjectionError(
+                f"ValidatorAssignment/{assignment_name}: signing requires feeRecipient"
+            )
+        if not all(spec["safety"].values()):
+            raise ProjectionError(
+                f"ValidatorAssignment/{assignment_name}: signing requires all safety confirmations"
+            )
+        signer_adapter = network_profile["spec"]["signer"]["web3signer"]
+        if not signer_adapter.get("signingQualified", False):
+            raise ProjectionError(
+                f"NetworkProfile/{network_profile_name}: signer binding is not qualified"
+            )
 
     network_spec = network_profile["spec"]
     profile_clients = network_spec["clients"]
@@ -240,7 +268,13 @@ def build_release(
         "identityFingerprint": network_identity_fingerprint(network_profile),
         "identity": network_spec["identity"],
         "clients": runtime_clients,
+        "signer": copy.deepcopy(network_spec["signer"]),
     }
+    web3signer_values = network_values["signer"]["web3signer"]
+    if web3signer_values["mode"] == "artifact-bundle":
+        # Helm deep-merges mappings. Explicitly clear the chart's built-in
+        # network default so it cannot leak into artifact-bundle renders.
+        web3signer_values["network"] = None
     if adapter_mode == "artifact-bundle":
         network_values["artifactBundle"] = network_spec["artifactBundle"]
         network_values["checkpointSync"] = network_spec["checkpointSync"]
@@ -302,8 +336,20 @@ def build_release(
                     "assignmentId": assignment_name,
                 },
                 "validator": {
-                    "enabled": False,
-                    "slashingProtectionConfirmed": False,
+                    "enabled": signing_enabled,
+                    "slashingProtectionConfirmed": spec["safety"][
+                        "slashingProtectionConfirmed"
+                    ],
+                    **(
+                        {
+                            "publicKey": identity_spec["publicKey"],
+                            "feeRecipient": spec["feeRecipient"],
+                            "graffiti": "eth-validator-platform-lab",
+                            "networkConfigMapName": f"web3signer-network-config-{network_profile_name}",
+                        }
+                        if signing_enabled
+                        else {}
+                    ),
                 },
             },
         },

@@ -1,4 +1,4 @@
-"""Offline contracts for the first node-only Ephemery sync slice on EKS.
+"""Offline contracts for the Ephemery Geth/Lighthouse assignment on EKS.
 
 These tests prove desired-state composition, not AWS provisioning, P2P
 reachability, peer discovery, or chain sync. Runtime evidence remains a runbook
@@ -82,13 +82,23 @@ class EksEphemeryRenderTests(unittest.TestCase):
         for document in cls.documents:
             cls.by_kind.setdefault(document["kind"], []).append(document)
 
-    def test_renders_exactly_one_node_pair_and_no_validator_or_signer(self) -> None:
+    def test_renders_one_node_pair_and_one_remote_signing_validator(self) -> None:
         self.assertEqual(len(self.by_kind["StatefulSet"]), 1)
-        self.assertNotIn("Deployment", self.by_kind)
+        self.assertEqual(len(self.by_kind["Deployment"]), 1)
+        validator = self.by_kind["Deployment"][0]
+        self.assertTrue(validator["metadata"]["name"].endswith("-validator"))
+        args = validator["spec"]["template"]["spec"]["containers"][0]["args"]
+        self.assertIn("--testnet-dir=/validator-network", args)
+        self.assertIn("--enable-doppelganger-protection", args)
+        self.assertIn("--disable-slashing-protection-web3signer", args)
         text = yaml.safe_dump_all(self.documents).lower()
         self.assertNotIn("validator-keystore", text)
-        self.assertNotIn("signing-enabled: 'true'", text)
+        self.assertNotIn("signingsecretref", text)
         self.assertNotIn("web3signer-database", text)
+        self.assertIn(
+            "http://web3signer.signing.svc.cluster.local:9000",
+            text,
+        )
 
         external_secrets = self.by_kind["ExternalSecret"]
         self.assertEqual(len(external_secrets), 1)
@@ -99,14 +109,17 @@ class EksEphemeryRenderTests(unittest.TestCase):
 
     def test_chain_claims_use_small_encrypted_gp3_generation_identity(self) -> None:
         claims = self.by_kind["PersistentVolumeClaim"]
-        self.assertEqual(len(claims), 2)
+        self.assertEqual(len(claims), 3)
         sizes = {
             claim["metadata"]["name"].rsplit("-", 1)[-1]: claim["spec"]["resources"][
                 "requests"
             ]["storage"]
             for claim in claims
         }
-        self.assertEqual(sizes, {"execution": "50Gi", "consensus": "20Gi"})
+        self.assertEqual(
+            sizes,
+            {"execution": "50Gi", "consensus": "20Gi", "validator": "5Gi"},
+        )
         for claim in claims:
             with self.subTest(claim=claim["metadata"]["name"]):
                 self.assertEqual(claim["spec"]["storageClassName"], "ebs-gp3-encrypted")
@@ -198,7 +211,14 @@ class EksEphemeryRenderTests(unittest.TestCase):
 
         self.assertEqual(pod_spec["nodeSelector"], {"workload": "ethereum"})
         self.assertEqual(pod_spec["terminationGracePeriodSeconds"], 30)
-        self.assertNotIn("PodDisruptionBudget", self.by_kind)
+        pdbs = self.by_kind["PodDisruptionBudget"]
+        self.assertEqual(len(pdbs), 1)
+        self.assertEqual(
+            pdbs[0]["spec"]["selector"]["matchLabels"][
+                "platform.galaxy-lab/component"
+            ],
+            "validator",
+        )
         preference = pod_spec["affinity"]["nodeAffinity"][
             "preferredDuringSchedulingIgnoredDuringExecution"
         ][0]
@@ -292,15 +312,13 @@ class EksEphemeryRenderTests(unittest.TestCase):
 
 
 class EksEphemeryFluxAndTelemetryTests(unittest.TestCase):
-    def test_node_layer_is_independent_and_non_signing(self) -> None:
+    def test_signing_node_layer_waits_for_signer_application(self) -> None:
         layer = yaml.safe_load((CLUSTER / "node-apps.yaml").read_text(encoding="utf-8"))
         self.assertEqual(
-            layer["spec"]["dependsOn"], [{"name": "infrastructure-configs"}]
+            layer["spec"]["dependsOn"], [{"name": "apps"}]
         )
-        # node-apps has been reviewed-unsuspended per the sync runbook §4.
-        # The safety property is not the Kustomization suspend flag; it is
-        # that the rendered HelmRelease remains stopped and non-signing,
-        # which the assertions below prove.
+        # The layer remains reconciled; its dependency now orders the validator
+        # behind the Ready shared-signer application.
         self.assertIn("suspend", layer["spec"])
         self.assertFalse(layer["spec"]["suspend"])
 
@@ -316,8 +334,7 @@ class EksEphemeryFluxAndTelemetryTests(unittest.TestCase):
         ]
         # Both the Geth+Lighthouse and Reth+Lighthouse Ephemery pairs are
         # rendered by this overlay. Everything else in this test asserts on
-        # the Geth pair specifically (its stopped/non-signing shape); the
-        # Reth pair is covered separately in
+        # the signing Geth pair; the non-signing Reth pair is covered in
         # test_chart_reth_adapter_contracts and test_local_assignment_projection.
         self.assertEqual(
             sorted(release["metadata"]["name"] for release in releases),
@@ -330,15 +347,14 @@ class EksEphemeryFluxAndTelemetryTests(unittest.TestCase):
             r for r in releases
             if r["metadata"]["name"] == "assignment-ephemery-162-synthetic"
         )
-        # The assignment has been reviewed-activated per the sync runbook §6.
-        # The real non-signing safety property is that the *validator client*
-        # stays disabled and slashing protection remains unconfirmed even when
-        # the lifecycle is active; the chart in artifact-mode rejects
-        # validator.enabled=true regardless of lifecycle.
-        self.assertIn(release["spec"]["values"]["lifecycleState"], ("stopped", "active"))
-        self.assertFalse(release["spec"]["values"]["validator"]["enabled"])
-        self.assertFalse(
+        self.assertEqual(release["spec"]["values"]["lifecycleState"], "active")
+        self.assertTrue(release["spec"]["values"]["validator"]["enabled"])
+        self.assertTrue(
             release["spec"]["values"]["validator"]["slashingProtectionConfirmed"]
+        )
+        self.assertTrue(
+            release["spec"]["values"]["networkProfile"]["signer"]["web3signer"]
+            ["signingQualified"]
         )
         self.assertEqual(
             release["spec"]["values"]["engineJwt"]["secretStoreName"],
@@ -355,7 +371,10 @@ class EksEphemeryFluxAndTelemetryTests(unittest.TestCase):
                 "charts/ethereum-node/values-eks-ephemery.yaml",
             ],
         )
-        self.assertNotIn("web3signer", rendered.lower())
+        self.assertEqual(
+            release["spec"]["values"]["validator"]["networkConfigMapName"],
+            "web3signer-network-config-ephemery-162",
+        )
 
     def test_sync_dashboard_uses_only_declared_evidence_and_states_limits(self) -> None:
         config_map = yaml.safe_load(
@@ -388,9 +407,9 @@ class EksEphemeryFluxAndTelemetryTests(unittest.TestCase):
                 self.assertIn(f"record: {metric}", rules)
 
         text = json.dumps(dashboard).lower()
-        self.assertIn("ready means only", text)
+        self.assertIn("kubernetes readiness reports", text)
         self.assertIn("not an independent network-tip distance", text)
-        self.assertIn("validator duties and signing remain disabled", text)
+        self.assertNotIn("signing remain disabled", text)
         self.assertNotIn("public_key", text)
         self.assertNotIn("web3signer", text)
 
@@ -402,7 +421,7 @@ class EksEphemeryFluxAndTelemetryTests(unittest.TestCase):
             "successor generation",
             "suspend: true",
             "validator.enabled=false",
-            "signingEnabled: false",
+            "deposited signing identity",
             "Engine JWT",
             "LoadBalancer",
             "externalTrafficPolicy: Local",
@@ -411,7 +430,7 @@ class EksEphemeryFluxAndTelemetryTests(unittest.TestCase):
             "Spot interruption",
             "15-minute",
             "internal sync distance",
-            "authorize validator duties",
+            "did not authorize validator duties",
         ):
             with self.subTest(required=required):
                 self.assertIn(required, text)

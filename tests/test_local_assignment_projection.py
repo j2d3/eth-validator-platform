@@ -81,7 +81,10 @@ class LocalAssignmentProjectionTests(unittest.TestCase):
         catalog = copy.deepcopy(self.catalog)
         catalog["ValidatorAssignment"][self.assignment_name]["spec"]["signingEnabled"] = True
 
-        with self.assertRaisesRegex(render_local_assignments.ProjectionError, "non-signing only"):
+        with self.assertRaisesRegex(
+            render_local_assignments.ProjectionError,
+            "synthetic identity may not sign",
+        ):
             self.release(catalog)
 
     def test_projection_refuses_unimplemented_client_adapter(self) -> None:

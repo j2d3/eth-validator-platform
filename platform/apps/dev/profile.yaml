@@ -7,10 +7,10 @@ metadata:
     app.kubernetes.io/part-of: ethereum-validator-platform
     platform.galaxy-lab/environment: dev
     platform.galaxy-lab/profile: platform-smoke
-    platform.galaxy-lab/signing-enabled: "false"
+    platform.galaxy-lab/signing-enabled: "true"
 data:
   environment: dev
   profile: platform-smoke
-  network: hoodi
-  signingEnabled: "false"
-  explanation: "AWS platform adapter is declared; validator duties and signing are disabled."
+  network: ephemery-162
+  signingEnabled: "true"
+  explanation: "One deposited Ephemery validator uses the shared Web3Signer service and RDS slashing protection."

@@ -7,10 +7,10 @@ metadata:
     app.kubernetes.io/part-of: ethereum-validator-platform
     platform.galaxy-lab/environment: dev
     platform.galaxy-lab/profile: ephemery-node-sync
-    platform.galaxy-lab/signing-enabled: "false"
+    platform.galaxy-lab/signing-enabled: "true"
 data:
   environment: dev
-  profile: ephemery-node-sync
+  profile: ephemery-validator
   network: ephemery-162
-  signingEnabled: "false"
-  explanation: "One EKS Ephemery Geth/Lighthouse node pair; validator duties and signing are disabled."
+  signingEnabled: "true"
+  explanation: "The Geth/Lighthouse pair runs one validator client through the shared Web3Signer service."

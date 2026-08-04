@@ -3,21 +3,9 @@ kind: Kustomization
 resources:
   - ../base/web3signer
   - ../base/aws-rds-ca
+  - ../base/ephemery-162-network-config
   - profile.yaml
   - validator-keystore-secret.yaml
-
-configMapGenerator:
-  # Web3Signer accepts a local consensus-spec configuration file for custom
-  # networks. Supplying the generation-pinned file prevents its predefined
-  # Ephemery profile from fetching bootnodes at startup; the signer remains
-  # inside its DNS + RDS-only egress boundary.
-  - name: web3signer-network-config-ephemery-162
-    options:
-      # The name is already generation-specific. JSON6902-added volume
-      # references are not rewritten to Kustomize hash-suffixed names.
-      disableNameSuffixHash: true
-    files:
-      - config.yaml=network-configs/ephemery-162.yaml
 
 patches:
   - path: signer-telemetry-patch.yaml
