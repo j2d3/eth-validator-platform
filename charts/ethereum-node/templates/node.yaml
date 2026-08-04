@@ -221,22 +221,7 @@ spec:
           command: [/bin/sh, -ec]
           args:
             - |
-              set -eu
-              bootnodes="$(paste -sd, {{ printf "/network/files/%s" .Values.networkProfile.artifactBundle.files.consensusBootnodesText | quote }})"
-              test -n "$bootnodes"
-              exec lighthouse bn \
-                {{ printf "--testnet-dir=/network/files" | quote }} \
-                {{ printf "--checkpoint-sync-url=%s" .Values.networkProfile.checkpointSync.primaryUrl | quote }} \
-                --boot-nodes="$bootnodes" \
-                --datadir=/data \
-                --execution-endpoint=http://127.0.0.1:8551 \
-                --execution-jwt=/jwt/jwt.hex \
-                --http \
-                --http-address=0.0.0.0 \
-                --http-port=5052 \
-                --metrics \
-                --metrics-address=0.0.0.0 \
-                --metrics-port=8008
+{{ include "ethereum-node.consensusRunCommand" . | indent 14 }}
           {{- else }}
           command: [lighthouse]
           args:
