@@ -23,7 +23,7 @@ LOG = logging.getLogger("portal-status-api")
 SCHEMA_VERSION = 1
 PROMETHEUS_URL = os.environ.get(
     "PROMETHEUS_URL",
-    "http://monitoring-prometheus.observability.svc.cluster.local:9090",
+    "http://prometheus-operated.observability.svc.cluster.local:9090",
 ).rstrip("/")
 GRAFANA_BASE_URL = os.environ.get("GRAFANA_BASE_URL", "").rstrip("/")
 ALLOWED_ORIGIN = os.environ.get("ALLOWED_ORIGIN", "https://g.j2d3.com")
