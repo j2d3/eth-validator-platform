@@ -48,7 +48,33 @@ def count_block(value: object, *, path: Path, field: str) -> dict[str, int]:
     return {key: value[key] for key in ("available", "total", "unavailable")}
 
 
-def aggregate(root: Path) -> dict[str, Any]:
+def load_inventory(path: Path) -> dict[str, Any]:
+    document = load_object(path)
+    if document.get("schemaVersion") != 1:
+        raise AggregateError(f"{path} is not a schemaVersion 1 inventory")
+    for field in ("images", "coverageGaps"):
+        if not isinstance(document.get(field), list):
+            raise AggregateError(f"{path} field {field!r} is not a list")
+    return document
+
+
+def inventory_subject_set(inventory: dict[str, Any]) -> set[tuple[str, str]]:
+    expected: set[tuple[str, str]] = set()
+    for entry in inventory["images"]:
+        if not isinstance(entry, dict):
+            raise AggregateError("inventory image entry is not an object")
+        image = entry.get("image")
+        digest = entry.get("digest")
+        if not isinstance(image, str) or not isinstance(digest, str):
+            raise AggregateError("inventory image is missing string image/digest")
+        subject = (image, digest)
+        if subject in expected:
+            raise AggregateError(f"duplicate image subject in inventory: {image}")
+        expected.add(subject)
+    return expected
+
+
+def aggregate(root: Path, inventory: dict[str, Any] | None = None) -> dict[str, Any]:
     paths = sorted(root.glob("image-scan-*/image-scan-decision.json"))
     if not paths:
         raise AggregateError("no image-scan decision artifacts were found")
@@ -100,7 +126,7 @@ def aggregate(root: Path) -> dict[str, Any]:
                     target[severity][key] += block[key]
 
     latest = max(evaluated_at).astimezone(dt.timezone.utc)
-    return {
+    summary: dict[str, Any] = {
         "schemaVersion": 1,
         "evaluatedAt": latest.isoformat(timespec="seconds").replace("+00:00", "Z"),
         "images": len(subjects),
@@ -109,19 +135,58 @@ def aggregate(root: Path) -> dict[str, Any]:
         "decision": {"mode": "evidence-only", "promotionGate": False},
     }
 
+    if inventory is not None:
+        expected = inventory_subject_set(inventory)
+        missing = sorted({image for image, _ in expected - subjects})
+        extra = sorted({image for image, _ in subjects - expected})
+        if missing:
+            raise AggregateError(
+                "missing image-scan decision(s) for inventory subject(s): "
+                + ", ".join(missing)
+            )
+        if extra:
+            raise AggregateError(
+                "unexpected image-scan decision(s) not in inventory: "
+                + ", ".join(extra)
+            )
+        gaps = inventory["coverageGaps"]
+        for entry in gaps:
+            if not isinstance(entry, dict):
+                raise AggregateError("inventory coverageGap entry is not an object")
+        gap_kinds: dict[str, int] = {}
+        for entry in gaps:
+            kind = entry.get("kind")
+            if not isinstance(kind, str):
+                raise AggregateError("inventory coverageGap kind must be a string")
+            gap_kinds[kind] = gap_kinds.get(kind, 0) + 1
+        summary["exactSubjects"] = {
+            "scanned": len(subjects),
+            "expected": len(expected),
+        }
+        summary["coverageGaps"] = {
+            "count": len(gaps),
+            "kinds": dict(sorted(gap_kinds.items())),
+        }
+
+    return summary
+
 
 def github_outputs(summary: dict[str, Any]) -> str:
     counts = summary["counts"]
-    return "\n".join(
-        [
-            "available=true",
-            f"images={summary['images']}",
-            f"critical_total={counts['critical']['total']}",
-            f"critical_available={counts['critical']['available']}",
-            f"high_total={counts['high']['total']}",
-            f"high_available={counts['high']['available']}",
-        ]
-    ) + "\n"
+    lines = [
+        "available=true",
+        f"images={summary['images']}",
+        f"critical_total={counts['critical']['total']}",
+        f"critical_available={counts['critical']['available']}",
+        f"high_total={counts['high']['total']}",
+        f"high_available={counts['high']['available']}",
+    ]
+    if "exactSubjects" in summary:
+        lines.append(f"exact_scanned={summary['exactSubjects']['scanned']}")
+        lines.append(f"exact_expected={summary['exactSubjects']['expected']}")
+    if "coverageGaps" in summary:
+        lines.append(f"coverage_gaps={summary['coverageGaps']['count']}")
+    return "\n".join(lines) + "\n"
 
 
 def parse_args() -> argparse.Namespace:
@@ -129,13 +194,20 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--root", type=Path, required=True)
     parser.add_argument("--output", type=Path, required=True)
     parser.add_argument("--github-output", type=Path)
+    parser.add_argument(
+        "--inventory",
+        type=Path,
+        help="Bind aggregation to a schemaVersion 1 discovery inventory; "
+        "reject missing/extra decisions and publish coverage-gap count.",
+    )
     return parser.parse_args()
 
 
 def main() -> int:
     args = parse_args()
     try:
-        summary = aggregate(args.root)
+        inventory = load_inventory(args.inventory) if args.inventory else None
+        summary = aggregate(args.root, inventory=inventory)
         args.output.write_text(
             json.dumps(summary, indent=2, sort_keys=True) + "\n", encoding="utf-8"
         )

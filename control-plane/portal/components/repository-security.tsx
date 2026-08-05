@@ -31,6 +31,8 @@ type SecurityStatus = {
 
 type ImageSecurityEvidence = {
   images: number;
+  exactSubjects: { scanned: number; expected: number };
+  coverageGaps: number;
   critical: { total: number; available: number };
   high: { total: number; available: number };
   completedAt: string;
@@ -149,7 +151,7 @@ export default function RepositorySecurity() {
           </strong>
           <span className="detail">
             {status.imageEvidence
-              ? `${status.imageEvidence.images} images · ${status.imageEvidence.critical.available} Critical and ${status.imageEvidence.high.available} High with fixes available`
+              ? `${status.imageEvidence.exactSubjects.scanned}/${status.imageEvidence.exactSubjects.expected} exact subjects scanned · ${status.imageEvidence.coverageGaps} unresolved sources · ${status.imageEvidence.critical.available} Critical and ${status.imageEvidence.high.available} High with fixes available`
               : "Latest aggregate unavailable"}
           </span>
           <a href={status.imageEvidence?.htmlUrl ?? imageSecurityWorkflowRuns}>

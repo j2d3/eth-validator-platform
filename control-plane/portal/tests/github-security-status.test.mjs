@@ -27,7 +27,7 @@ const validRun = {
 const validEvidence = {
   check_runs: [
     {
-      name: "Image findings - 21 images - Critical 3 (2 fix available) - High 47 (31 fix available)",
+      name: "Image findings - 21/21 exact subjects scanned - 11 coverage gaps - Critical 3 (2 fix available) - High 47 (31 fix available)",
       head_sha: "a".repeat(40),
       status: "completed",
       conclusion: "success",
@@ -65,6 +65,8 @@ test("parses public finding counts bound to the exact workflow run", () => {
   const run = parseImageSecurityRun(validRun);
   assert.deepEqual(parseImageSecurityEvidence(validEvidence, run), {
     images: 21,
+    exactSubjects: { scanned: 21, expected: 21 },
+    coverageGaps: 11,
     critical: { total: 3, available: 2 },
     high: { total: 47, available: 31 },
     completedAt: "2026-08-05T13:42:11Z",
@@ -83,7 +85,25 @@ test("does not accept finding counts from another workflow run", () => {
 test("rejects impossible public finding counts", () => {
   const response = structuredClone(validEvidence);
   response.check_runs[0].name =
-    "Image findings - 21 images - Critical 3 (4 fix available) - High 47 (31 fix available)";
+    "Image findings - 21/21 exact subjects scanned - 11 coverage gaps - Critical 3 (4 fix available) - High 47 (31 fix available)";
+  assert.throws(() =>
+    parseImageSecurityEvidence(response, parseImageSecurityRun(validRun)),
+  );
+});
+
+test("rejects a partial-coverage check where scanned != expected", () => {
+  const response = structuredClone(validEvidence);
+  response.check_runs[0].name =
+    "Image findings - 20/21 exact subjects scanned - 11 coverage gaps - Critical 3 (2 fix available) - High 47 (31 fix available)";
+  assert.throws(() =>
+    parseImageSecurityEvidence(response, parseImageSecurityRun(validRun)),
+  );
+});
+
+test("rejects the previous single-count check-name format", () => {
+  const response = structuredClone(validEvidence);
+  response.check_runs[0].name =
+    "Image findings - 21 images - Critical 3 (2 fix available) - High 47 (31 fix available)";
   assert.throws(() =>
     parseImageSecurityEvidence(response, parseImageSecurityRun(validRun)),
   );

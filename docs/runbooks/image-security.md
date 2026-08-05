@@ -23,13 +23,19 @@ and any exception metadata are internally valid; it does not mean the image is
 approved for promotion.
 
 Fresh scans also aggregate those per-image documents into
-`image-scan-summary.json`. The workflow publishes the image count and raw
-Critical/High occurrence totals, including the subset with a non-empty
-`FixedVersion`, in a successful check name bound to the same workflow run and
-source SHA. GitHub exposes that check metadata through its public read-only API,
-which lets the portal show counts without a repository token or write
-permission. The counts remain evidence only and are not unique-vulnerability
-counts or a promotion decision.
+`image-scan-summary.json`. Aggregation is bound to the exact discovered
+inventory: the aggregator refuses a missing, extra, or duplicate decision
+artifact, so the count of scanned subjects is always the count of pinned
+digests the source-of-truth discovery step named. The workflow publishes
+`X/Y exact subjects scanned`, the current unresolved coverage-gap count, and
+raw Critical/High occurrence totals (including the subset with a non-empty
+`FixedVersion`) in a successful check name bound to the same workflow run and
+source SHA. GitHub exposes that check metadata through its public read-only
+API, which lets the portal show counts without a repository token or write
+permission. The scanned/expected pair prevents the check from ever implying
+full deployable-image coverage — the unresolved-source count is right there
+in the same string. The counts remain evidence only and are not
+unique-vulnerability counts or a promotion decision.
 
 ## Run or inspect it
 
