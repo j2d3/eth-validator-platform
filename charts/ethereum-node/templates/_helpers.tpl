@@ -168,6 +168,8 @@ touching node.yaml.
 {{- include "ethereum-node.lighthouseRunCommand" . -}}
 {{- else if eq $client "teku" -}}
 {{- include "ethereum-node.tekuRunCommand" . -}}
+{{- else if eq $client "nimbus" -}}
+{{- include "ethereum-node.nimbusRunCommand" . -}}
 {{- else -}}
 {{- fail (printf "no run-command adapter for consensusClient=%q" $client) -}}
 {{- end -}}
@@ -213,6 +215,24 @@ exec /opt/teku/bin/teku \
   --metrics-interface=0.0.0.0 \
   --metrics-port=8008 \
   --metrics-host-allowlist=*
+{{- end -}}
+
+{{- define "ethereum-node.nimbusRunCommand" -}}
+set -eu
+exec /home/user/nimbus_beacon_node \
+  {{ printf "--network=/network/files" | quote }} \
+  {{ printf "--external-beacon-api-url=%s" .Values.networkProfile.checkpointSync.primaryUrl | quote }} \
+  {{ printf "--bootstrap-file=/network/files/%s" .Values.networkProfile.artifactBundle.files.consensusBootnodesText | quote }} \
+  --data-dir=/data \
+  --el=http://127.0.0.1:8551 \
+  --jwt-secret=/jwt/jwt.hex \
+  --rest \
+  --rest-address=0.0.0.0 \
+  --rest-port=5052 \
+  --metrics \
+  --metrics-address=0.0.0.0 \
+  --metrics-port=8008 \
+  --status-bar=no
 {{- end -}}
 
 {{/*

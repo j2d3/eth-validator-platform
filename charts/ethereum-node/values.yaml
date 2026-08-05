@@ -37,6 +37,10 @@ networkProfile:
     teku:
       mode: builtin
       network: hoodi
+    # Nimbus adapter default: same shape as the other CL clients.
+    nimbus:
+      mode: builtin
+      network: hoodi
     # Erigon adapter default: mirrors Geth/Reth's builtin+hoodi shape so an
     # Erigon pair renders correctly against the default Hoodi profile if
     # selected. The artifact-bundle assignments override this via the
@@ -270,6 +274,32 @@ consensusClients:
       # remote-signer flags, and an unreachable signer endpoint so the
       # contract process could not sign.
       validatorEnabled: validator_local_validator_count
+  # Nimbus adapter. Written in Nim and specifically designed for low-resource
+  # / embedded hardware; brings a fundamentally different implementation
+  # strategy compared to Lighthouse (Rust) and Teku (Java). Loads the
+  # generation-pinned Ephemery `config.yaml` via `--network=<dir>` where the
+  # directory contains config.yaml + the other consensus artifacts. Data
+  # lives under /data (`--data-dir`). Metric names are best-effort per
+  # Nimbus documented Prometheus series; the recording rules degrade to
+  # empty series for unknown names (no render error) matching the
+  # runtime-verify pattern PR #96/#124 established. Image digest was
+  # resolved from Docker Hub's tags API for `statusim/nimbus-eth2:multiarch-
+  # v26.7.0` on 2026-08-05; verify with `docker buildx imagetools inspect
+  # docker.io/statusim/nimbus-eth2:multiarch-v26.7.0` against a live
+  # registry before the first Nimbus Pod starts.
+  nimbus:
+    image: statusim/nimbus-eth2:multiarch-v26.7.0@sha256:366be2cd8869b5dad45c3a8852e0476d78d675be4e7a10ab403f733b336cb9c6
+    metrics:
+      # Current head slot on the beacon chain.
+      headSlot: beacon_head_slot
+      # Wall-clock present slot.
+      presentSlot: beacon_slot
+      # Wall-clock present epoch.
+      presentEpoch: beacon_current_epoch
+      # Finalized epoch of the beacon head.
+      finalizedEpoch: beacon_finalized_epoch
+      # Peer count gauge (Nimbus uses libp2p, same shape as Teku).
+      peers: libp2p_peers
 
 resources:
   execution:

@@ -37,6 +37,9 @@
 {{- if and (eq .Values.consensusClient "teku") (not $artifactMode) -}}
 {{- fail "consensusClient=teku requires networkProfile.clients.teku.mode = artifact-bundle in this chart version" -}}
 {{- end -}}
+{{- if and (eq .Values.consensusClient "nimbus") (not $artifactMode) -}}
+{{- fail "consensusClient=nimbus requires networkProfile.clients.nimbus.mode = artifact-bundle in this chart version" -}}
+{{- end -}}
 apiVersion: apps/v1
 kind: StatefulSet
 metadata:
