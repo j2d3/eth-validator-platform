@@ -171,6 +171,16 @@ class ImageSecurityWorkflowTests(unittest.TestCase):
         self.assertIn("image-inventory.json", self.text)
         self.assertIn("retention-days: 14", self.text)
 
+    def test_public_count_check_is_derived_without_write_authority(self) -> None:
+        decision = self.workflow["jobs"]["evidence-decision"]
+        self.assertIn("critical_total", decision["outputs"])
+        self.assertIn("high_available", decision["outputs"])
+        public = self.workflow["jobs"]["public-finding-counts"]
+        self.assertEqual(public["needs"], "evidence-decision")
+        self.assertIn("Image findings -", public["name"])
+        self.assertEqual(self.workflow["permissions"], {"contents": "read"})
+        self.assertNotIn("checks: write", self.text)
+
     def test_initial_slice_is_evidence_not_a_false_promotion_gate(self) -> None:
         self.assertIn('exit-code: "0"', self.text)
         self.assertIn("ignore-unfixed: false", self.text)

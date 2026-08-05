@@ -5,6 +5,8 @@ import {
   countOpenDependabotPulls,
   DEPENDABOT_PULLS_API,
   IMAGE_SECURITY_RUNS_API,
+  imageSecurityChecksApi,
+  parseImageSecurityEvidence,
   parseImageSecurityRun,
 } from "../lib/github-security-status.mjs";
 import {
@@ -23,7 +25,16 @@ type ImageSecurityRun = {
 
 type SecurityStatus = {
   imageRun: ImageSecurityRun | null;
+  imageEvidence: ImageSecurityEvidence | null;
   dependabotPulls: number | null;
+};
+
+type ImageSecurityEvidence = {
+  images: number;
+  critical: { total: number; available: number };
+  high: { total: number; available: number };
+  completedAt: string;
+  htmlUrl: string;
 };
 
 function scanLabel(run: ImageSecurityRun | null): string {
@@ -57,6 +68,7 @@ async function fetchJson(url: string): Promise<unknown> {
 export default function RepositorySecurity() {
   const [status, setStatus] = useState<SecurityStatus>({
     imageRun: null,
+    imageEvidence: null,
     dependabotPulls: null,
   });
 
@@ -71,6 +83,7 @@ export default function RepositorySecurity() {
       if (!active) return;
 
       let imageRun: ImageSecurityRun | null = null;
+      let imageEvidence: ImageSecurityEvidence | null = null;
       let dependabotPulls: number | null = null;
       try {
         if (imageResult.status === "fulfilled") {
@@ -86,7 +99,18 @@ export default function RepositorySecurity() {
       } catch {
         dependabotPulls = null;
       }
-      setStatus({ imageRun, dependabotPulls });
+      try {
+        if (imageRun) {
+          const checkResponse = await fetchJson(
+            imageSecurityChecksApi(imageRun.sourceSha),
+          );
+          imageEvidence = parseImageSecurityEvidence(checkResponse, imageRun);
+        }
+      } catch {
+        imageEvidence = null;
+      }
+      if (!active) return;
+      setStatus({ imageRun, imageEvidence, dependabotPulls });
     }
 
     void load();
@@ -115,6 +139,22 @@ export default function RepositorySecurity() {
               : "Latest main run unavailable"}
           </span>
           <a href={imageRun?.htmlUrl ?? imageSecurityWorkflowRuns}>Workflow runs</a>
+        </article>
+        <article className="summary-item">
+          <span className="summary-item__label">Image finding occurrences</span>
+          <strong>
+            {status.imageEvidence
+              ? `${status.imageEvidence.critical.total} Critical · ${status.imageEvidence.high.total} High`
+              : "Unavailable"}
+          </strong>
+          <span className="detail">
+            {status.imageEvidence
+              ? `${status.imageEvidence.images} images · ${status.imageEvidence.critical.available} Critical and ${status.imageEvidence.high.available} High with fixes available`
+              : "Latest aggregate unavailable"}
+          </span>
+          <a href={status.imageEvidence?.htmlUrl ?? imageSecurityWorkflowRuns}>
+            Evidence check
+          </a>
         </article>
         <article className="summary-item">
           <span className="summary-item__label">Dependency updates</span>
