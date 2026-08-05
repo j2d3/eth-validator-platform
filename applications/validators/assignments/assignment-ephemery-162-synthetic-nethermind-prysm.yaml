@@ -1,0 +1,17 @@
+apiVersion: platform.galaxy-lab/v1alpha1
+kind: ValidatorAssignment
+metadata:
+  name: assignment-ephemery-162-synthetic-nethermind-prysm
+spec:
+  validatorRef: validator-ephemery-162-synthetic-nethermind-prysm
+  networkProfileRef: ephemery-162
+  lifecycle: active
+  serviceProfileRef: dedicated-nethermind-prysm
+  nodePairRef: pair-ephemery-162-synthetic-nethermind-prysm
+  signerRef: shared-web3signer
+  signingEnabled: false
+  safety:
+    slashingProtectionConfirmed: false
+    doppelgangerProtectionConfirmed: false
+  maintenance:
+    reason: Activate the non-signing Nethermind and Prysm client pair for live Ephemery sync qualification — the pair #130 originally named, completing that umbrella and giving the Prysm CL adapter (#163) its first rendered release; keep it running.
