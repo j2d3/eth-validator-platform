@@ -59,6 +59,7 @@
             "geth": {"$ref": "#/$defs/networkAdapter"},
             "reth": {"$ref": "#/$defs/networkAdapter"},
             "erigon": {"$ref": "#/$defs/networkAdapter"},
+            "besu": {"$ref": "#/$defs/networkAdapter"},
             "lighthouse": {"$ref": "#/$defs/networkAdapter"},
             "teku": {"$ref": "#/$defs/networkAdapter"}
           }
@@ -144,6 +145,25 @@
               "resetPolicy": {"const": "replace-data"}
             }
           }
+        },
+        {
+          "if": {
+            "required": ["clients"],
+            "properties": {
+              "clients": {
+                "required": ["besu"],
+                "properties": {
+                  "besu": {"properties": {"mode": {"const": "artifact-bundle"}}}
+                }
+              }
+            }
+          },
+          "then": {
+            "required": ["artifactBundle", "checkpointSync"],
+            "properties": {
+              "resetPolicy": {"const": "replace-data"}
+            }
+          }
         }
       ]
     },
@@ -157,7 +177,7 @@
       }
     },
     "executionClient": {
-      "enum": ["geth", "reth", "erigon"]
+      "enum": ["geth", "reth", "erigon", "besu"]
     },
     "consensusClient": {
       "enum": ["lighthouse", "teku"]
@@ -185,6 +205,15 @@
           }
         },
         "erigon": {
+          "type": "object",
+          "required": ["image", "metrics"],
+          "additionalProperties": false,
+          "properties": {
+            "image": {"type": "string", "pattern": "@sha256:[0-9a-f]{64}$"},
+            "metrics": {"$ref": "#/$defs/executionMetricsMap"}
+          }
+        },
+        "besu": {
           "type": "object",
           "required": ["image", "metrics"],
           "additionalProperties": false,
