@@ -184,11 +184,11 @@ executionClients:
   erigon:
     image: erigontech/erigon:v3.5.4@sha256:7d48b74edda1cc8b66909ba53cb8250f1225140dd915475d09521d95a3eb6fc7
     # Erigon's native metric names differ from both Geth's and Reth's.
-    # These names track Erigon 3.x's documented Prometheus series but are
-    # unverified against a live Pod until the first Erigon pair is
-    # scraped; the recording rules degrade to empty series for unknown
-    # names rather than render errors (matching the pattern PR #96/#124
-    # formalized). `headHeader` is deliberately omitted: Erigon's staged
+    # Runtime observation on the Ephemery-162 pair confirmed `sync`, split
+    # by a `stage` label, reports the current block for every main pipeline
+    # stage while `p2p_peers` reports the connected peer count. The recording
+    # rule's max aggregation drops `stage` and selects the current highest
+    # stage. `headHeader` is deliberately omitted: Erigon's staged
     # pipeline does not publish a separately-observed downloaded-header-
     # frontier gauge distinct from the executed head, so mapping both
     # concepts to the same series would publish `internal_sync_distance = 0`
@@ -196,7 +196,7 @@ executionClients:
     # unsupported/not collected, not zero.
     metrics:
       # Executed head block number.
-      headBlock: chain_head_block
+      headBlock: sync
       # Connected peer count.
       peers: p2p_peers
   # Besu adapter. Hyperledger's Java EL from Consensys — natural pair for
