@@ -405,9 +405,9 @@ class EksEphemeryFluxAndTelemetryTests(unittest.TestCase):
             document for document in documents if document["kind"] == "HelmRelease"
         ]
         # Five generation-pinned Ephemery pairs are rendered by this overlay:
-        # Geth+Lighthouse, Reth+Lighthouse, and Geth+Teku sign with disjoint
-        # identities; Reth+Teku and Erigon+Lighthouse stay non-signing.
-        # Everything else in this test asserts on the three signing pairs;
+        # Geth+Lighthouse, Reth+Lighthouse, Geth+Teku, and Reth+Teku sign with
+        # disjoint identities; Erigon+Lighthouse stays non-signing.
+        # Everything else in this test asserts on the four signing pairs;
         # the non-signing pairs are covered in test_chart_reth_adapter_contracts,
         # test_chart_teku_adapter_contracts, test_chart_erigon_adapter_contracts,
         # and test_local_assignment_projection.
@@ -463,6 +463,7 @@ class EksEphemeryFluxAndTelemetryTests(unittest.TestCase):
             {
                 "assignment-ephemery-162-synthetic",
                 "assignment-ephemery-162-synthetic-reth",
+                "assignment-ephemery-162-synthetic-reth-teku",
                 "assignment-ephemery-162-synthetic-teku",
             },
         )
@@ -481,13 +482,14 @@ class EksEphemeryFluxAndTelemetryTests(unittest.TestCase):
             )
             signing_public_keys.add(validator["publicKey"])
             signing_validator_ids.add(values["identity"]["validatorId"])
-        self.assertEqual(len(signing_public_keys), 3)
+        self.assertEqual(len(signing_public_keys), 4)
         self.assertEqual(
             signing_validator_ids,
             {
                 "validator-ephemery-162-01",
                 "validator-ephemery-162-02",
                 "validator-ephemery-162-03",
+                "validator-ephemery-162-04",
             },
         )
 
