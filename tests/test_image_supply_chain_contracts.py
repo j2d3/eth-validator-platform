@@ -3,6 +3,7 @@ from __future__ import annotations
 import json
 import re
 import subprocess
+import tempfile
 import unittest
 from copy import deepcopy
 from pathlib import Path
@@ -11,6 +12,7 @@ import yaml
 from jsonschema import Draft202012Validator
 
 from tools import (
+    aggregate_image_scan_decisions,
     compare_image_inventories,
     discover_container_images,
     evaluate_image_scan,
@@ -180,6 +182,46 @@ class ImageSecurityWorkflowTests(unittest.TestCase):
         self.assertIn("Image findings -", public["name"])
         self.assertEqual(self.workflow["permissions"], {"contents": "read"})
         self.assertNotIn("checks: write", self.text)
+
+    def test_public_check_publishes_exact_coverage_and_gaps(self) -> None:
+        decision = self.workflow["jobs"]["evidence-decision"]
+        for output in ("exact_subjects", "scanned_subjects", "coverage_gaps"):
+            self.assertIn(output, decision["outputs"])
+
+        name = self.workflow["jobs"]["public-finding-counts"]["name"]
+        self.assertIn(
+            "${{ needs.evidence-decision.outputs.scanned_subjects }}/"
+            "${{ needs.evidence-decision.outputs.exact_subjects }} exact subjects",
+            name,
+        )
+        self.assertIn(
+            "${{ needs.evidence-decision.outputs.coverage_gaps }} coverage gaps", name
+        )
+        self.assertEqual(self.workflow["permissions"], {"contents": "read"})
+
+    def test_aggregation_is_bound_to_the_retained_inventory_artifact(self) -> None:
+        steps = self.workflow["jobs"]["evidence-decision"]["steps"]
+        by_name = {step["name"]: step for step in steps}
+
+        download = by_name["Download the exact discovered inventory"]
+        self.assertEqual(download["with"]["name"], "container-image-inventory")
+        self.assertEqual(download["with"]["path"], "container-image-inventory")
+
+        upload = next(
+            step
+            for step in self.workflow["jobs"]["inventory"]["steps"]
+            if step.get("with", {}).get("name") == "container-image-inventory"
+        )
+        self.assertEqual(upload["with"]["path"], "image-inventory.json")
+
+        aggregate = by_name["Aggregate public-safe finding counts"]
+        self.assertIn(
+            "--inventory container-image-inventory/image-inventory.json",
+            aggregate["run"],
+        )
+        self.assertLess(
+            steps.index(download), steps.index(aggregate), "inventory must precede aggregation"
+        )
 
     def test_initial_slice_is_evidence_not_a_false_promotion_gate(self) -> None:
         self.assertIn('exit-code: "0"', self.text)
@@ -573,6 +615,72 @@ class ImageScanDecisionTests(unittest.TestCase):
             required,
             {"imageDigest", "vulnerabilityId", "rationale", "owner", "expiresAt"},
         )
+
+
+class ImageCoverageClosureTests(unittest.TestCase):
+    """Published coverage must equal what discovery actually found in this repository."""
+
+    def setUp(self) -> None:
+        self.inventory = discover_container_images.build_inventory()
+        directory = tempfile.TemporaryDirectory()
+        self.addCleanup(directory.cleanup)
+        self.base = Path(directory.name)
+        self.root = self.base / "image-scan-decisions"
+        self.root.mkdir()
+        self.inventory_path = self.base / "image-inventory.json"
+        self.inventory_path.write_text(
+            json.dumps(discover_container_images.json_document(self.inventory)),
+            encoding="utf-8",
+        )
+
+    def write_decision(self, record: discover_container_images.ImageRecord) -> None:
+        empty = {"available": 0, "total": 0, "unavailable": 0}
+        directory = self.root / f"image-scan-{record.id}"
+        directory.mkdir()
+        (directory / "image-scan-decision.json").write_text(
+            json.dumps(
+                {
+                    "schemaVersion": 1,
+                    "subject": {
+                        "image": record.image,
+                        "digest": record.digest.removeprefix("sha256:"),
+                    },
+                    "evaluatedAt": "2026-08-05T13:42:11Z",
+                    "counts": {"critical": empty, "high": empty},
+                    "unexceptedCounts": {"critical": empty, "high": empty},
+                    "decision": {"mode": "evidence-only", "promotionGate": False},
+                }
+            ),
+            encoding="utf-8",
+        )
+
+    def test_discovered_subjects_and_gaps_are_published_exactly(self) -> None:
+        self.assertGreater(len(self.inventory.images), 0)
+        self.assertGreater(
+            len(self.inventory.gaps),
+            0,
+            "unresolved image sources must stay visible rather than silently closing",
+        )
+        for record in self.inventory.images:
+            self.write_decision(record)
+
+        summary = aggregate_image_scan_decisions.aggregate(
+            self.root, self.inventory_path
+        )
+
+        self.assertEqual(summary["exactSubjects"], len(self.inventory.images))
+        self.assertEqual(summary["scannedSubjects"], len(self.inventory.images))
+        self.assertEqual(summary["coverageGaps"], len(self.inventory.gaps))
+
+    def test_one_unscanned_discovered_subject_fails_closed(self) -> None:
+        for record in self.inventory.images[1:]:
+            self.write_decision(record)
+
+        with self.assertRaisesRegex(
+            aggregate_image_scan_decisions.AggregateError, "no evidence decision"
+        ) as raised:
+            aggregate_image_scan_decisions.aggregate(self.root, self.inventory_path)
+        self.assertIn(self.inventory.images[0].image, str(raised.exception))
 
 
 if __name__ == "__main__":

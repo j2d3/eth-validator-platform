@@ -30,7 +30,8 @@ type SecurityStatus = {
 };
 
 type ImageSecurityEvidence = {
-  images: number;
+  exactSubjects: { scanned: number; expected: number };
+  coverageGaps: number;
   critical: { total: number; available: number };
   high: { total: number; available: number };
   completedAt: string;
@@ -141,6 +142,22 @@ export default function RepositorySecurity() {
           <a href={imageRun?.htmlUrl ?? imageSecurityWorkflowRuns}>Workflow runs</a>
         </article>
         <article className="summary-item">
+          <span className="summary-item__label">Exact subject coverage</span>
+          <strong>
+            {status.imageEvidence
+              ? `${status.imageEvidence.exactSubjects.scanned}/${status.imageEvidence.exactSubjects.expected} exact subjects scanned`
+              : "Unavailable"}
+          </strong>
+          <span className="detail">
+            {status.imageEvidence
+              ? `${status.imageEvidence.coverageGaps} coverage gaps · unresolved image sources remain unknown`
+              : "Latest coverage unavailable"}
+          </span>
+          <a href={status.imageEvidence?.htmlUrl ?? imageSecurityWorkflowRuns}>
+            Coverage check
+          </a>
+        </article>
+        <article className="summary-item">
           <span className="summary-item__label">Image finding occurrences</span>
           <strong>
             {status.imageEvidence
@@ -149,7 +166,7 @@ export default function RepositorySecurity() {
           </strong>
           <span className="detail">
             {status.imageEvidence
-              ? `${status.imageEvidence.images} images · ${status.imageEvidence.critical.available} Critical and ${status.imageEvidence.high.available} High with fixes available`
+              ? `Exact subjects only · ${status.imageEvidence.critical.available} Critical and ${status.imageEvidence.high.available} High with fixes available`
               : "Latest aggregate unavailable"}
           </span>
           <a href={status.imageEvidence?.htmlUrl ?? imageSecurityWorkflowRuns}>

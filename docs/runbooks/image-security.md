@@ -23,13 +23,26 @@ and any exception metadata are internally valid; it does not mean the image is
 approved for promotion.
 
 Fresh scans also aggregate those per-image documents into
-`image-scan-summary.json`. The workflow publishes the image count and raw
-Critical/High occurrence totals, including the subset with a non-empty
-`FixedVersion`, in a successful check name bound to the same workflow run and
-source SHA. GitHub exposes that check metadata through its public read-only API,
-which lets the portal show counts without a repository token or write
-permission. The counts remain evidence only and are not unique-vulnerability
-counts or a promotion decision.
+`image-scan-summary.json`. Aggregation downloads the `container-image-inventory`
+artifact retained by the same run and binds itself to it: the scanned
+`(image, digest)` subjects must equal the discovered exact subjects. A discovered
+subject with no decision, a decision for an undiscovered subject, and a duplicate
+on either side all fail the job rather than producing a quietly smaller count.
+
+The workflow then publishes exact-subject coverage, the unresolved
+coverage-gap count, and raw Critical/High occurrence totals, including the
+subset with a non-empty `FixedVersion`, in a successful check name bound to the
+same workflow run and source SHA. GitHub exposes that check metadata through its
+public read-only API, which lets the portal show coverage and counts without a
+repository token or write permission.
+
+**Findings cover the exact discovered subjects only.** `21/21 exact subjects
+scanned` means every digest the discovery tool could resolve from committed
+desired state was scanned; it says nothing about the images behind the reported
+coverage gaps. Those unresolved sources — mutable Flux controller tags and
+transitive images from pinned third-party chart defaults — have **unknown**
+findings, not zero. The counts likewise remain evidence only, and are not
+unique-vulnerability counts or a promotion decision.
 
 ## Run or inspect it
 
@@ -55,10 +68,14 @@ zero findings when the workflow did not run, verification failed, a scan or
 version artifact is absent, or registry access failed; those states are
 **unknown/unavailable**.
 
-The portal accepts aggregate counts only when the check is successful, its head
-SHA matches the latest completed `main` image-security run, and its job URL is
-part of that exact run. Missing or malformed evidence renders as unavailable;
-it never renders as zero.
+The portal accepts aggregate coverage and counts only when the check is
+successful, its head SHA matches the latest completed `main` image-security run,
+and its job URL is part of that exact run. It also rejects impossible values,
+such as more scanned subjects than were discovered or an inventory with no
+subject at all. Missing or malformed evidence renders as unavailable; it never
+renders as zero. The portal shows the scanned/discovered subject ratio next to
+the unresolved coverage-gap count so that partial coverage is visible rather
+than implied to be complete.
 
 For an unchanged-inventory pull request, the `Container image evidence
 decision` check records that no new Trivy execution occurred. That result reuses
@@ -96,8 +113,10 @@ It also reports, but does not scan as durable identities:
 - Flux bootstrap controller images still named by tags;
 - transitive images supplied by pinned third-party Helm chart defaults.
 
-Those are real gaps. Resolving a tag during a workflow and scanning whatever it
-means that day would create mutable evidence, so this slice refuses to call that
+Those are real gaps, and their count is published publicly alongside the
+exact-subject result precisely so that the incompleteness is not hidden behind a
+green check. Resolving a tag during a workflow and scanning whatever it means
+that day would create mutable evidence, so this slice refuses to call that
 coverage. Narrative docs, test fixtures, generated tool/dependency directories,
 secret material, and templated Helm expressions backed by scanned values files
 are emitted separately as non-runtime scope exclusions; an image-bearing YAML,
