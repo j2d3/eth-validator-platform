@@ -72,10 +72,25 @@ REQUIRED_RESTORE_PARAMETERS = frozenset(
         "no-publicly-accessible",
         "no-multi-az",
         "availability-zone",
-        "deletion-protection",
-        "backup-retention-period",
+        "no-deletion-protection",
     }
 )
+
+# `RestoreDBInstanceToPointInTime` has no `BackupRetentionPeriod` member, so the
+# restored copy's retention cannot be chosen on the restore call. A contract that
+# claimed to supply it would describe a command that fails, and the failure would
+# be discovered with signing already off and a restore already billing.
+UNSUPPORTED_RESTORE_PARAMETERS = frozenset({"backup-retention-period"})
+
+# The AWS CLI expresses a boolean as a flag pair — `--multi-az | --no-multi-az`
+# — and rejects a value argument. `--deletion-protection false` does not turn
+# deletion protection off; it is a parse error. Requiring the disabling `no-`
+# form by id, and refusing a bare boolean value, keeps the contract's restore
+# call runnable as written.
+DISABLED_BY_NO_PREFIX = frozenset(
+    {"multi-az", "publicly-accessible", "deletion-protection"}
+)
+BOOLEAN_VALUE_TOKENS = frozenset({"true", "false", "yes", "no", "0", "1"})
 
 # Continuity must cover every table that carries slashing-safety state. Counts
 # and extents cannot see a replaced interior row, so each of these needs a
@@ -423,6 +438,7 @@ def check_restore_parameters(target: dict[str, Any]) -> list[CheckResult]:
 
     declared: set[str] = set()
     incomplete: list[str] = []
+    unrunnable: list[str] = []
     for parameter in parameters:
         if not isinstance(parameter, dict):
             raise DrillContractError("each restore parameter must be a mapping")
@@ -432,35 +448,77 @@ def check_restore_parameters(target: dict[str, Any]) -> list[CheckResult]:
         if parameter_id in declared:
             raise DrillContractError(f"duplicate restore parameter {parameter_id!r}")
         declared.add(parameter_id)
-        # `default_if_omitted` is required because it is the reason the value
-        # has to be supplied at all. A parameter without it reads like a
-        # preference rather than an override of an unsafe default.
+        # `default_if_omitted` is required because it is what the parameter is
+        # being weighed against. A parameter without it reads like a preference
+        # rather than a reviewed decision about an AWS default.
         if not all(
             isinstance(parameter.get(field), str) and parameter[field].strip()
             for field in ("value", "default_if_omitted")
         ):
             incomplete.append(parameter_id)
+        # A boolean written as `--deletion-protection false` is a parse error,
+        # not a setting, and a parameter the restore API does not accept is a
+        # call that cannot be made.
+        value = str(parameter.get("value", "")).strip().lower()
+        if (
+            parameter_id in DISABLED_BY_NO_PREFIX
+            or parameter_id in UNSUPPORTED_RESTORE_PARAMETERS
+            or value in BOOLEAN_VALUE_TOKENS
+        ):
+            unrunnable.append(parameter_id)
 
     missing = sorted(REQUIRED_RESTORE_PARAMETERS - declared)
     verification = target.get("post_restore_verification")
     verified = isinstance(verification, list) and len(verification) >= 4
 
+    # A parameter the API does not accept has to be accounted for, not merely
+    # left out. Requiring the contract to say why it is absent, and what handles
+    # it instead, is what keeps a later edit from quietly reinstating it.
+    absences = target.get("not_supplied_on_restore_call")
+    documented_absences = {
+        entry["id"]
+        for entry in (absences if isinstance(absences, list) else [])
+        if isinstance(entry, dict)
+        and isinstance(entry.get("id"), str)
+        and str(entry.get("reason") or "").strip()
+        and str(entry.get("handled_by") or "").strip()
+    }
+    unexplained = sorted(UNSUPPORTED_RESTORE_PARAMETERS - documented_absences)
+
     if missing:
         detail = f"restore parameters not supplied explicitly: {missing}"
+    elif unexplained:
+        detail = (
+            "parameters the restore API does not accept are neither supplied nor "
+            f"explained: {unexplained}"
+        )
+    elif unrunnable:
+        detail = (
+            "restore parameters that AWS would not accept as written: "
+            f"{sorted(unrunnable)}. A CLI boolean is a flag pair such as "
+            "`--no-deletion-protection`, never a flag with a true/false value, "
+            "and RestoreDBInstanceToPointInTime accepts no backup retention "
+            "parameter"
+        )
     elif incomplete:
         detail = f"restore parameters without a value and stated AWS default: {sorted(incomplete)}"
     elif not verified:
         detail = "the restored copy's properties are not re-verified after the restore"
     else:
         detail = (
-            "every network, parameter-group, placement, protection, and backup "
-            "value is supplied on the restore call and re-verified afterwards"
+            "every network, parameter-group, placement, and protection value is "
+            "supplied on the restore call in runnable CLI syntax and re-verified "
+            "afterwards"
         )
 
     return [
         CheckResult(
             check_id="targets/restore-parameters-are-explicit",
-            passed=not missing and not incomplete and verified,
+            passed=not missing
+            and not unexplained
+            and not unrunnable
+            and not incomplete
+            and verified,
             detail=detail,
         )
     ]
@@ -486,8 +544,8 @@ def check_target_credentials(target: dict[str, Any]) -> list[CheckResult]:
     drill_path_declared = (
         drill_secret.get("deleted_at_cleanup") is True
         and bool(str(drill_secret.get("target_name") or "").strip())
-        and bool(str(drill_secret.get("username_password_source") or "").strip())
-        and bool(str(drill_secret.get("host_source") or "").strip())
+        and bool(str(drill_secret.get("source_object") or "").strip())
+        and bool(str(drill_secret.get("managed_by") or "").strip())
     )
     master_untouched = master.get("read_by_operator") is False
 
@@ -508,6 +566,89 @@ def check_target_credentials(target: dict[str, Any]) -> list[CheckResult]:
         CheckResult(
             check_id="targets/target-credentials-are-isolated",
             passed=live_untouched and drill_path_declared and master_untouched,
+            detail=detail,
+        ),
+        *check_drill_connection_split(credentials),
+    ]
+
+
+# The Secrets Manager connection object holds the *live* host. An ExternalSecret
+# that projected the whole object into a drill Secret would re-assert that live
+# host on every refresh, so an operator-supplied endpoint written over it would
+# be silently reverted mid-drill. The connection is therefore assembled from two
+# objects with disjoint ownership, and this check is what keeps them disjoint.
+CREDENTIAL_PROJECTION = frozenset({"username", "password", "database", "port"})
+HOST_KEY_NAMES = frozenset({"host", "hostname", "endpoint", "db_host", "dbhost"})
+
+
+def check_drill_connection_split(credentials: dict[str, Any]) -> list[CheckResult]:
+    """Require a reconciliation-stable split of host from credential fields."""
+
+    drill_secret = credentials["drill_secret"]
+    config_map = credentials.get("drill_endpoint_config_map")
+    consumption = credentials.get("consumption")
+    if not isinstance(config_map, dict) or not isinstance(consumption, dict):
+        raise DrillContractError(
+            "credentials needs drill_endpoint_config_map and consumption mappings"
+        )
+
+    def key_set(value: Any) -> set[str]:
+        return {str(key).lower() for key in value} if isinstance(value, list) else set()
+
+    projected_set = key_set(drill_secret.get("projected_keys"))
+    excluded_set = key_set(drill_secret.get("excluded_keys"))
+
+    secret_is_credentials_only = (
+        projected_set == CREDENTIAL_PROJECTION
+        and not projected_set & HOST_KEY_NAMES
+        and bool(excluded_set & HOST_KEY_NAMES)
+        and bool(str(drill_secret.get("exclusion_reason") or "").strip())
+    )
+    config_map_declared = (
+        bool(str(config_map.get("name") or "").strip())
+        and bool(str(config_map.get("key") or "").strip())
+        and bool(str(config_map.get("value_source") or "").strip())
+        and bool(str(config_map.get("reconciled_by") or "").strip())
+        and config_map.get("committed_to_git") is False
+        and config_map.get("written_back_to_secrets_manager") is False
+        and config_map.get("deleted_at_cleanup") is True
+    )
+    consumers = consumption.get("consumers")
+    split_consumed = (
+        consumption.get("host_from") == "drill_endpoint_config_map"
+        and consumption.get("credential_fields_from") == "drill_secret"
+        and bool(str(consumption.get("mechanism") or "").strip())
+        and isinstance(consumers, list)
+        and len(consumers) >= 2
+    )
+
+    if not secret_is_credentials_only:
+        detail = (
+            "the drill Secret does not project exactly the credential fields "
+            f"{sorted(CREDENTIAL_PROJECTION)} with the host excluded, so External "
+            "Secrets Operator would re-assert the live host on refresh"
+        )
+    elif not config_map_declared:
+        detail = (
+            "the restored endpoint has no drill-only ConfigMap that is "
+            "uncommitted, unreconciled, and deleted at cleanup"
+        )
+    elif not split_consumed:
+        detail = (
+            "the drill workloads do not take the host and the credential fields "
+            "from separate objects"
+        )
+    else:
+        detail = (
+            "the host comes from a drill-only ConfigMap and the credential "
+            "fields from a drill-only Secret, each with a single writer, and "
+            "both are deleted at cleanup"
+        )
+
+    return [
+        CheckResult(
+            check_id="targets/drill-connection-split-is-reconciliation-stable",
+            passed=secret_is_credentials_only and config_map_declared and split_consumed,
             detail=detail,
         )
     ]
@@ -546,6 +687,60 @@ def check_target_backups(target: dict[str, Any]) -> list[CheckResult]:
         CheckResult(
             check_id="targets/target-backups-are-not-retained",
             passed=retention_zero and deletes_backups and accounted,
+            detail=detail,
+        ),
+        *check_backup_mismatch_fails_closed(backup),
+    ]
+
+
+# Retention is not a parameter of the restore call, so it is observed rather than
+# chosen. Observing something other than zero means the call that ran was not the
+# call the approver reviewed. Modifying the target at that point would overwrite
+# the evidence of the discrepancy with the intended value, which is why the
+# response is declared as an enum rather than as prose a check has to interpret.
+ABORT_AND_CLEANUP = "abort-and-cleanup"
+
+
+def check_backup_mismatch_fails_closed(backup: dict[str, Any]) -> list[CheckResult]:
+    """Require an unexpected retention value to abort, not to be repaired in place."""
+
+    on_mismatch = backup.get("on_mismatch")
+    if not isinstance(on_mismatch, dict):
+        raise DrillContractError("backup.on_mismatch must be a mapping")
+
+    aborts = on_mismatch.get("action") == ABORT_AND_CLEANUP
+    repairs = on_mismatch.get("modify_target") is not False
+    reasoned = bool(str(on_mismatch.get("rationale") or "").strip())
+    # Claiming to supply retention on the restore call is the other way this goes
+    # wrong: the restore API has no such parameter, so the claim could only be
+    # discovered as a failed command mid-drill.
+    honest_about_the_api = backup.get("supplied_on_restore_call") is False
+
+    if not honest_about_the_api:
+        detail = (
+            "the contract claims the copy's backup retention is supplied on the "
+            "restore call, which RestoreDBInstanceToPointInTime does not accept"
+        )
+    elif repairs:
+        detail = (
+            "a backup-retention mismatch would modify the just-reviewed target "
+            "instead of aborting"
+        )
+    elif not aborts or not reasoned:
+        detail = (
+            "a backup-retention mismatch does not declare "
+            f"action: {ABORT_AND_CLEANUP} with a stated rationale"
+        )
+    else:
+        detail = (
+            "an unexpected backup retention value aborts the drill and runs "
+            "cleanup; the just-reviewed target is never modified after the restore"
+        )
+
+    return [
+        CheckResult(
+            check_id="targets/backup-retention-mismatch-fails-closed",
+            passed=honest_about_the_api and aborts and reasoned and not repairs,
             detail=detail,
         )
     ]

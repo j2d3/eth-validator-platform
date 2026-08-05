@@ -35,7 +35,9 @@ recovery evidence.
 3. The reviewed change that adds the drill security group, the drill-only
    connection `ExternalSecret`, and the drill signer manifests has merged. Those
    declarations are **not** in this repository yet; introducing them is a
-   separate pull request, because merging them creates AWS resources.
+   separate pull request, because merging them creates AWS resources. The drill
+   endpoint `ConfigMap` is not among them: it carries a value that does not
+   exist until gate 4, so it is created at drill time and is never committed.
 4. A drill-only BLS key exists: generated offline, never deposited, holding no
    funds, absent from `applications/validators/` and from every Secrets Manager
    signing container.
@@ -172,7 +174,10 @@ the database contents at the recovery point, including every PostgreSQL role and
 that role's password.
 
 Supply all of these explicitly, and confirm each afterwards with a read-only
-`describe-db-instances` on the restored copy before running any query:
+`describe-db-instances` on the restored copy before running any query. Each is
+written the way the AWS CLI accepts it: a boolean is a flag pair, so
+`--no-deletion-protection` turns deletion protection off and
+`--deletion-protection false` is a parse error rather than a setting.
 
 | Restore parameter | Required setting | What AWS would do if it were omitted |
 |---|---|---|
@@ -180,31 +185,71 @@ Supply all of these explicitly, and confirm each afterwards with a read-only
 | `--vpc-security-group-ids` | the drill security group and nothing else | the VPC's default security group |
 | `--db-parameter-group-name` | the custom group that sets `rds.force_ssl = 1` | the engine default group, which does not force TLS |
 | `--no-publicly-accessible` | public accessibility off | derived from the subnet group, not guaranteed |
-| `--no-multi-az` | Single-AZ | the source's Multi-AZ setting |
-| `--availability-zone` | one AZ of the isolated database subnet group | a system-selected zone |
-| `--deletion-protection false` | off, so gate 8 can delete the copy | the source's setting, which is on |
-| `--backup-retention-period 0` | no recovery points of the copy's own | the source's seven days |
+| `--no-multi-az` | Single-AZ | not documented — the restore API states no default for Multi-AZ, and an explicit AZ cannot be combined with one |
+| `--availability-zone` | one AZ of the isolated database subnet group | a random, system-chosen zone |
+| `--no-deletion-protection` | off, so gate 8 can delete the copy | off — the restore API documents deletion protection as disabled by default, not copied from the source |
 
-Then confirm the identifier is distinct from the source, that TLS is actually
-enforced by attempting a non-TLS connection and being refused, and that the
-reported backup retention is zero. If retention is not zero, set it to zero with
-an explicit modify and re-verify before proceeding.
+The last two rows are supplied even though the documented default already
+matches, because the call the approver reads at gate 3 should state the posture
+it produces rather than rely on a default that is not visible in the command.
+
+**Backup retention is observed, not chosen.** `restore-db-instance-to-point-in-time`
+has no `--backup-retention-period` parameter, so the copy's retention cannot be
+set on the restore call. Read it from the describe output instead. It must be
+zero.
+
+If it is not zero, **abort and run gate 8**. Do not modify the instance. The
+restored copy has just been reviewed and approved as a specific call with
+specific parameters; a retention period the approved call could not have
+produced means the call that ran was not the call that was approved, and a
+`modify-db-instance` at that point would replace the evidence of that with the
+value everyone expected to see. Record the observed value in the failure record
+and treat the difference as the finding.
+
+Then confirm the identifier is distinct from the source, and that TLS is
+actually enforced by attempting a non-TLS connection and being refused.
 
 **Connecting to the copy.** The live `web3signer-database` Secrets Manager object
 and the live `ExternalSecret` and Secret it feeds are not modified, not
 repointed, and not deleted. Roles and passwords are part of the restored data, so
-the restored copy already accepts the application role the live signer uses. A
-**drill-only** `ExternalSecret` in the drill namespace reads the same Secrets
-Manager object into a Secret with a **distinct target name**, and the operator
-supplies the restored endpoint as the host at drill time — it is never committed
-and never written back to Secrets Manager. The restored copy's RDS-managed master
-credential is never read; nothing in the drill handles a password value. The
-drill Secret is deleted at gate 8.
+the restored copy already accepts the application role the live signer uses.
+
+The connection is assembled from two drill-only objects, because that Secrets
+Manager object holds the **live** host:
+
+- A **drill-only `ExternalSecret`** in the drill namespace reads the same
+  Secrets Manager object into a Secret with a **distinct target name**, and
+  projects only `username`, `password`, `database`, and `port`. It deliberately
+  does not project `host`. External Secrets Operator re-asserts every key it
+  projects on each refresh, so a drill endpoint written over a projected `host`
+  would be replaced by the live one at the next reconcile — silently, and
+  possibly mid-drill.
+- A **drill-only `ConfigMap`** in the same namespace carries the restored
+  endpoint as `DB_HOST`. The operator creates it imperatively after the
+  post-restore describe check has confirmed the target, so the endpoint is
+  recorded only once the instance is known to be the approved one. An endpoint
+  is a network address rather than a credential, so it does not belong in a
+  Secret. It is not part of any Flux `Kustomization`, so nothing reconciles or
+  prunes it; it is never committed, and never written back to Secrets Manager.
+
+Every workload that talks to the restored copy — the verification Job at gates 5
+and 6, and the drill signer at gate 7 — takes `DB_HOST` from the ConfigMap by
+`configMapKeyRef` and the credential fields from the drill Secret by
+`secretKeyRef`, and assembles the connection URL from those environment variables
+at start. Each key therefore has exactly one writer: ESO owns the Secret and
+never learns the restored endpoint, the operator owns the ConfigMap and never
+writes into the Secret. Neither object is a usable connection on its own, so a
+workload that picks up only one of them fails to start rather than quietly
+reaching the live instance.
+
+The restored copy's RDS-managed master credential is never read; nothing in the
+drill handles a password value. Both drill objects are deleted at gate 8.
 
 **Abort if** the restore fails, if the identifier collides, if any explicit
 parameter above is missing from the restore call or disagrees with the describe
-output, if a non-TLS connection succeeds, or if the restored instance comes up
-attached to any security group that the live signer can reach.
+output, if the reported backup retention is not zero, if a non-TLS connection
+succeeds, or if the restored instance comes up attached to any security group
+that the live signer can reach.
 
 ### 5. `schema-compatibility`
 
@@ -287,9 +332,10 @@ never sees — which is exactly the divergence the drill exists to rule out. So
 continuity is proven by comparison (gate 6) and enforcement is proven separately
 on a key with no live history.
 
-1. Start the drill Web3Signer instance. It is bound to the restored copy only,
-   through the drill-only connection Secret and never the live one. It has no
-   beacon connection, no validator client, and no publication path.
+1. Start the drill Web3Signer instance. It is bound to the restored copy only —
+   `DB_HOST` from the drill endpoint ConfigMap, credentials from the drill-only
+   Secret, and never the live connection Secret. It has no beacon connection, no
+   validator client, and no publication path.
 2. Load only the drill-only key.
 3. Request one attestation signature for a chosen source and target epoch
    through the signer's HTTP API. Expect success.
@@ -308,9 +354,9 @@ disabled and open an issue before anything else.
 Cleanup runs whether the drill passed, failed, or was aborted.
 
 1. Delete the drill signer and its namespace.
-2. Delete the drill-only connection `ExternalSecret` and the Secret it created.
-   The live credential path is untouched throughout, so there is nothing to
-   restore.
+2. Delete the drill-only connection `ExternalSecret` and the Secret it created,
+   and the drill endpoint `ConfigMap`. The live credential path is untouched
+   throughout, so there is nothing to restore.
 3. Delete the drill-only key material.
 4. Delete the restored instance with `--skip-final-snapshot` and
    `--delete-automated-backups`. It is a copy; retaining it doubles the number
@@ -355,7 +401,7 @@ current regional prices then.
 |---|---|---|
 | Restored instance hours | one small instance, ≤ 6 h | well under USD 1 |
 | Restored storage | 20 GiB `gp3`, prorated | cents |
-| Backup storage for the copy | retention supplied as 0 on the restore call | none |
+| Backup storage for the copy | retention must be observed as 0 to proceed, and automated backups are deleted at cleanup | none |
 | Data transfer | in-VPC, same region | none |
 
 The source instance is neither stopped nor modified, so the drill adds nothing

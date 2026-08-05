@@ -15,7 +15,7 @@ kind: SlashingRecoveryDrillContract
 
 metadata:
   name: rds-slashing-recovery-drill
-  revision: 2
+  revision: 3
   environment: dev
   tracking_issue: 180
   runbook: docs/runbooks/rds-slashing-recovery-drill.md
@@ -63,11 +63,21 @@ restore_target:
     - VPC security groups
     - DB subnet group
     - availability zone
-    - deletion protection
-    - backup retention period
-  # Every parameter below must be supplied explicitly on the restore call. The
-  # preflight fails if any is missing, so a silently dropped value fails the
-  # drill contract rather than being discovered on a running restored copy.
+    - deletion protection, which the restore API documents as off by default
+      rather than copied from the source
+  # Every parameter below must be supplied explicitly on the restore call, and
+  # each is written in the syntax the AWS CLI actually accepts: a boolean is a
+  # flag pair (`--multi-az | --no-multi-az`), never a flag with a `true`/`false`
+  # value argument. The preflight fails if any is missing, so a silently dropped
+  # value fails the drill contract rather than being discovered on a running
+  # restored copy.
+  #
+  # `default_if_omitted` is what the RestoreDBInstanceToPointInTime reference
+  # says AWS does when the parameter is absent. For two of these the documented
+  # default already matches what the drill wants; they are still supplied
+  # explicitly, because the reviewed restore call at the go/no-go gate should
+  # state the posture it produces rather than depend on a default the approver
+  # cannot see in the command.
   explicit_restore_parameters:
     - id: db-subnet-group-name
       value: the same isolated database subnet group the source uses, which has
@@ -87,23 +97,35 @@ restore_target:
       note: matches publicly_accessible = false on the source
       default_if_omitted: derived from the subnet group, not guaranteed
     - id: no-multi-az
-      value: Single-AZ
-      note: matches multi_az = false on the source
-      default_if_omitted: the source's Multi-AZ setting
+      value: Single-AZ, supplied as the `--no-multi-az` flag
+      note: matches multi_az = false on the source, and an explicit availability
+        zone cannot be combined with a Multi-AZ deployment
+      default_if_omitted: not documented — the restore API reference states no
+        default for MultiAZ, so a restore that omits it is not guaranteed to be
+        Single-AZ
     - id: availability-zone
       value: one availability zone of the isolated database subnet group,
         supplied explicitly rather than system-selected
       terraform_reference: local.azs[var.rds_availability_zone_index]
-      default_if_omitted: a system-selected zone
-    - id: deletion-protection
-      value: "false"
-      note: deliberately opposite to the source, so cleanup can delete the copy
-      default_if_omitted: the source's deletion-protection setting
+      default_if_omitted: "a random, system-chosen availability zone"
+    - id: no-deletion-protection
+      value: deletion protection off, supplied as the `--no-deletion-protection`
+        flag, so cleanup can delete the copy
+      note: the flag is a CLI boolean pair and takes no value argument;
+        `--deletion-protection false` is not accepted
+      default_if_omitted: off — the restore API documents that deletion
+        protection is not enabled by default, and it is not copied from the
+        source
+  # The restore API has no BackupRetentionPeriod member, so the copy's retention
+  # cannot be chosen on the restore call. It is observed afterwards instead, and
+  # a value other than zero is an abort rather than a post-restore modify. See
+  # `backup` below.
+  not_supplied_on_restore_call:
     - id: backup-retention-period
-      value: "0"
-      note: deliberately opposite to the source, so the copy creates no
-        further recovery points
-      default_if_omitted: the source's retention period
+      reason: RestoreDBInstanceToPointInTime accepts no backup retention
+        parameter, so a contract that claimed to supply one would describe a
+        call that cannot be made
+      handled_by: post-restore observation and the fail-closed abort in `backup`
   post_restore_verification:
     # Read-only describe calls on the restored copy before any query runs.
     - the restored copy reports the isolated DB subnet group
@@ -112,7 +134,9 @@ restore_target:
       in effect, and the connection is refused without TLS
     - the restored copy reports publicly_accessible false and Multi-AZ false
     - the restored copy reports deletion protection off
-    - the restored copy reports backup retention 0
+    - the restored copy reports a backup retention period of zero
+    - the restored copy's endpoint address is recorded for the drill endpoint
+      ConfigMap, and nothing else is read from the describe output
   credentials:
     # The drill never touches the live credential path.
     live_secret_mutation: forbidden
@@ -120,14 +144,70 @@ restore_target:
     role: the restored copy's own application role. Roles and their passwords
       are part of the restored data, so the restored copy accepts exactly the
       username and password the live application already uses.
+    # The connection is assembled from two objects with disjoint ownership, so
+    # no field is written by two writers and nothing has to win a reconciliation
+    # race. The Secrets Manager connection object holds the *live* host, so an
+    # ExternalSecret that projected the whole object would keep re-asserting the
+    # live endpoint into the drill Secret every refresh interval. The drill
+    # ExternalSecret therefore projects the credential fields only, and the
+    # restored endpoint — which is not a secret — is supplied separately.
+    split_rationale: >-
+      Each key has exactly one writer. External Secrets Operator owns every key
+      of the drill Secret and never learns the restored endpoint; the operator
+      owns the drill ConfigMap and never writes into the drill Secret. An
+      overwrite on refresh is therefore not possible in either direction.
     drill_secret:
       target_name: distinct from every live target Secret name
       namespace: the drill namespace only
-      username_password_source: the existing Secrets Manager connection object,
-        read through a drill-only ExternalSecret with a distinct target name
-      host_source: supplied by the operator at drill time from the restored
-        endpoint; never committed and never written back to Secrets Manager
+      managed_by: a drill-only ExternalSecret with a distinct target name
+      source_object: the existing Secrets Manager connection object, read
+        without modification
+      projected_keys:
+        - username
+        - password
+        - database
+        - port
+      excluded_keys:
+        - host
+      exclusion_reason: >-
+        The Secrets Manager connection object's host is the live instance. It is
+        excluded from the projection rather than overwritten, because External
+        Secrets Operator re-asserts every projected key on each refresh and would
+        restore the live host under any drill value written over it.
       deleted_at_cleanup: true
+    drill_endpoint_config_map:
+      name: distinct from every live ConfigMap name
+      namespace: the drill namespace only
+      classification: non-secret — an endpoint hostname is a network address,
+        not a credential, so it does not belong in a Secret
+      key: DB_HOST
+      value_source: the restored copy's endpoint address as reported by
+        describe-db-instances at `restore-isolated-target`
+      created_after: the post-restore verification, so the endpoint is recorded
+        only once the target has been confirmed to be the approved one
+      reconciled_by: nothing — it is created imperatively in the drill namespace
+        and is not part of any Flux Kustomization, so no controller prunes or
+        rewrites it during the drill
+      committed_to_git: false
+      written_back_to_secrets_manager: false
+      deleted_at_cleanup: true
+    consumption:
+      # Every workload that talks to the restored copy reads the host from one
+      # object and the credential fields from the other. Neither object is
+      # complete on its own, which is what makes an accidental connection to the
+      # live instance a missing-value failure rather than a silent success.
+      host_from: drill_endpoint_config_map
+      credential_fields_from: drill_secret
+      mechanism: DB_HOST via configMapKeyRef; username, password, database, and
+        port via secretKeyRef. The connection URL is assembled from those
+        environment variables at container start and is never stored assembled.
+      consumers:
+        # Only the workloads that talk to the *restored copy*. The gate-2
+        # fingerprint runs against the source over the live read-only path and
+        # never sees either drill object.
+        - the Job that runs the schema and continuity queries against the
+          restored copy at `schema-compatibility` and `row-continuity`
+        - the drill Web3Signer instance at `conflicting-duty-rejection`
     master_credential:
       read_by_operator: false
       handling: the restored copy's RDS-managed master credential is never read.
@@ -135,9 +215,18 @@ restore_target:
         is handled by a human or written to a file.
   backup:
     target_backup_retention_days: 0
+    supplied_on_restore_call: false
     verified_by: describe-db-instances on the restored copy before any query
-    on_mismatch: set to zero by an explicit modify, and re-verified, before the
-      drill proceeds
+    on_mismatch:
+      action: abort-and-cleanup
+      modify_target: false
+      rationale: >-
+        Retention is observed, not chosen, so a value other than zero means the
+        call that ran was not the call the approver reviewed. Repairing the
+        target in place would overwrite the evidence of that discrepancy with
+        the intended value and let the drill continue on an instance nobody
+        approved. Cleanup deletes the copy and its automated backups, and the
+        observed value is recorded in the failure record.
     delete_flags:
       - skip-final-snapshot
       - delete-automated-backups
@@ -321,7 +410,9 @@ gates:
     summary: >-
       Point-in-time restore to a new instance whose identifier differs from the
       source, with every explicit restore parameter supplied and then verified
-      by describe calls. The source instance is untouched.
+      by describe calls. Any disagreement between the approved call and the
+      describe output aborts the drill rather than being corrected in place.
+      The source instance is untouched.
   - id: schema-compatibility
     title: Web3Signer schema compatibility proven on the restored copy
     mutates_aws: false
@@ -362,7 +453,8 @@ gates:
     incurs_aws_cost: false
     requires_human_approval: false
     summary: >-
-      Delete the drill signer, the drill connection Secret, the drill instance
+      Delete the drill signer, the drill connection ExternalSecret and the
+      Secret it created, the drill endpoint ConfigMap, the drill instance
       without a final snapshot and without retained automated backups, and the
       drill security group. Record observed cost against the estimate.
   - id: evidence
@@ -634,6 +726,9 @@ rejection_test:
     instance: drill-only Web3Signer, separate from the live signer
     database: the restored copy only
     connection_secret: the drill-only connection Secret, never the live one
+    endpoint_config_map: the drill endpoint ConfigMap, which is the only place
+      the restored host is written; the drill signer cannot resolve the live
+      instance, because no object it mounts names it
     beacon_connection: forbidden
     validator_client_connection: forbidden
     publication: forbidden
@@ -662,7 +757,8 @@ cost:
     - restored DB storage, prorated
   not_billable:
     - the source instance, which is neither stopped nor modified
-    - backup storage for the restored copy, whose retention is set to zero
+    - backup storage for the restored copy, which must report zero retention to
+      proceed at all and whose automated backups are deleted at cleanup
     - cross-AZ or internet data transfer, since the drill stays in-VPC
   cost_control: the six-hour maximum lifetime and the mandatory cleanup gate
 
@@ -674,8 +770,8 @@ failure_handling:
       existing instance
     - any explicit restore parameter was not supplied, or the restored copy's
       describe output disagrees with it
-    - the restored copy reports non-zero backup retention that cannot be set to
-      zero
+    - the restored copy reports a backup retention period other than zero, which
+      means the call that ran was not the call that was approved
     - the restored copy's table inventory digest differs from the declared
       expected digest, or database_version is not 12, or the Flyway history is
       not twelve successful migrations

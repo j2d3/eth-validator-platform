@@ -264,8 +264,117 @@ class RestoreTargetTests(unittest.TestCase):
         self.assertEqual(preflight.REQUIRED_RESTORE_PARAMETERS - declared, set())
         for parameter in self.contract["restore_target"]["explicit_restore_parameters"]:
             with self.subTest(parameter=parameter["id"]):
-                # The stated AWS default is the reason the value must be given.
+                # The stated AWS default is what the value is weighed against.
                 self.assertTrue(parameter["default_if_omitted"].strip())
+
+    def test_restore_parameters_use_runnable_cli_boolean_syntax(self) -> None:
+        # `--deletion-protection false` is a parse error, not a setting. The CLI
+        # spells a disabled boolean as the `--no-` form of the flag.
+        for parameter in self.contract["restore_target"]["explicit_restore_parameters"]:
+            with self.subTest(parameter=parameter["id"]):
+                self.assertNotIn(parameter["id"], preflight.DISABLED_BY_NO_PREFIX)
+                self.assertNotIn(
+                    parameter["value"].strip().lower(), preflight.BOOLEAN_VALUE_TOKENS
+                )
+
+    def test_a_value_style_boolean_flag_is_rejected(self) -> None:
+        contract = self.mutated()
+        for parameter in contract["restore_target"]["explicit_restore_parameters"]:
+            if parameter["id"] == "no-deletion-protection":
+                parameter["id"] = "deletion-protection"
+                parameter["value"] = "false"
+
+        self.assertIn(
+            "targets/restore-parameters-are-explicit",
+            failed(preflight.run_checks(contract, ROOT)),
+        )
+
+    def test_the_deletion_protection_default_is_the_documented_one(self) -> None:
+        # AWS documents deletion protection as disabled by default on a restore;
+        # it is not carried over from the source.
+        parameter = next(
+            parameter
+            for parameter in self.contract["restore_target"]["explicit_restore_parameters"]
+            if parameter["id"] == "no-deletion-protection"
+        )
+        default = " ".join(parameter["default_if_omitted"].split())
+
+        self.assertIn("not enabled by default", default)
+        self.assertIn("not copied from the source", default)
+
+    def test_backup_retention_is_not_claimed_as_a_restore_parameter(self) -> None:
+        # RestoreDBInstanceToPointInTime has no BackupRetentionPeriod member, so
+        # a contract that supplied one would describe a call that cannot be made.
+        declared = {
+            parameter["id"]
+            for parameter in self.contract["restore_target"]["explicit_restore_parameters"]
+        }
+
+        target = self.contract["restore_target"]
+
+        self.assertEqual(declared & preflight.UNSUPPORTED_RESTORE_PARAMETERS, set())
+        self.assertIs(target["backup"]["supplied_on_restore_call"], False)
+        # Absent is not enough: the contract has to say why, and what covers it.
+        explained = {entry["id"] for entry in target["not_supplied_on_restore_call"]}
+        self.assertEqual(preflight.UNSUPPORTED_RESTORE_PARAMETERS - explained, set())
+
+    def test_dropping_an_unsupported_parameter_explanation_is_rejected(self) -> None:
+        contract = self.mutated()
+        contract["restore_target"]["not_supplied_on_restore_call"] = []
+
+        self.assertIn(
+            "targets/restore-parameters-are-explicit",
+            failed(preflight.run_checks(contract, ROOT)),
+        )
+
+    def test_supplying_backup_retention_on_the_restore_call_is_rejected(self) -> None:
+        contract = self.mutated()
+        contract["restore_target"]["explicit_restore_parameters"].append(
+            {
+                "id": "backup-retention-period",
+                "value": "0",
+                "default_if_omitted": "the source's retention period",
+            }
+        )
+
+        self.assertIn(
+            "targets/restore-parameters-are-explicit",
+            failed(preflight.run_checks(contract, ROOT)),
+        )
+
+    def test_a_backup_retention_mismatch_aborts_and_cleans_up(self) -> None:
+        on_mismatch = self.contract["restore_target"]["backup"]["on_mismatch"]
+
+        self.assertEqual(on_mismatch["action"], preflight.ABORT_AND_CLEANUP)
+        self.assertIs(on_mismatch["modify_target"], False)
+        self.assertTrue(on_mismatch["rationale"].strip())
+
+    def test_repairing_a_backup_retention_mismatch_in_place_is_rejected(self) -> None:
+        contract = self.mutated()
+        contract["restore_target"]["backup"]["on_mismatch"]["modify_target"] = True
+
+        self.assertIn(
+            "targets/backup-retention-mismatch-fails-closed",
+            failed(preflight.run_checks(contract, ROOT)),
+        )
+
+    def test_continuing_after_a_backup_retention_mismatch_is_rejected(self) -> None:
+        contract = self.mutated()
+        contract["restore_target"]["backup"]["on_mismatch"]["action"] = (
+            "record-and-continue"
+        )
+
+        self.assertIn(
+            "targets/backup-retention-mismatch-fails-closed",
+            failed(preflight.run_checks(contract, ROOT)),
+        )
+
+    def test_a_backup_plan_without_a_mismatch_response_is_a_hard_error(self) -> None:
+        contract = self.mutated()
+        contract["restore_target"]["backup"]["on_mismatch"] = "abort"
+
+        with self.assertRaises(preflight.DrillContractError):
+            preflight.run_checks(contract, ROOT)
 
     def test_dropping_the_tls_parameter_group_is_rejected(self) -> None:
         contract = self.mutated()
@@ -361,6 +470,121 @@ class RestoreTargetTests(unittest.TestCase):
 
         with self.assertRaises(preflight.DrillContractError):
             preflight.run_checks(contract, ROOT)
+
+
+class DrillConnectionSplitTests(unittest.TestCase):
+    """The restored host and the credential fields need disjoint owners.
+
+    The Secrets Manager connection object carries the live host. Anything that
+    projects it into the drill Secret is re-asserted by External Secrets Operator
+    on every refresh, so a drill endpoint written over it would be reverted to
+    the live instance without anyone doing anything.
+    """
+
+    def setUp(self) -> None:
+        self.contract = preflight.load_contract(CONTRACT_PATH)
+        self.credentials = self.contract["restore_target"]["credentials"]
+
+    def mutated(self) -> dict:
+        return copy.deepcopy(self.contract)
+
+    def test_the_drill_secret_projects_credentials_only(self) -> None:
+        drill_secret = self.credentials["drill_secret"]
+
+        self.assertEqual(
+            set(drill_secret["projected_keys"]), preflight.CREDENTIAL_PROJECTION
+        )
+        self.assertIn("host", drill_secret["excluded_keys"])
+        self.assertTrue(drill_secret["exclusion_reason"].strip())
+
+    def test_projecting_the_host_into_the_drill_secret_is_rejected(self) -> None:
+        contract = self.mutated()
+        contract["restore_target"]["credentials"]["drill_secret"]["projected_keys"].append(
+            "host"
+        )
+
+        self.assertIn(
+            "targets/drill-connection-split-is-reconciliation-stable",
+            failed(preflight.run_checks(contract, ROOT)),
+        )
+
+    def test_dropping_the_host_exclusion_is_rejected(self) -> None:
+        contract = self.mutated()
+        contract["restore_target"]["credentials"]["drill_secret"]["excluded_keys"] = []
+
+        self.assertIn(
+            "targets/drill-connection-split-is-reconciliation-stable",
+            failed(preflight.run_checks(contract, ROOT)),
+        )
+
+    def test_the_endpoint_config_map_is_uncommitted_and_unreconciled(self) -> None:
+        config_map = self.credentials["drill_endpoint_config_map"]
+
+        self.assertEqual(config_map["key"], "DB_HOST")
+        self.assertIs(config_map["committed_to_git"], False)
+        self.assertIs(config_map["written_back_to_secrets_manager"], False)
+        self.assertIs(config_map["deleted_at_cleanup"], True)
+        self.assertTrue(config_map["reconciled_by"].strip())
+        # The endpoint does not exist until the restore has been verified.
+        self.assertIn("verification", config_map["created_after"])
+
+    def test_committing_the_restored_endpoint_is_rejected(self) -> None:
+        contract = self.mutated()
+        contract["restore_target"]["credentials"]["drill_endpoint_config_map"][
+            "committed_to_git"
+        ] = True
+
+        self.assertIn(
+            "targets/drill-connection-split-is-reconciliation-stable",
+            failed(preflight.run_checks(contract, ROOT)),
+        )
+
+    def test_an_endpoint_config_map_that_outlives_the_drill_is_rejected(self) -> None:
+        contract = self.mutated()
+        contract["restore_target"]["credentials"]["drill_endpoint_config_map"][
+            "deleted_at_cleanup"
+        ] = False
+
+        self.assertIn(
+            "targets/drill-connection-split-is-reconciliation-stable",
+            failed(preflight.run_checks(contract, ROOT)),
+        )
+
+    def test_the_workloads_take_host_and_credentials_from_separate_objects(self) -> None:
+        consumption = self.credentials["consumption"]
+
+        self.assertEqual(consumption["host_from"], "drill_endpoint_config_map")
+        self.assertEqual(consumption["credential_fields_from"], "drill_secret")
+        self.assertIn("configMapKeyRef", consumption["mechanism"])
+        self.assertIn("secretKeyRef", consumption["mechanism"])
+        self.assertGreaterEqual(len(consumption["consumers"]), 2)
+
+    def test_taking_the_host_from_the_drill_secret_is_rejected(self) -> None:
+        contract = self.mutated()
+        contract["restore_target"]["credentials"]["consumption"]["host_from"] = (
+            "drill_secret"
+        )
+
+        self.assertIn(
+            "targets/drill-connection-split-is-reconciliation-stable",
+            failed(preflight.run_checks(contract, ROOT)),
+        )
+
+    def test_a_missing_endpoint_config_map_is_a_hard_error(self) -> None:
+        contract = self.mutated()
+        del contract["restore_target"]["credentials"]["drill_endpoint_config_map"]
+
+        with self.assertRaises(preflight.DrillContractError):
+            preflight.run_checks(contract, ROOT)
+
+    def test_the_drill_signer_names_only_the_drill_endpoint(self) -> None:
+        signer = self.contract["rejection_test"]["signer"]
+
+        self.assertEqual(
+            signer["connection_secret"],
+            "the drill-only connection Secret, never the live one",
+        )
+        self.assertIn("drill endpoint ConfigMap", signer["endpoint_config_map"])
 
 
 class SchemaEvidenceTests(unittest.TestCase):
@@ -840,6 +1064,48 @@ class DrillSourceCodeTests(unittest.TestCase):
 
         self.assertIn("not modified, not repointed, and not deleted", runbook)
         self.assertIn("distinct target name", runbook)
+
+    def test_the_runbook_restore_call_is_runnable_as_written(self) -> None:
+        runbook = " ".join(RUNBOOK_PATH.read_text(encoding="utf-8").split())
+
+        self.assertIn("`--no-deletion-protection`", runbook)
+        self.assertNotIn("--deletion-protection false` | off", runbook)
+        # The restore API has no retention parameter, so the runbook must not
+        # instruct an operator to pass one.
+        self.assertNotIn("--backup-retention-period 0", runbook)
+        self.assertIn("has no `--backup-retention-period` parameter", runbook)
+
+    def test_the_runbook_aborts_on_a_backup_retention_mismatch(self) -> None:
+        runbook = " ".join(RUNBOOK_PATH.read_text(encoding="utf-8").split())
+
+        self.assertIn("If it is not zero, **abort and run gate 8**", runbook)
+        self.assertIn("Do not modify the instance.", runbook)
+
+    def test_the_runbook_splits_the_host_from_the_credential_fields(self) -> None:
+        runbook = " ".join(RUNBOOK_PATH.read_text(encoding="utf-8").split())
+
+        self.assertIn("does not project `host`", runbook)
+        self.assertIn("`configMapKeyRef`", runbook)
+        self.assertIn("`secretKeyRef`", runbook)
+        # Cleanup has to remove both halves, or the drill leaves state behind.
+        self.assertIn(
+            "Delete the drill-only connection `ExternalSecret` and the Secret it "
+            "created, and the drill endpoint `ConfigMap`",
+            runbook,
+        )
+
+    def test_the_runbook_repeats_no_numbered_step(self) -> None:
+        # A duplicated procedure step reads as two actions where the operator
+        # should take one.
+        steps: dict[str, int] = {}
+        for line in RUNBOOK_PATH.read_text(encoding="utf-8").splitlines():
+            stripped = line.strip()
+            if not stripped[:1].isdigit() or ". " not in stripped[:4]:
+                continue
+            text = stripped.split(". ", 1)[1]
+            steps[text] = steps.get(text, 0) + 1
+
+        self.assertEqual([text for text, count in steps.items() if count > 1], [])
 
 
 if __name__ == "__main__":
