@@ -152,7 +152,15 @@ class PortalStatusApiResponseTests(unittest.TestCase):
             snapshot["alerts"],
             {"firingTotal": 2, "critical": 1, "warning": 1},
         )
-        self.assertIn('alertname!="Watchdog"', SERVER.SCALAR_QUERIES["firingAlertsTotal"])
+        for query_name in (
+            "firingAlertsTotal",
+            "firingAlertsCritical",
+            "firingAlertsWarning",
+        ):
+            self.assertIn(
+                'alertname!~"Watchdog|InfoInhibitor"',
+                SERVER.SCALAR_QUERIES[query_name],
+            )
         self.assertIn('severity="critical"', SERVER.SCALAR_QUERIES["firingAlertsCritical"])
         self.assertIn('severity="warning"', SERVER.SCALAR_QUERIES["firingAlertsWarning"])
 
