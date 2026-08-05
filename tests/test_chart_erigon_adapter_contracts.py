@@ -146,6 +146,34 @@ class ErigonAdapterRenderTests(unittest.TestCase):
         # Erigon init subcommand takes datadir + genesis file positionally.
         self.assertIn("erigon init", script)
 
+    def test_prometheusrule_uses_runtime_observed_erigon_metrics(self) -> None:
+        rule = self.by_kind["PrometheusRule"][0]
+        records = {
+            item["record"]: item["expr"]
+            for item in rule["spec"]["groups"][0]["rules"]
+            if "record" in item
+        }
+        head = records["validator_platform_execution_head_block"]
+        changes = records["validator_platform_execution_head_changes_15m"]
+        peers = records["validator_platform_execution_peers"]
+
+        self.assertIn(
+            'sync{platform="ethereum-validator",component="execution",execution_client="erigon"}',
+            head,
+        )
+        self.assertIn(
+            'changes(sync{platform="ethereum-validator",component="execution",execution_client="erigon"}[15m])',
+            changes,
+        )
+        self.assertIn(
+            'p2p_peers{platform="ethereum-validator",component="execution",execution_client="erigon"}',
+            peers,
+        )
+        self.assertNotIn(
+            'chain_head_block{platform="ethereum-validator",component="execution",execution_client="erigon"}',
+            head,
+        )
+
     def test_geth_ephemery_still_renders_unchanged(self) -> None:
         # Flip the same profile to Geth and confirm we get the Geth shell wrap.
         values = erigon_ephemery_values()
