@@ -7,6 +7,7 @@ resources:
 - assignment-ephemery-162-synthetic-besu-teku.yaml
 - assignment-ephemery-162-synthetic-erigon.yaml
 - assignment-ephemery-162-synthetic-geth-nimbus.yaml
+- assignment-ephemery-162-synthetic-nethermind-lighthouse.yaml
 - assignment-ephemery-162-synthetic-reth.yaml
 - assignment-ephemery-162-synthetic-reth-teku.yaml
 - assignment-ephemery-162-synthetic-teku.yaml
