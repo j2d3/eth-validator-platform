@@ -139,7 +139,7 @@ Accepted architecture decisions.
   one-page setup guide for adapting the two-agent model to two Claude
   instances on any repository
 - [two-claude-agent-prompt.md](development/two-claude-agent-prompt.md) —
-  bootstrapping prompt to paste into a fresh Claude Code session so it
+  steady-state prompt to paste into a fresh Claude Code session so it
   joins the collaboration in the correct persona
 
 ## Legacy content

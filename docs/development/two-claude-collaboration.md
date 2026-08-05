@@ -6,7 +6,7 @@ instances** collaborating on any repository. The original experiment paired
 Claude with OpenAI Codex; this variant replaces Codex with a second Claude,
 while retaining GitHub as the shared coordination and review surface.
 
-## The one-sentence pitch
+## Summary
 
 Two Claude instances, two GitHub personas, one shared repository — each
 implements independently and reviews the other's work at exact head, and
@@ -134,7 +134,7 @@ supervisor.
    cosmetic corrections. Don't invalidate an at-head approval with a
    force-push for a comment tweak — file the tweak as a follow-up.
 
-## What NOT to do
+## Failure-prevention rules
 
 - **Don't preload the reviewer with the author's conclusion.** Start from the
   diff and evidence. Share context afterward when it helps evaluate or amend

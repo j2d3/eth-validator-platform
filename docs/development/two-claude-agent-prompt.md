@@ -1,7 +1,9 @@
-# Bootstrapping prompt for a two-Claude collaboration
+# Session prompt for a two-Claude collaboration
 
 Paste one of the two variants below into a fresh Claude Code session at the
-start of a new project. Each variant establishes one of the two agent
+start of a collaboration. First complete the repository and identity setup in
+[two-agent-setup.md](two-agent-setup.md), including its repository-bootstrap
+prompt. Each variant below establishes one of the two agent
 personas; the two sessions are otherwise identical. The prompt is written to
 be portable — replace the bracketed slots with the specific values for your
 setup.

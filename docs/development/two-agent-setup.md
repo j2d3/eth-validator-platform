@@ -219,7 +219,44 @@ codex exec --ephemeral --sandbox workspace-write "<bounded worker prompt>"
 must still select the correct lane-specific Codex home and clone before the
 process starts, apply a timeout, and verify the resulting GitHub artifact.
 
-## Bootstrap prompt for both agents
+## Repository-bootstrap prompt
+
+Give this prompt to one agent before starting product work. It creates the
+repository-side contract but does not authenticate either persona or grant
+itself authority:
+
+```text
+Prepare this repository for a two-agent, two-GitHub-persona development loop.
+You are the bootstrap agent only. Do not authenticate accounts, create
+credentials, push, merge, deploy, or begin product work.
+
+First inspect the repository and its existing contribution rules. Then prepare
+one focused change that adds or proposes:
+
+1. A tool-neutral collaboration document defining two GitHub personas and
+   branch prefixes; no self-approval; exact-head paired review; author-owned
+   guarded merges; GitHub issues/PRs as authoritative state; claim leases;
+   WIP limit one; and human-only boundaries for credentials, deployments,
+   infrastructure mutation, signing, spending, and scope expansion.
+2. A parameterized merge wrapper that verifies authenticated identity, the
+   designated paired reviewer's fresh approval on the current head, completed
+   required CI, a current/mergeable branch, the author's noreply merge email,
+   and post-merge attribution. A review submitted before the force-push that
+   installed the current head must not count.
+3. CODEOWNERS plus a branch-protection setup plan.
+4. Tests for the merge wrapper's failure cases.
+5. An optional bounded-supervisor design with temporary worktrees, timeouts,
+   locks, WIP limits, and no live-system credentials.
+
+Ask the human only for the repository name, two GitHub handles, noreply
+addresses, clone paths, required checks, and paths that must never auto-merge.
+Do not put credentials in tracked files.
+```
+
+After the human reviews and lands that setup, create the two isolated lanes
+and use the following steady-state prompt in both sessions.
+
+## Steady-state prompt for both agents
 
 Give the following prompt to each interactive session, substituting the lane
 values. The second session receives the same prompt with A/B reversed.
