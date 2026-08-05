@@ -1,4 +1,5 @@
 import LiveStatus from "../components/live-status";
+import RepositorySecurity from "../components/repository-security";
 import {
   grafanaBase,
   grafanaDashboards,
@@ -30,6 +31,8 @@ export default function Home() {
 
       <main id="main">
         <LiveStatus />
+
+        <RepositorySecurity />
 
         <section className="panel" aria-labelledby="dashboards-title">
           <div className="panel-heading">

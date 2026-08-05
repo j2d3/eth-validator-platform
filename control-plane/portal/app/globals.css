@@ -210,6 +210,23 @@ h1 {
   min-height: 126px;
 }
 
+.security-summary-grid {
+  grid-template-columns: repeat(3, 1fr);
+  margin-bottom: 0;
+  border: 0;
+  border-radius: 0 0 12px 12px;
+}
+
+.security-summary-grid .summary-item {
+  min-height: 176px;
+}
+
+.security-summary-grid .summary-item > a {
+  display: inline-block;
+  margin-top: 12px;
+  font-size: 0.78rem;
+}
+
 .detail,
 .status {
   font-size: 0.78rem;

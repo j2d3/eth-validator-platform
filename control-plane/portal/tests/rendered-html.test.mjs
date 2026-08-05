@@ -65,6 +65,10 @@ test("server-renders the environment status page", async () => {
   );
   assert.doesNotMatch(html, /Signing<\/span><strong>Disabled/);
   assert.match(html, /Client-pair sync/);
+  assert.match(html, /Repository security/);
+  assert.match(html, /Container image scan/);
+  assert.match(html, /Dependency updates/);
+  assert.match(html, /Image enforcement/);
   assert.match(html, /Project links/);
   assert.equal(
     response.headers.get("strict-transport-security"),

@@ -11,6 +11,12 @@ export const grafanaBase = `${operationsOrigin}/grafana`;
 export const signingDashboard =
   `${grafanaBase}/d/eth-eks-ephemery-sync/` +
   "ethereum-platform-eks-ephemery-sync-evidence?orgId=1";
+export const imageSecurityWorkflowRuns =
+  `${repository}/actions/workflows/image-security.yaml?query=branch%3Amain`;
+export const dependabotPullRequests =
+  `${repository}/pulls?q=is%3Apr+is%3Aopen+author%3Aapp%2Fdependabot`;
+export const imageSecurityRunbook =
+  `${repository}/blob/main/docs/runbooks/image-security.md`;
 
 export const grafanaDashboards: ResourceLink[] = [
   {
