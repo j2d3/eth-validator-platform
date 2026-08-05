@@ -237,6 +237,15 @@ the pair's consensus TCP listener on port 9000. Its source range is public
 because Ethereum P2P is public. JSON-RPC, Engine API, beacon API, and metrics
 are not ports on that LoadBalancer.
 
+The chart fails Helm rendering when that AWS load-balancer class is paired
+with instance targets, omits
+`aws-load-balancer-enable-tcp-udp-listener=true`, or reintroduces the legacy
+`aws-load-balancer-type` annotation. This keeps the five fixed P2P ports on one
+controller-owned mixed-protocol Service instead of silently dropping UDP or
+falling back to the in-tree reconciler. `node-apps` also names
+`infrastructure-controllers` as a direct Flux dependency, so the Service is not
+submitted before the controller layer reports Ready.
+
 ```bash
 kubectl rollout status -n kube-system \
   deployment/aws-load-balancer-controller --timeout=5m

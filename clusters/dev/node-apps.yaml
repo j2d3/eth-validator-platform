@@ -7,6 +7,10 @@ metadata:
     platform.galaxy-lab/environment: dev
 spec:
   dependsOn:
+    # The selected public P2P Service names the AWS LBC loadBalancerClass.
+    # Keep controller readiness as a direct dependency even though the apps
+    # chain also reaches infrastructure-controllers transitively.
+    - name: infrastructure-controllers
     - name: apps
   interval: 10m
   retryInterval: 1m
