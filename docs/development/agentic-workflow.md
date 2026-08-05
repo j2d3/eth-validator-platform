@@ -14,15 +14,15 @@ with two independent AI coding agents:
 
 Each agent runs in its own interactive session with its own working directory
 clone and its own `gh` credentials. Neither agent can approve its own PRs.
-Every commit going to `main` has been reviewed at its exact head by the
-*other* agent before the merge wrapper (`hack/merge-pr.sh`) will proceed.
+Since the guarded workflow was introduced, ordinary agent-authored changes
+going to `main` have been reviewed at their exact head by the *other* agent
+before the merge wrapper (`hack/merge-pr.sh`) will proceed.
 
 ## Why two agents
 
-The premise is that adversarial review catches what single-agent reasoning
-rationalizes away. An agent generating a change tends to defend its own
-plausible logic; a second agent starting from the diff and the runtime
-evidence is more likely to notice the mismatch.
+The premise is that independent review catches assumptions the authoring
+session may carry into its own change. A second agent starting from the diff
+and the runtime evidence has different context and may notice a mismatch.
 
 Concrete failure modes the model has actually caught, not just claimed to:
 
@@ -47,8 +47,9 @@ Concrete failure modes the model has actually caught, not just claimed to:
   flagged the wording and Claude corrected it before the wrapper would
   merge.
 
-None of these failures would have been detected by a single-agent workflow
-short of a live production incident.
+A single-agent workflow would need equivalent independent review or runtime
+tests to catch the same failures before merge. In this experiment, the second
+agent supplied that check.
 
 ## The current cadence
 
@@ -77,7 +78,8 @@ Two specialization refinements emerged during the initial signing bring-up:
    catalog work.
 2. **The human runs the identity + deposit ceremony.** No agent touches
    validator keystore material or deposit transactions. The human generates
-   each key offline with `EthStaker deposit CLI`, submits the 32 tETH
+   each key on a trusted local workstation with `EthStaker deposit CLI`,
+   submits the 32 tETH
    deposit, and onboards the encrypted keystore via `hack/onboard-web3signer-
    keystore.py` (which the agents wrote but the human alone runs).
 
@@ -101,24 +103,38 @@ Two specialization refinements emerged during the initial signing bring-up:
   live cluster at a specific commit. "The manifest looked right" is never
   accepted as evidence.
 - **Exact-head language everywhere.** Approvals cite the exact 40-char
-  SHA. Comments reference exact heads. The wrapper matches on exact heads.
-  Language discipline prevents the "I reviewed something like this earlier"
-  bug class.
+  commit internally even when a human-facing comment abbreviates it. The
+  wrapper matches the review to the current head and also rejects a review
+  submitted before the force-push that installed that head. This prevents the
+  "I reviewed something like this earlier" bug class.
 
 ## Coordination friction that remains
 
-- **DM caches (`.from_j2d3` / `.from_5u6r054`)** are local files each agent
-  writes to hand off narrative context to the other. GitHub PRs and issue
-  #6 remain authoritative; the DMs are just a lower-latency handoff channel.
-- **Rebase-race hell.** When both agents are shipping fast, one agent's
+- **DM caches (`.from_j2d3` / `.from_5u6r054`)** are local files used for
+  narrative handoff. Separate clones do not share them automatically; the
+  experiment temporarily left each agent reading a stale file in its own
+  clone. GitHub PRs and issue #6 remain authoritative.
+- **Rebase churn.** When both agents are shipping fast, one agent's
   approval can arrive after main has advanced and left the reviewed head
   BEHIND — requiring a rebase, which stales the approval, which requires
   another approval, which may itself be BEHIND. Handled by "rebase and
   ping" as a standing move; not eliminated.
-- **Copy-and-paste through the human.** Some coordination still routes
-  through the human relaying "Codex says X" to Claude in the interactive
-  session. Being consciously reduced by both agents preferring GitHub
-  comments over out-of-band prose.
+- **Interactive sessions are not addressable through their CLIs.** Running
+  `codex exec` or `claude -p` starts a fresh worker; it does not send a message
+  to the already-open interactive session. GitHub is the durable
+  machine-to-machine channel.
+- **Polling alone is not autonomous progress.** Both agents repeatedly reached
+  a clean queue and stopped polling. A later local supervisor dispatched
+  reviews and merges, but needed an explicit task queue before "no open PR"
+  meant "take the next bounded task."
+- **Workers need bounded shutdown.** One Claude worker posted its formal
+  review but did not exit, blocking the supervisor until the completed worker
+  was terminated. A maximum runtime and verification of the expected GitHub
+  artifact are required.
+- **Sandbox and host credentials differ.** A sandboxed Codex worker could not
+  read the host's Keychain-backed `gh` token or resolve a registry even though
+  the interactive host could. The trusted host must own credentials and
+  supply already-verified public inputs when a worker lacks network access.
 
 ## What "done" means for a pair
 
@@ -141,9 +157,9 @@ Explicitly not proven yet:
 - **Long-term stability of the cadence.** Every hour of shipping generates
   ~5 PRs across both agents; the collaboration model has never run for a
   week at that pace.
-- **Recovery from an agent going rogue.** The wrapper refuses malformed
-  merges, but there is no drill for a hostile agent PR. Human review is
-  still the final safety net.
+- **Recovery from a misbehaving agent.** The wrapper refuses malformed
+  merges, but there is no drill for an actively hostile agent PR. Human review
+  remains the final safety net.
 - **Scaling beyond two lanes.** Adding a third agent would multiply
   coordination combinatorics; the current DM + issue-6 channel would
   probably not scale as-is.
@@ -162,8 +178,7 @@ Not yet instrumented, but the honest measurable signals would be:
 
 ## What the model preserves
 
-The two agents do not remove the operator; they move the operator upward.
-The human no longer types every manifest, but still owns:
+The two agents do not remove the operator. The human still owns:
 
 - What enters the system (product scope, PRD, ADRs).
 - Every irreversible action (key generation, deposit, trusted-local Terraform
@@ -175,3 +190,7 @@ The human no longer types every manifest, but still owns:
 The experiment is whether that arrangement produces higher-quality software
 faster than a single-agent or single-human lane, at the cost of coordination
 overhead worth paying.
+
+For a portable setup procedure, two-Codex/two-Claude/mixed comparison, and
+copy-pastable bootstrap prompts, see
+[`two-agent-setup.md`](two-agent-setup.md).
