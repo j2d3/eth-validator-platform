@@ -81,8 +81,10 @@ Per #156's chart adapter:
   Ephemery-format chainspec (JSON with `name/engine/params/genesis/
   accounts/nodes` shape per `ethpandaops/ethereum-genesis-generator`'s
   `tpl-chainspec.json`).
-- `--Init.BaseDbPath=/data` — data directory root; Nethermind creates
-  `/data/nethermind_db` on first execution start.
+- `--Init.BaseDbPath=/data` — data directory root; Nethermind creates its
+  RocksDB directories (`blocks`, `headers`, `metadata`, `state`, and others)
+  directly under `/data`. The restart guard uses the runtime-observed
+  `/data/metadata` directory as the initialized-data sentinel.
 - `--Init.StaticNodesPath=/tmp/static-nodes.json` and
   `--Init.TrustedNodesPath=/tmp/trusted-nodes.json` — keep reconstructible peer
   files on the writable ephemeral mount instead of Nethermind's read-only
