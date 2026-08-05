@@ -114,13 +114,13 @@ variable "ethereum_initial_desired_size" {
 }
 
 variable "ethereum_max_size_per_az" {
-  description = "Hard cost bound for each zonal Ethereum group. Zero-minimum groups in non-selected AZs remain available for a later autoscaler qualification."
+  description = "Hard cost bound for each zonal Ethereum group. The lab default remains one; a reviewed multi-pair qualification may raise an individual group to at most three workers."
   type        = number
   default     = 1
 
   validation {
-    condition     = var.ethereum_max_size_per_az >= 1 && var.ethereum_max_size_per_az <= 2 && floor(var.ethereum_max_size_per_az) == var.ethereum_max_size_per_az
-    error_message = "ethereum_max_size_per_az must be one or two."
+    condition     = var.ethereum_max_size_per_az >= 1 && var.ethereum_max_size_per_az <= 3 && floor(var.ethereum_max_size_per_az) == var.ethereum_max_size_per_az
+    error_message = "ethereum_max_size_per_az must be one, two, or three."
   }
 }
 

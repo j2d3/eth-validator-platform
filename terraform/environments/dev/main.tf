@@ -116,7 +116,10 @@ module "eks" {
     eks-pod-identity-agent = {
       before_compute = true
     }
-    kube-proxy = {}
+    # Keep add-on upgrades separate from ordinary capacity changes.
+    kube-proxy = {
+      addon_version = "v1.35.3-eksbuild.17"
+    }
     vpc-cni = {
       before_compute = true
       configuration_values = jsonencode({
@@ -143,9 +146,10 @@ module "eks" {
   eks_managed_node_groups = merge(
     {
       system = {
-        ami_type       = "AL2023_x86_64_STANDARD"
-        capacity_type  = "ON_DEMAND"
-        instance_types = var.system_instance_types
+        ami_type                       = "AL2023_x86_64_STANDARD"
+        use_latest_ami_release_version = false
+        capacity_type                  = "ON_DEMAND"
+        instance_types                 = var.system_instance_types
 
         min_size     = 2
         max_size     = 4
@@ -178,10 +182,11 @@ module "eks" {
       # that controller is qualified, exactly one operator-selected AZ receives
       # the lab's bounded desired capacity.
       for index, az in local.azs : "ethereum-${az}" => {
-        ami_type       = "AL2023_x86_64_STANDARD"
-        capacity_type  = var.ethereum_capacity_type
-        instance_types = var.ethereum_instance_types
-        subnet_ids     = [module.vpc.private_subnets[index]]
+        ami_type                       = "AL2023_x86_64_STANDARD"
+        use_latest_ami_release_version = false
+        capacity_type                  = var.ethereum_capacity_type
+        instance_types                 = var.ethereum_instance_types
+        subnet_ids                     = [module.vpc.private_subnets[index]]
 
         min_size     = 0
         max_size     = var.ethereum_max_size_per_az

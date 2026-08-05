@@ -81,13 +81,24 @@ class EksCapacityContractTests(unittest.TestCase):
         self.assertIn(
             "contains([0, 1], var.ethereum_initial_desired_size)", desired
         )
-        self.assertIn("var.ethereum_max_size_per_az <= 2", per_az_max)
+        self.assertIn("var.ethereum_max_size_per_az <= 3", per_az_max)
         self.assertIn("default = 40", system_root)
         self.assertIn("default = 30", ethereum_root)
         self.assertEqual(compact_main.count('volume_type = "gp3"'), 2)
         self.assertIn("volume_size = var.system_root_volume_size_gib", compact_main)
         self.assertIn(
             "volume_size = var.ethereum_root_volume_size_gib", compact_main
+        )
+
+    def test_capacity_changes_do_not_implicitly_upgrade_nodes_or_kube_proxy(self) -> None:
+        compact = " ".join(MAIN.split())
+
+        self.assertEqual(
+            compact.count("use_latest_ami_release_version = false"), 2
+        )
+        self.assertRegex(
+            compact,
+            r'kube-proxy = \{ addon_version = "v[^"]+" \}',
         )
 
     def test_pause_output_and_documentation_preserve_the_ebs_az(self) -> None:
