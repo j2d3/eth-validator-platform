@@ -108,6 +108,8 @@ namespacing, JWT mount, network artifact layout, security context).
 {{- include "ethereum-node.rethInitCommand" . -}}
 {{- else if eq $client "erigon" -}}
 {{- include "ethereum-node.erigonInitCommand" . -}}
+{{- else if eq $client "besu" -}}
+{{- include "ethereum-node.besuInitCommand" . -}}
 {{- else -}}
 {{- fail (printf "no init-command adapter for executionClient=%q" $client) -}}
 {{- end -}}
@@ -121,6 +123,8 @@ namespacing, JWT mount, network artifact layout, security context).
 {{- include "ethereum-node.rethRunCommand" . -}}
 {{- else if eq $client "erigon" -}}
 {{- include "ethereum-node.erigonRunCommand" . -}}
+{{- else if eq $client "besu" -}}
+{{- include "ethereum-node.besuRunCommand" . -}}
 {{- else -}}
 {{- fail (printf "no run-command adapter for executionClient=%q" $client) -}}
 {{- end -}}
@@ -131,6 +135,7 @@ namespacing, JWT mount, network artifact layout, security context).
 {{- if eq $client "geth" -}}geth
 {{- else if eq $client "reth" -}}db
 {{- else if eq $client "erigon" -}}chaindata
+{{- else if eq $client "besu" -}}database
 {{- else -}}
 {{- fail (printf "no dataDirMarker for executionClient=%q" $client) -}}
 {{- end -}}
@@ -382,6 +387,69 @@ exec erigon \
   --metrics \
   --metrics.addr=0.0.0.0 \
   --metrics.port=6060
+{{- end -}}
+
+{{/*
+Besu-specific adapters. Besu is Hyperledger's Java EL from Consensys —
+pairs naturally with Teku (also Consensys/Java) to complete their stack.
+Genesis format is Geth-compatible (same digest-verified genesis.json).
+Custom-network init writes state under /data/database/ (asserted by the
+data marker). Besu uses a different CLI vocabulary from the other ELs:
+`--data-path`, `--genesis-file`, `--engine-jwt-secret-file`, and
+`--metrics-*` flags with hyphens rather than dots.
+*/}}
+{{- define "ethereum-node.besuInitCommand" -}}
+set -eu
+marker=/data/.platform-network-identity
+expected={{ .Values.networkProfile.identityFingerprint | quote }}
+test "$(cat /network/.verified-identity)" = "$expected"
+if [ -f "$marker" ]; then
+  test "$(cat "$marker")" = "$expected" || {
+    echo "execution PVC belongs to another network identity" >&2
+    exit 1
+  }
+  test -d /data/{{ include "ethereum-node.executionDataDirMarker" . }} || {
+    echo "execution PVC marker exists without initialized Besu data" >&2
+    exit 1
+  }
+  exit 0
+fi
+for entry in /data/.[!.]* /data/..?* /data/*; do
+  [ -e "$entry" ] || continue
+  [ "$entry" = /data/lost+found ] && continue
+  echo "refusing to initialize an unmarked non-empty execution PVC" >&2
+  exit 1
+done
+# Besu creates the database directory on first run when the genesis file is
+# supplied via --genesis-file; there is no separate `besu init` subcommand.
+# The marker directory is created preemptively so the marker check on
+# subsequent Pod restarts sees a non-empty directory before Besu's own
+# initialization completes.
+mkdir -p /data/{{ include "ethereum-node.executionDataDirMarker" . }}
+printf '%s\n' "$expected" > "$marker"
+{{- end -}}
+
+{{- define "ethereum-node.besuRunCommand" -}}
+set -eu
+bootnodes="$(tr '\n' ',' < {{ printf "/network/files/%s" .Values.networkProfile.artifactBundle.files.executionBootnodes }})"
+bootnodes="${bootnodes%,}"
+test -n "$bootnodes"
+exec besu \
+  --data-path=/data \
+  {{ printf "--genesis-file=/network/files/%s" .Values.networkProfile.artifactBundle.files.executionGenesis | quote }} \
+  --network-id={{ printf "%.0f" .Values.networkProfile.identity.executionNetworkId }} \
+  --bootnodes="$bootnodes" \
+  --rpc-http-enabled \
+  --rpc-http-host=0.0.0.0 \
+  --rpc-http-port=8545 \
+  --rpc-http-api=ETH,NET,WEB3 \
+  --engine-rpc-enabled \
+  --engine-host-allowlist='*' \
+  --engine-rpc-port=8551 \
+  --engine-jwt-secret=/jwt/jwt.hex \
+  --metrics-enabled \
+  --metrics-host=0.0.0.0 \
+  --metrics-port=6060
 {{- end -}}
 
 {{- define "ethereum-node.metricRelabelings" -}}
