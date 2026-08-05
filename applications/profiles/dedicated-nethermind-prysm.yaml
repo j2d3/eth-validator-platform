@@ -1,0 +1,17 @@
+apiVersion: platform.galaxy-lab/v1alpha1
+kind: ServiceProfile
+metadata:
+  name: dedicated-nethermind-prysm
+spec:
+  executionClient: nethermind
+  consensusClient: prysm
+  tenancy: dedicated
+  resourceProfile: local-real-node
+  # Prysm has no validator-client chart adapter (charts/ethereum-node/
+  # templates/validator-client.yaml fails to render for
+  # consensusClient=prysm). Signing on a Nethermind+Prysm pair would
+  # require a new Prysm VC adapter first (analogous to the Teku VC
+  # adapter in #132). Keep this false until that lands to prevent
+  # silently authorizing an unrenderable path in the catalog validator;
+  # same fail-closed pattern used by dedicated-geth-nimbus.
+  signingAllowed: false
