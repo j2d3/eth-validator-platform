@@ -1,7 +1,11 @@
 "use client";
 
 import { useEffect, useState } from "react";
-import { signingDashboard, statusEndpoint } from "../lib/portal-registry";
+import {
+  alertsDashboard,
+  signingDashboard,
+  statusEndpoint,
+} from "../lib/portal-registry";
 
 type NullableNumber = number | null;
 
@@ -31,6 +35,12 @@ type SigningSnapshot = {
   slashingPermittedTotal: NullableNumber;
   slashingPreventedTotal: NullableNumber;
   missingIdentifierTotal: NullableNumber;
+};
+
+type AlertSnapshot = {
+  firingTotal: NullableNumber;
+  critical: NullableNumber;
+  warning: NullableNumber;
 };
 
 type StatusSnapshot = {
@@ -76,6 +86,7 @@ type StatusSnapshot = {
     };
   };
   signing?: SigningSnapshot;
+  alerts?: AlertSnapshot;
   pairs: PairSnapshot[];
 };
 
@@ -185,6 +196,12 @@ function isSnapshot(value: unknown): value is StatusSnapshot {
       "slashingPreventedTotal",
       "missingIdentifierTotal",
     ])
+  ) {
+    return false;
+  }
+  if (
+    value.alerts !== undefined &&
+    !hasNullableNumbers(value.alerts, ["firingTotal", "critical", "warning"])
   ) {
     return false;
   }
@@ -384,6 +401,25 @@ export default function LiveStatus() {
             {formatNumber(snapshot.source.cacheAgeSeconds, 1)}s cache age
           </span>
         </article>
+        <a
+          className="summary-item summary-item--link"
+          href={alertsDashboard}
+          aria-label={`Open firing alerts in Grafana: ${formatNumber(
+            snapshot.alerts?.firingTotal,
+            0,
+          )} total`}
+        >
+          <span className="summary-item__label">Firing alerts</span>
+          <strong>{formatNumber(snapshot.alerts?.firingTotal, 0)}</strong>
+          <span
+            className={`detail ${
+              snapshot.alerts?.firingTotal === 0 ? "detail--ready" : "detail--off"
+            }`}
+          >
+            {formatNumber(snapshot.alerts?.critical, 0)} critical ·{" "}
+            {formatNumber(snapshot.alerts?.warning, 0)} warning · Grafana ↗
+          </span>
+        </a>
       </section>
 
       <section className="panel" aria-labelledby="signing-title">

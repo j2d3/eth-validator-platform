@@ -112,6 +112,17 @@ SCALAR_QUERIES = {
     "signingMissingIdentifierTotal": (
         "max(validator_platform_signer_missing_identifier_total)"
     ),
+    "firingAlertsTotal": (
+        'sum(ALERTS{alertstate="firing",alertname!="Watchdog"}) or vector(0)'
+    ),
+    "firingAlertsCritical": (
+        'sum(ALERTS{alertstate="firing",alertname!="Watchdog",severity="critical"}) '
+        "or vector(0)"
+    ),
+    "firingAlertsWarning": (
+        'sum(ALERTS{alertstate="firing",alertname!="Watchdog",severity="warning"}) '
+        "or vector(0)"
+    ),
 }
 
 PAIR_QUERIES = {
@@ -396,6 +407,11 @@ def build_snapshot(client: PrometheusClient | Any) -> dict[str, Any]:
             "slashingPermittedTotal": scalars["signingPermittedTotal"],
             "slashingPreventedTotal": scalars["signingPreventedTotal"],
             "missingIdentifierTotal": scalars["signingMissingIdentifierTotal"],
+        },
+        "alerts": {
+            "firingTotal": scalars["firingAlertsTotal"],
+            "critical": scalars["firingAlertsCritical"],
+            "warning": scalars["firingAlertsWarning"],
         },
         "pairs": pairs,
     }
