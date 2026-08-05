@@ -405,13 +405,12 @@ class EksEphemeryFluxAndTelemetryTests(unittest.TestCase):
             document for document in documents if document["kind"] == "HelmRelease"
         ]
         # Five generation-pinned Ephemery pairs are rendered by this overlay:
-        # Geth+Lighthouse and Reth+Lighthouse sign with disjoint identities;
-        # Geth+Teku, Reth+Teku, and Erigon+Lighthouse stay non-signing.
-        # Everything else in this test asserts on the two signing Lighthouse
-        # pairs; the non-signing pairs are covered in
-        # test_chart_reth_adapter_contracts, test_chart_teku_adapter_contracts,
-        # test_chart_erigon_adapter_contracts, and
-        # test_local_assignment_projection.
+        # Geth+Lighthouse, Reth+Lighthouse, and Geth+Teku sign with disjoint
+        # identities; Reth+Teku and Erigon+Lighthouse stay non-signing.
+        # Everything else in this test asserts on the three signing pairs;
+        # the non-signing pairs are covered in test_chart_reth_adapter_contracts,
+        # test_chart_teku_adapter_contracts, test_chart_erigon_adapter_contracts,
+        # and test_local_assignment_projection.
         self.assertEqual(
             sorted(release["metadata"]["name"] for release in releases),
             [
@@ -464,6 +463,7 @@ class EksEphemeryFluxAndTelemetryTests(unittest.TestCase):
             {
                 "assignment-ephemery-162-synthetic",
                 "assignment-ephemery-162-synthetic-reth",
+                "assignment-ephemery-162-synthetic-teku",
             },
         )
         signing_public_keys = set()
@@ -481,10 +481,14 @@ class EksEphemeryFluxAndTelemetryTests(unittest.TestCase):
             )
             signing_public_keys.add(validator["publicKey"])
             signing_validator_ids.add(values["identity"]["validatorId"])
-        self.assertEqual(len(signing_public_keys), 2)
+        self.assertEqual(len(signing_public_keys), 3)
         self.assertEqual(
             signing_validator_ids,
-            {"validator-ephemery-162-01", "validator-ephemery-162-02"},
+            {
+                "validator-ephemery-162-01",
+                "validator-ephemery-162-02",
+                "validator-ephemery-162-03",
+            },
         )
 
     def test_sync_dashboard_uses_only_declared_evidence_and_states_limits(self) -> None:
