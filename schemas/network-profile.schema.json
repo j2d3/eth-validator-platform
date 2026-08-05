@@ -96,7 +96,8 @@
             "reth": {"$ref": "#/$defs/rethAdapter"},
             "erigon": {"$ref": "#/$defs/erigonAdapter"},
             "lighthouse": {"$ref": "#/$defs/lighthouseAdapter"},
-            "teku": {"$ref": "#/$defs/tekuAdapter"}
+            "teku": {"$ref": "#/$defs/tekuAdapter"},
+            "nimbus": {"$ref": "#/$defs/nimbusAdapter"}
           }
         },
         "signer": {
@@ -277,6 +278,27 @@
       ]
     },
     "tekuAdapter": {
+      "oneOf": [
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["mode", "network"],
+          "properties": {
+            "mode": {"const": "builtin"},
+            "network": {"enum": ["sepolia", "hoodi"]}
+          }
+        },
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["mode"],
+          "properties": {
+            "mode": {"const": "artifact-bundle"}
+          }
+        }
+      ]
+    },
+    "nimbusAdapter": {
       "oneOf": [
         {
           "type": "object",

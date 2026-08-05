@@ -1,14 +1,15 @@
 apiVersion: kustomize.config.k8s.io/v1beta1
 kind: Kustomization
 resources:
-  # Five generation-pinned Ephemery pairs are admitted in this EKS node
+  # Six generation-pinned Ephemery pairs are admitted in this EKS node
   # slice — Geth+Lighthouse, Reth+Lighthouse, Geth+Teku, and Reth+Teku
-  # (signing), plus Erigon+Lighthouse (non-signing). The generated
-  # catalog projection remains the source; the overlay only deletes the
-  # local-only synthetic-01 assignment and injects each pair's EKS-specific
-  # inputs (valuesFiles + telemetry + engineJwt). Every Ephemery release
-  # below must receive the same three patches so its ExternalSecret, PVC
-  # StorageClass, and telemetry follow the reviewed dev contracts on EKS.
+  # (signing), plus Erigon+Lighthouse and Geth+Nimbus (non-signing). The
+  # generated catalog projection remains the source; the overlay only
+  # deletes the local-only synthetic-01 assignment and injects each pair's
+  # EKS-specific inputs (valuesFiles + telemetry + engineJwt). Every
+  # Ephemery release below must receive the same three patches so its
+  # ExternalSecret, PVC StorageClass, and telemetry follow the reviewed
+  # dev contracts on EKS.
   - ../../local/assignments
   # The same generation-pinned consensus config is rendered separately into
   # the ethereum namespace for Lighthouse validator duties.
@@ -133,6 +134,36 @@ patches:
       # executionClient=reth and consensusClient=teku from the projection.
       # Same Engine JWT source as the other three Ephemery pairs — per-pair
       # scoped by fullnameOverride (pair-<validator>-engine-jwt).
+      - op: add
+        path: /spec/chart/spec/valuesFiles
+        value:
+          - charts/ethereum-node/values.yaml
+          - charts/ethereum-node/values-eks-ephemery.yaml
+      - op: replace
+        path: /spec/values/telemetry
+        value:
+          cluster: eth-validator-platform-dev
+          environment: dev
+      - op: add
+        path: /spec/values/engineJwt
+        value:
+          secretStoreName: aws-engine-secrets
+          remoteSecretKey: eth-validator-platform-dev/ethereum/engine-jwt
+          remoteSecretProperty: jwt.hex
+  - target:
+      group: helm.toolkit.fluxcd.io
+      version: v2
+      kind: HelmRelease
+      name: assignment-ephemery-162-synthetic-geth-nimbus
+    patch: |-
+      # Geth+Nimbus pair: Nimbus CL adapter landed in #138 (uses
+      # --external-beacon-api-url for checkpoint-adjacent BN wiring at
+      # normal startup, --bootstrap-file pointed at consensusBootnodesText,
+      # and --el for the EE endpoint). Same values-eks-ephemery.yaml
+      # profile (EL/CL-agnostic; the chart dispatches on
+      # consensusClient=nimbus from the projection). Same Engine JWT
+      # source as the other Ephemery pairs — per-pair scoped by
+      # fullnameOverride (pair-<validator>-engine-jwt).
       - op: add
         path: /spec/chart/spec/valuesFiles
         value:

@@ -29,7 +29,7 @@ GENERATED_HEADER = (
 )
 
 SUPPORTED_EXECUTION_CLIENTS = {"geth", "reth", "erigon"}
-SUPPORTED_CONSENSUS_CLIENTS = {"lighthouse", "teku"}
+SUPPORTED_CONSENSUS_CLIENTS = {"lighthouse", "teku", "nimbus"}
 
 
 class ProjectionError(ValueError):

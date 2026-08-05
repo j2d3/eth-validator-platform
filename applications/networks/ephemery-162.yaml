@@ -52,6 +52,14 @@ spec:
     # --p2p-discovery-bootnodes.
     teku:
       mode: artifact-bundle
+    # Nimbus adapter reads the network directory (via --network=<dir>) that
+    # contains the generation-pinned config.yaml plus the digest-verified
+    # bootnode list; --bootstrap-file is pointed at the line-delimited ENR
+    # file consensusBootnodesText. Declaring the adapter here lets a
+    # ServiceProfile choose Nimbus for this network without a schema-level
+    # change.
+    nimbus:
+      mode: artifact-bundle
   signer:
     web3signer:
       mode: artifact-bundle
