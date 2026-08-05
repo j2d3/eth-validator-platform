@@ -261,6 +261,25 @@ selected assignment to stopped removes the Service and therefore the NLB;
 resuming the assignment creates a new hostname without changing chain-data
 identity.
 
+Observed on 2026-08-05 for the selected Geth + Lighthouse pair:
+
+- one internet-facing NLB owned all public P2P listeners;
+- AWS rendered `TCP_UDP` listeners on 30303 and 9000 and a UDP listener on
+  9001;
+- each listener's Pod-IP target was healthy;
+- external TCP connections reached 30303 and 9000; and
+- VPC Flow Logs recorded accepted bounded external UDP probes delivered to the
+  Pod IP on 30303 and 9000; and
+- the LoadBalancer Service exposed no JSON-RPC, Engine API, beacon API, signer,
+  or metrics port.
+
+This checkpoint qualifies the controller, listener, target, external TCP path,
+and bounded UDP network traversal on the two combined listeners. A malformed
+probe does not prove an Ethereum discovery exchange. It does not claim valid
+inbound peer attribution, 9001 UDP traffic, client-advertised public addresses,
+or the stop/delete/resume lifecycle. Keep those fields unknown until separately
+observed.
+
 ## 7. Verify exact chain identity
 
 The artifact init path verifies the archive SHA before Geth genesis
