@@ -130,8 +130,10 @@ dev telemetry, `aws-engine-secrets` Engine JWT).
 
 ## Signing qualification
 
-**Non-signing by design.** No validator identity is bound to this
-assignment. Signing on a Nethermind pair would use the standard
+**Non-signing by design.** The assignment binds a synthetic
+(draft, `synthetic: true`) ValidatorIdentity via `validatorRef`, but
+`signingEnabled` is `false`, so no validator client renders. Signing on
+a Nethermind pair would use the standard
 Lighthouse VC pattern already exercised for validators #1 and #2.
 
 ## References
@@ -140,5 +142,5 @@ Lighthouse VC pattern already exercised for validators #1 and #2.
 - Besu-metrics-path adapter (same `/metrics` path used by Nethermind):
   [#158](https://github.com/j2d3/eth-validator-platform/pull/158)
 - Codex's chainspec discovery on issue #6:
-  [comment 5188025940](https://github.com/j2d3/eth-validator-platform/issues/6#issuecomment-5188025940-ish)
+  [comment 5188068106](https://github.com/j2d3/eth-validator-platform/issues/6#issuecomment-5188068106)
 - Umbrella issue: [#130](https://github.com/j2d3/eth-validator-platform/issues/130)
