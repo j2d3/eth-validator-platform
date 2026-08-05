@@ -106,6 +106,7 @@ Sanitized runtime observations at a specific commit and time. Immutable.
 - [README.md](evidence/README.md) — evidence-record rules
 - [2026-08-04-eks-network-policy.md](evidence/2026-08-04-eks-network-policy.md)
 - [2026-08-04-first-signing-validator.md](evidence/2026-08-04-first-signing-validator.md)
+- [2026-08-05-eks-spot-rebalance.md](evidence/2026-08-05-eks-spot-rebalance.md)
 
 ### [PRD](prd/)
 
