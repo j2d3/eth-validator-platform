@@ -81,6 +81,11 @@ demonstrated none of those pieces. It is future work.
   state.
 - `reclaimPolicy: Retain` is deliberate: a Pod eviction must not
   cascade into PV deletion. The new Pod reattaches by PVC name.
+- Prometheus records used bytes, capacity, utilization, six-hour positive
+  growth, and projected time to full for every mounted platform PVC. The
+  assignment is joined through the PVC's catalog labels rather than inferred
+  from its generated name. See the
+  [capacity alert procedure](../runbooks/ethereum-alerts.md#persistent-volume-capacity).
 
 ## What EKS-specific values live where
 

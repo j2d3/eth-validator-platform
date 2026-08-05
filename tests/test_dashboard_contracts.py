@@ -197,6 +197,37 @@ class DashboardContractTests(unittest.TestCase):
                         self.assertIn('cluster=~"$cluster"', expression)
                         self.assertIn('lifecycle_state=~"$lifecycle"', expression)
 
+    def test_validator_detail_uses_normalized_pvc_capacity_series(self) -> None:
+        dashboard = self.by_uid["eth-validator-detail"]
+        panels = {panel["title"]: panel for panel in dashboard["panels"]}
+        expected = {
+            "Persistent volume usage": {
+                "validator_platform_pvc_used_bytes",
+                "validator_platform_pvc_capacity_bytes",
+            },
+            "Persistent volume utilization": {
+                "validator_platform_pvc_utilization_ratio"
+            },
+            "Projected time to full": {
+                "validator_platform_pvc_projected_seconds_to_full"
+            },
+        }
+        for title, metrics in expected.items():
+            with self.subTest(panel=title):
+                self.assertIn(title, panels)
+                expressions = "\n".join(
+                    target["expr"] for target in panels[title].get("targets", [])
+                )
+                for metric in metrics:
+                    self.assertIn(metric, expressions)
+                self.assertNotIn("kubelet_volume_stats_", expressions)
+                self.assertIn('assignment_id=~"$assignment_id"', expressions)
+                self.assertIn('validator_id=~"$validator_id"', expressions)
+
+        projection = panels["Projected time to full"]
+        self.assertIn("five hours", projection["description"])
+        self.assertIn("seven days", projection["description"])
+
     def test_navigation_links_reach_the_related_dashboards(self) -> None:
         for uid, expected_targets in REQUIRED_LINK_TARGETS.items():
             dashboard = self.by_uid[uid]
@@ -381,7 +412,26 @@ class DashboardContractTests(unittest.TestCase):
             REPOSITORY_ROOT / "charts" / "ethereum-node" / "templates" / "prometheusrule.yaml"
         ).read_text(encoding="utf-8")
         declared = set(re.findall(r"- record:\s*(\S+)", rule_source))
-        self.assertTrue(declared, "expected recording rules to be declared in the chart")
+        monitoring_path = (
+            REPOSITORY_ROOT
+            / "platform"
+            / "infrastructure"
+            / "controllers"
+            / "monitoring.yaml"
+        )
+        monitoring = yaml.safe_load(monitoring_path.read_text(encoding="utf-8"))
+        shared_rule_maps = monitoring["spec"]["values"]["additionalPrometheusRulesMap"]
+        declared.update(
+            rule["record"]
+            for rule_map in shared_rule_maps.values()
+            for group in rule_map["groups"]
+            for rule in group["rules"]
+            if "record" in rule
+        )
+        self.assertTrue(
+            declared,
+            "expected recording rules in the pair chart or shared monitoring release",
+        )
 
         for uid in NAVIGATION_UIDS:
             dashboard = self.by_uid[uid]
