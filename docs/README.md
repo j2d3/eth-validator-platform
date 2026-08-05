@@ -23,6 +23,7 @@ lives here.
 | What was actually observed at a specific commit? | [evidence/](evidence/) |
 | Why was durable decision X made? | [adrs/](adrs/) |
 | How does the two-agent build model work? | [development/agentic-workflow.md](development/agentic-workflow.md) |
+| How do I reproduce the two-agent GitHub workflow? | [development/two-agent-setup.md](development/two-agent-setup.md) |
 | How is the local development environment set up? | [runbooks/local-development.md](runbooks/local-development.md) |
 | How does an operator bootstrap EKS + Flux? | [runbooks/eks-flux-bootstrap.md](runbooks/eks-flux-bootstrap.md) |
 | How is one validator key generated, deposited, and onboarded? | [runbooks/validator-key-ceremony.md](runbooks/validator-key-ceremony.md) |
@@ -132,6 +133,14 @@ Accepted architecture decisions.
 
 - [agentic-workflow.md](development/agentic-workflow.md) — narrative
   companion to [COLLABORATION.md](../COLLABORATION.md)
+- [two-agent-setup.md](development/two-agent-setup.md) — tool-neutral setup,
+  two-Codex notes, three-way comparison, and bounded-worker prompts
+- [two-claude-collaboration.md](development/two-claude-collaboration.md) —
+  one-page setup guide for adapting the two-agent model to two Claude
+  instances on any repository
+- [two-claude-agent-prompt.md](development/two-claude-agent-prompt.md) —
+  steady-state prompt to paste into a fresh Claude Code session so it
+  joins the collaboration in the correct persona
 
 ## Legacy content
 
