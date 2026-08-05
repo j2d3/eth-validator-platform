@@ -67,6 +67,9 @@ spec:
         teku:
           mode: artifact-bundle
           network: null
+        prysm:
+          mode: artifact-bundle
+          network: null
         nimbus:
           mode: artifact-bundle
           network: null

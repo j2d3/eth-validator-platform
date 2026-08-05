@@ -63,7 +63,8 @@
             "nethermind": {"$ref": "#/$defs/networkAdapter"},
             "lighthouse": {"$ref": "#/$defs/networkAdapter"},
             "teku": {"$ref": "#/$defs/networkAdapter"},
-            "nimbus": {"$ref": "#/$defs/networkAdapter"}
+            "nimbus": {"$ref": "#/$defs/networkAdapter"},
+            "prysm": {"$ref": "#/$defs/networkAdapter"}
           }
         },
         "signer": {
@@ -182,7 +183,7 @@
       "enum": ["geth", "reth", "erigon", "besu", "nethermind"]
     },
     "consensusClient": {
-      "enum": ["lighthouse", "teku", "nimbus"]
+      "enum": ["lighthouse", "teku", "nimbus", "prysm"]
     },
     "executionClients": {
       "type": "object",
@@ -258,6 +259,15 @@
           }
         },
         "nimbus": {
+          "type": "object",
+          "required": ["image", "metrics"],
+          "additionalProperties": false,
+          "properties": {
+            "image": {"type": "string", "pattern": "@sha256:[0-9a-f]{64}$"},
+            "metrics": {"$ref": "#/$defs/consensusMetricsMap"}
+          }
+        },
+        "prysm": {
           "type": "object",
           "required": ["image", "metrics"],
           "additionalProperties": false,
@@ -535,11 +545,13 @@
     "consensusMetricsMap": {
       "type": "object",
       "additionalProperties": false,
-      "required": ["headSlot", "presentSlot", "presentEpoch", "finalizedEpoch", "peers"],
+      "required": ["headSlot", "presentSlot", "finalizedEpoch", "peers"],
+      "description": "presentEpoch is optional: clients whose Prometheus surface exposes it directly (Lighthouse/Teku/Nimbus's beacon_current_epoch) declare presentEpoch; clients that do not (Prysm, which publishes only beacon_clock_time_slot) instead declare presentEpochDivisor and let the recording rules compute epoch = floor(presentSlot / presentEpochDivisor). Exactly one of the two is required per client; enforced by the helpers, not the schema.",
       "properties": {
         "headSlot": {"$ref": "#/$defs/prometheusMetricName"},
         "presentSlot": {"$ref": "#/$defs/prometheusMetricName"},
         "presentEpoch": {"$ref": "#/$defs/prometheusMetricName"},
+        "presentEpochDivisor": {"type": "integer", "minimum": 1},
         "finalizedEpoch": {"$ref": "#/$defs/prometheusMetricName"},
         "peers": {"$ref": "#/$defs/prometheusMetricName"},
         "validatorEnabled": {"$ref": "#/$defs/prometheusMetricName"}

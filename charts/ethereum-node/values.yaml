@@ -41,6 +41,16 @@ networkProfile:
     nimbus:
       mode: builtin
       network: hoodi
+    # Prysm adapter default: same shape as the other CL clients. The
+    # artifact-bundle assignments override this via the projection tool's
+    # `network: null` clearing (same pattern as the other CLs). Prysm
+    # additionally requires a rendered `prysm-config.yaml` derived from the
+    # bundle's `config.yaml`; the derivation only runs on artifact-bundle
+    # profiles (built-in networks pass `--prater-testnet` / `--mainnet`
+    # style selectors instead).
+    prysm:
+      mode: builtin
+      network: hoodi
     # Erigon adapter default: mirrors Geth/Reth's builtin+hoodi shape so an
     # Erigon pair renders correctly against the default Hoodi profile if
     # selected. The artifact-bundle assignments override this via the
@@ -332,6 +342,40 @@ consensusClients:
       finalizedEpoch: beacon_finalized_epoch
       # Peer count gauge (Nimbus uses libp2p, same shape as Teku).
       peers: libp2p_peers
+  # Prysm adapter. Written in Go by Prysmatic Labs. Prysm cannot consume the
+  # generic Ephemery config.yaml directly — it rejects `EPHEMERY_RESET_PERIOD`
+  # and `NUMBER_OF_COLUMNS` and then inherits a mainnet Gloas fork-version
+  # collision — so the chart's prysm init container derives
+  # `/network/files/prysm-config.yaml` from the bundle's `config.yaml`
+  # (strip the two rejected keys, append `GLOAS_FORK_VERSION` /
+  # `GLOAS_FORK_EPOCH`, fail on unexpected source shape) after bundle SHA
+  # verification. Prysm's Prometheus surface exposes `beacon_head_slot`,
+  # `beacon_clock_time_slot`, `beacon_finalized_epoch`, and
+  # `connected_libp2p_peers`; it does NOT publish a direct present-epoch
+  # gauge, so we declare `presentEpochDivisor: 32` and the recording rules
+  # compute the derived epoch as `floor(beacon_clock_time_slot / 32)`.
+  # Runtime-verified by Codex against Prysm v7.1.8 on 2026-08-05 (image
+  # entrypoint `/beacon-chain`, UID/GID 1000, cap-drop ALL, read-only root,
+  # tmpfs /tmp + /data mounts). Verify with `docker buildx imagetools inspect
+  # gcr.io/prysmaticlabs/prysm/beacon-chain:v7.1.8` before the first Prysm
+  # Pod starts on this network.
+  prysm:
+    image: gcr.io/prysmaticlabs/prysm/beacon-chain:v7.1.8@sha256:31239807cbbd446aabe8e7d18e0cd50c430a290ce7906b55eb5d54c7d4e3b676
+    metrics:
+      # Current head slot on the beacon chain.
+      headSlot: beacon_head_slot
+      # Wall-clock present slot (Prysm exposes only the clock-time slot, not
+      # a separately-observed present-epoch counter).
+      presentSlot: beacon_clock_time_slot
+      # Number of slots per epoch; the recording rules compute the derived
+      # present-epoch as `floor(presentSlot / presentEpochDivisor)`.
+      # Ethereum uses 32 slots/epoch across all networks the chart supports.
+      presentEpochDivisor: 32
+      # Finalized epoch of the beacon head.
+      finalizedEpoch: beacon_finalized_epoch
+      # Peer count gauge — Prysm reports this under `connected_libp2p_peers`
+      # (distinct from the Teku/Nimbus `libp2p_peers` naming).
+      peers: connected_libp2p_peers
 
 resources:
   execution:
