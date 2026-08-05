@@ -128,6 +128,10 @@ class BesuAdapterRenderTests(unittest.TestCase):
         self.assertIn("--bootnodes=", script)
         # RPC and Engine API flags use Besu's hyphen convention.
         self.assertIn("--rpc-http-enabled", script)
+        # Besu applies its global Host allowlist to the Prometheus exporter.
+        # Prometheus scrapes a dynamic Pod IP, so NetworkPolicy—not a static
+        # HTTP Host value—is the access boundary for this cluster-private API.
+        self.assertIn("--host-allowlist='*'", script)
         self.assertIn("--rpc-http-port=8545", script)
         self.assertIn("--engine-rpc-enabled", script)
         self.assertIn("--engine-jwt-secret=/jwt/jwt.hex", script)
