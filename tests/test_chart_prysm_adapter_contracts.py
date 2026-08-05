@@ -318,6 +318,42 @@ class PrysmAdapterRenderTests(unittest.TestCase):
         # maps to 8008 in the StatefulSet.
         self.assertEqual(consensus_ep.get("path", "/metrics"), "/metrics")
 
+    def test_finality_lag_expr_derives_epoch_from_prysm_slot(self) -> None:
+        # Prysm does not publish a direct present-epoch gauge; the recording
+        # rule must compute it as floor(presentSlot / presentEpochDivisor).
+        # This test locks in the derived-epoch code path against the exact
+        # rendered expression so a refactor cannot silently reintroduce a
+        # `presentEpoch` reference for Prysm (which would render an empty
+        # series against the real scrape).
+        rule = self.by_kind["PrometheusRule"][0]
+        finality = next(
+            item
+            for group in rule["spec"]["groups"]
+            for item in group["rules"]
+            if item.get("record") == "validator_platform_consensus_finality_lag_epochs"
+        )
+        expr = finality["expr"]
+        self.assertIn("floor(max by (", expr)
+        self.assertIn(
+            'beacon_clock_time_slot{platform="ethereum-validator",component="consensus",consensus_client="prysm"}',
+            expr,
+        )
+        self.assertIn(") / 32) - max by (", expr)
+        self.assertIn(
+            'beacon_finalized_epoch{platform="ethereum-validator",component="consensus",consensus_client="prysm"}',
+            expr,
+        )
+        # Direct-metric branches for the other CLs must remain intact.
+        for direct_metric, cl in (
+            ("slotclock_present_epoch", "lighthouse"),
+            ("beacon_current_epoch", "nimbus"),
+            ("beacon_epoch", "teku"),
+        ):
+            self.assertIn(
+                f'{direct_metric}{{platform="ethereum-validator",component="consensus",consensus_client="{cl}"',
+                expr,
+            )
+
 
 if __name__ == "__main__":
     unittest.main()
