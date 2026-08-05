@@ -1,31 +1,27 @@
 # Nethermind + Prysm
 
-**The pair #130 originally named, and the last one on its checklist.**
-Both adapters are already on `main`: the Nethermind EL adapter landed in
+This is the ninth active Ephemery pair and the first release to run the Prysm
+adapter. The Nethermind EL adapter landed in
 [#156](https://github.com/j2d3/eth-validator-platform/pull/156) and has
 been exercised live since the
 [Nethermind+Lighthouse](nethermind-lighthouse.md) activation
 ([#160](https://github.com/j2d3/eth-validator-platform/pull/160)); the
 Prysm CL adapter landed in
-[#163](https://github.com/j2d3/eth-validator-platform/pull/163). This is
-a catalog-only activation that composes them, and it is the first
-rendered release to exercise the Prysm adapter.
+[#163](https://github.com/j2d3/eth-validator-platform/pull/163). The
+catalog activation landed in #164. Its first EKS start exposed and corrected
+two runtime assumptions: Prysm's image does not include `grep` (#165), and
+Nethermind creates its databases directly below `/data` rather than below a
+`nethermind_db` directory (#166).
 
 ## Why this pair
 
-- **Realistic-fleet coverage.** Nethermind and Prysm both hold
-  significant validator-population share on mainnet. Every other pair in
-  the fleet isolates an architectural variable; this one is chosen for
-  the population it represents.
-- **First Prysm release.** Prysm is the fourth CL adapter and the last
-  chart adapter under #130. Its config-derivation step (below) is
-  unlike any other CL in the fleet — no other adapter rewrites a bundle
-  file before exec.
-- **Nethermind is the proven side here.** Unlike #160, where Nethermind
-  was the observed variable against a well-exercised Lighthouse, the
-  roles invert: Nethermind's command shape, init state machine, and
-  metric names were all corrected and observed live across #156, #160,
-  #161, and #162. Anything anomalous on this pair is Prysm-specific.
+- **Prysm coverage.** Prysm is the fourth CL adapter. Its config-derivation
+  step (below) differs from the other CL adapters because it rewrites the
+  verified bundle configuration before exec.
+- **Reused Nethermind path.** Nethermind's command shape, data layout, and
+  metric names were already observed on the Nethermind+Lighthouse pair.
+  This pair exercises the new Prysm path while keeping that execution-client
+  path constant.
 
 ## Identifiers
 
@@ -66,10 +62,13 @@ profile or schema change.
   ownership accommodation Nimbus needed in #154.
 - No validator PVC (the chart renders it only when
   `validator.enabled=true`, which stays `false` on this pair).
-- Restart-safe execution init: #156's Nethermind init helper writes the
-  platform identity marker before any mkdirs and treats a marker-only /
-  marker+keystore-only claim as a resumable first start; foreign-content
-  claims fail closed.
+- Restart-safe execution init: the Nethermind init helper writes the platform
+  identity marker before any mkdirs, treats marker-only and
+  marker-plus-keystore claims as resumable first starts, and uses the
+  runtime-observed `/data/metadata` directory as the initialized-data
+  sentinel. Wrong-network, unmarked non-empty, and marked-but-unrecognized
+  claims fail closed. #166 corrected the sentinel and exercised a real
+  retained-PVC restart.
 
 ## Engine API wiring
 
@@ -96,7 +95,9 @@ only client in the fleet that cannot consume a bundle file as shipped:
   `/network/files` is a read-only projection of the bundle, and it runs
   *after* the network-artifact-loader init container has verified the
   bundle SHA — the derivation never widens what the digest already
-  covers.
+  covers. #165 replaced the initial `grep` implementation with POSIX shell
+  built-ins after the pinned Prysm image proved to contain `/bin/sh` but no
+  `grep`, `sed`, or `awk`.
 - **Fail-closed on shape drift.** If the source `config.yaml` already
   carries a `GLOAS_FORK_(VERSION|EPOCH):` line, the container exits
   non-zero with "refusing to append" rather than silently overriding an
@@ -126,7 +127,8 @@ comma-joined `--Network.Bootnodes` normalized per #161.
 
 ## Metric normalization
 
-**Status: Nethermind observed, Prysm configured but runtime-unverified.**
+**Status: both clients and all normalized metrics below are observed on the
+active EKS pair.**
 
 - Nethermind contributes `nethermind_blocks` and `ethereum_peer_count`,
   both *observed* on the live Ephemery Pod running the pinned 1.39.2
@@ -134,12 +136,11 @@ comma-joined `--Network.Bootnodes` normalized per #161.
   with the aggregate that actually exists). `executionMetricsPath` sends
   Prometheus to `/metrics`, not Geth's
   `/debug/metrics/prometheus`.
-- Prysm is *configured* to contribute `beacon_head_slot`,
+- Prysm contributes `beacon_head_slot`,
   `beacon_clock_time_slot`, `beacon_finalized_epoch`, and
   `connected_libp2p_peers` — note the `connected_` prefix, distinct from
-  the Teku/Nimbus `libp2p_peers` naming. Codex verified these names
-  against a v7.1.8 probe during #163, but no pair has scraped them in
-  this cluster; first live scrape is the qualification gate.
+  the Teku/Nimbus `libp2p_peers` naming. All four names were scraped from
+  the live v7.1.8 Pod after #166.
 - **Derived present-epoch.** Prysm publishes no direct present-epoch
   gauge, so its metric map declares `presentEpochDivisor: 32` instead of
   `presentEpoch`, and the recording rule computes
@@ -150,34 +151,35 @@ comma-joined `--Network.Bootnodes` normalized per #161.
   selector can render. The three other CLs keep their direct-metric
   branch unchanged.
 
+The live recording rules produced non-empty execution and consensus head
+change series, zero consensus slot lag, and a non-empty derived finality-lag
+series. This is the runtime proof for the `presentEpochDivisor` path added in
+#163.
+
 Missing series degrade to empty per PRD §12.5 ("unsupported/not
 collected, not zero"), not render errors.
 
-## Non-signing qualification gates
+## Non-signing runtime qualification
 
-Per Codex's ask on issue #6, runtime qualification for this pair after
-Flux reconciles it should record observable evidence for each of:
+Observed after Flux reconciled #165 and #166:
 
-- **Pod start**: both containers reach Ready (2/2); the Prysm container
-  completes its config derivation and execs `/beacon-chain` without
-  entering a restart loop, and the derived `/tmp/prysm-config.yaml`
-  contains neither stripped key and both appended Gloas keys.
-- **Peers**: `validator_platform_execution_peers{execution_client=
-  "nethermind"}` and `validator_platform_consensus_peers{consensus_client=
-  "prysm"}` both report non-zero.
-- **Head movement**: `validator_platform_execution_head_block{
-  execution_client="nethermind"}` advances over a 15-minute window, and
-  the consensus head slot advances alongside it.
-- **Actual metric names present**: the live scrape exposes
-  `connected_libp2p_peers` and `beacon_clock_time_slot` under those exact
-  names. If it does not, the fix is a chart values correction on the
-  Prysm metric map — the same discipline as #148's Erigon
-  `chain_head_block` gap and #162's Nethermind peer-metric replacement.
-- **Derived finality lag is non-empty**: the
-  `validator_platform_consensus_finality_lag_epochs` series produces a
-  value for this pair, which is the only end-to-end proof that the
-  `presentEpochDivisor` path works against real samples rather than only
-  against the rendered expression asserted in #163's unit test.
+- **Pod start**: 2/2 Ready with zero restarts; all three init containers
+  completed. Prysm derived its configuration, downloaded checkpoint state at
+  slot 40,000, opened REST/metrics/P2P, and connected to the local Nethermind
+  Engine API.
+- **Peers**: both normalized peer series stayed non-zero. Prysm reached its
+  default requirement of three suitable peers without lowering
+  `--min-sync-peers`; Nethermind formed double-digit execution peer counts.
+- **Head movement and lag**: at `2026-08-05T09:07:28Z`, after more than 15
+  uninterrupted minutes of sync, the status API reported execution head
+  block 33,144, 29 execution head changes and 29 consensus head changes in
+  its rolling 15-minute window, consensus slot lag 0, and consensus finality
+  lag 2 epochs. The pair had 10 execution peers and 11 consensus peers; both
+  containers remained Ready with zero restarts.
+- **Metric names**: the live scrape contains `connected_libp2p_peers`,
+  `beacon_head_slot`, `beacon_clock_time_slot`, and
+  `beacon_finalized_epoch`; the corresponding normalized head-change,
+  slot-lag, and derived finality-lag series are non-empty.
 
 Test contract asserts that this release, plus the other eight Ephemery
 pairs, all render with the same EKS-required patches (`valuesFiles`, dev
@@ -196,14 +198,13 @@ adapter and still authorizes signing. Prysm ships a validator client
 upstream, but the chart has no Prysm VC adapter; adding signing here
 would require that adapter first (analogous to #132 for Teku).
 
-## Remaining unqualified behavior
+## Not covered by this qualification
 
-- No Prysm process has run in this cluster. Every Prysm claim above
-  traces to #163's rendered-shell tests and Codex's v7.1.8 probe, not to
-  a live Pod.
-- The config derivation has been exercised against a realistic Ephemery
-  `config.yaml` fixture in CI, but not against the actual
-  digest-verified `ephemery-162` bundle contents at runtime.
+- Signing is intentionally absent; the chart has no Prysm validator-client
+  adapter and the ServiceProfile disallows signing.
+- Spot interruption during Nethermind's first database-directory creation was
+  not injected. Marker-only and marker-plus-keystore interruption states are
+  executable test cases, and a retained initialized PVC restart was exercised.
 - QUIC on 9001 is declared but unexercised — no pair in the fleet owns a
   public P2P NLB except the Geth+Lighthouse baseline (#152/#157), so
   this pair syncs through outbound peers only.
@@ -218,4 +219,10 @@ would require that adapter first (analogous to #132 for Teku).
   [#161](https://github.com/j2d3/eth-validator-platform/pull/161)
 - Observed Nethermind peer metric:
   [#162](https://github.com/j2d3/eth-validator-platform/pull/162)
+- Nethermind+Prysm catalog activation:
+  [#164](https://github.com/j2d3/eth-validator-platform/pull/164)
+- Prysm shell-only runtime correction:
+  [#165](https://github.com/j2d3/eth-validator-platform/pull/165)
+- Nethermind retained-PVC restart correction:
+  [#166](https://github.com/j2d3/eth-validator-platform/pull/166)
 - Umbrella issue: [#130](https://github.com/j2d3/eth-validator-platform/issues/130)
