@@ -91,6 +91,26 @@ class ObservabilityContractTests(unittest.TestCase):
         self.assertEqual(loki["url"], "http://loki.observability.svc.cluster.local:3100")
         self.assertEqual(loki["access"], "proxy")
 
+    def test_ondelete_pairs_do_not_fire_the_stock_rollout_alert(self) -> None:
+        monitoring = load_yaml(CONTROLLERS / "monitoring.yaml")
+        values = monitoring["spec"]["values"]
+
+        self.assertTrue(
+            values["defaultRules"]["disabled"]["KubeStatefulSetUpdateNotRolledOut"]
+        )
+        groups = values["additionalPrometheusRulesMap"]["statefulset-rollout"]["groups"]
+        rules = [rule for group in groups for rule in group["rules"]]
+        rule = next(
+            rule
+            for rule in rules
+            if rule["alert"] == "KubeStatefulSetUpdateNotRolledOut"
+        )
+
+        self.assertEqual(rule["for"], "15m")
+        self.assertEqual(rule["labels"]["severity"], "warning")
+        self.assertGreaterEqual(rule["expr"].count('namespace!="ethereum"'), 5)
+        self.assertNotIn('namespace=~".*"', rule["expr"])
+
     def test_dashboard_payloads_are_valid_json_with_stable_uids(self) -> None:
         dashboard_paths = sorted(
             (REPOSITORY_ROOT / "platform" / "apps" / "local").glob("*dashboard.yaml")

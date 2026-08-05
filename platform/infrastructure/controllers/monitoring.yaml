@@ -26,12 +26,64 @@ spec:
   values:
     fullnameOverride: monitoring
     defaultRules:
+      # The upstream rule treats an intentionally retained OnDelete revision
+      # as a failed rollout. Ethereum pairs use OnDelete so a chart update
+      # cannot restart a syncing or signing node without an explicit lifecycle
+      # action. Re-create the rule below for every other namespace.
+      disabled:
+        KubeStatefulSetUpdateNotRolledOut: true
       rules:
         etcd: false
         kubeControllerManager: false
         kubeProxy: false
         kubeSchedulerAlerting: false
         kubeSchedulerRecording: false
+    additionalPrometheusRulesMap:
+      statefulset-rollout:
+        groups:
+          - name: statefulset-rollout
+            rules:
+              - alert: KubeStatefulSetUpdateNotRolledOut
+                annotations:
+                  description: >-
+                    StatefulSet {{ $labels.namespace }}/{{ $labels.statefulset }}
+                    update has not been rolled out.
+                  runbook_url: >-
+                    https://runbooks.prometheus-operator.dev/runbooks/kubernetes/kubestatefulsetupdatenotrolledout
+                  summary: StatefulSet update has not been rolled out.
+                expr: |-
+                  (
+                    max by (namespace, statefulset, job, cluster) (
+                      kube_statefulset_status_current_revision{
+                        job="kube-state-metrics", namespace!="ethereum"
+                      }
+                      unless
+                      kube_statefulset_status_update_revision{
+                        job="kube-state-metrics", namespace!="ethereum"
+                      }
+                    )
+                    * on (namespace, statefulset, job, cluster)
+                    (
+                      kube_statefulset_replicas{
+                        job="kube-state-metrics", namespace!="ethereum"
+                      }
+                      !=
+                      kube_statefulset_status_replicas_updated{
+                        job="kube-state-metrics", namespace!="ethereum"
+                      }
+                    )
+                  )
+                  and on (namespace, statefulset, job, cluster)
+                  (
+                    changes(
+                      kube_statefulset_status_replicas_updated{
+                        job="kube-state-metrics", namespace!="ethereum"
+                      }[5m]
+                    ) == 0
+                  )
+                for: 15m
+                labels:
+                  severity: warning
     grafana:
       enabled: true
       defaultDashboardsEnabled: true
