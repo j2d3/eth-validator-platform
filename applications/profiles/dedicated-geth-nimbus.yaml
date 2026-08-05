@@ -1,0 +1,16 @@
+apiVersion: platform.galaxy-lab/v1alpha1
+kind: ServiceProfile
+metadata:
+  name: dedicated-geth-nimbus
+spec:
+  executionClient: geth
+  consensusClient: nimbus
+  tenancy: dedicated
+  resourceProfile: local-real-node
+  # Nimbus has no validator-client chart adapter (charts/ethereum-node/
+  # templates/validator-client.yaml fails to render for
+  # consensusClient=nimbus). Signing on a Geth+Nimbus pair would require
+  # a new Nimbus VC adapter first (analogous to the Teku VC adapter in
+  # #132). Keep this false until that lands to prevent silently
+  # authorizing an unrenderable path in the catalog validator.
+  signingAllowed: false

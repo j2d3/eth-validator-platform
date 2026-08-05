@@ -1,0 +1,17 @@
+apiVersion: platform.galaxy-lab/v1alpha1
+kind: ValidatorAssignment
+metadata:
+  name: assignment-ephemery-162-synthetic-geth-nimbus
+spec:
+  validatorRef: validator-ephemery-162-synthetic-geth-nimbus
+  networkProfileRef: ephemery-162
+  lifecycle: active
+  serviceProfileRef: dedicated-geth-nimbus
+  nodePairRef: pair-ephemery-162-synthetic-geth-nimbus
+  signerRef: shared-web3signer
+  signingEnabled: false
+  safety:
+    slashingProtectionConfirmed: false
+    doppelgangerProtectionConfirmed: false
+  maintenance:
+    reason: Activate the non-signing Geth and Nimbus client pair for live Ephemery sync qualification — first Nim-language CL on a proven EL, exercises the Nimbus chart adapter (#138) in a rendered release; keep it running.
