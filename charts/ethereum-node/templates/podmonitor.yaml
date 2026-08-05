@@ -13,7 +13,7 @@ spec:
   podMetricsEndpoints:
     - port: el-metrics
       interval: 30s
-      path: /debug/metrics/prometheus
+      path: {{ include "ethereum-node.executionMetricsPath" . }}
       relabelings:
         {{- include "ethereum-node.metricRelabelings" (dict "root" . "component" "execution") | nindent 8 }}
     - port: cl-metrics

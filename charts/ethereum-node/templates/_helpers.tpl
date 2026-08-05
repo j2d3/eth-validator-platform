@@ -142,6 +142,19 @@ namespacing, JWT mount, network artifact layout, security context).
 {{- end -}}
 
 {{/*
+Execution clients do not share one Prometheus HTTP path. Keep this beside the
+other client adapters so a new client cannot silently inherit Geth's endpoint.
+*/}}
+{{- define "ethereum-node.executionMetricsPath" -}}
+{{- $client := .Values.executionClient -}}
+{{- if eq $client "besu" -}}/metrics
+{{- else if or (eq $client "geth") (eq $client "reth") (eq $client "erigon") -}}/debug/metrics/prometheus
+{{- else -}}
+{{- fail (printf "no metrics-path adapter for executionClient=%q" $client) -}}
+{{- end -}}
+{{- end -}}
+
+{{/*
 The network-profile adapter for the currently selected execution client.
 Every EL adapter dictionary has the same shape (`mode` plus optionally
 `network`), so callers can read `.mode` and `.network` without knowing
