@@ -161,6 +161,19 @@ class TekuAdapterRenderTests(unittest.TestCase):
         self.assertIn("--ee-endpoint=http://127.0.0.1:8551", script)
         self.assertIn("--ee-jwt-secret-file=/jwt/jwt.hex", script)
         self.assertIn("--rest-api-port=5052", script)
+        # The validator init container and validator client use the pair's
+        # Kubernetes Service hostname. Teku defaults this list to localhost,
+        # which returns HTTP 403 even though the API itself is healthy.
+        # Render only the exact short and namespace-qualified Service names;
+        # the API remains protected by the chart NetworkPolicy as well.
+        self.assertIn(
+            "--rest-api-host-allowlist="
+            "teku-test-ethereum-node,"
+            "teku-test-ethereum-node.default.svc,"
+            "teku-test-ethereum-node.default.svc.cluster.local",
+            script,
+        )
+        self.assertNotIn("--rest-api-host-allowlist=*", script)
         self.assertIn("--metrics-port=8008", script)
         # Teku defaults its metrics-host-allowlist to localhost only, so a
         # Prometheus scraper hitting the Pod IP is rejected without this

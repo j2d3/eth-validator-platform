@@ -188,6 +188,8 @@ exec lighthouse bn \
 {{- end -}}
 
 {{- define "ethereum-node.tekuRunCommand" -}}
+{{- $fullname := include "ethereum-node.fullname" . -}}
+{{- $namespace := .Release.Namespace -}}
 set -eu
 bootnodes="$(paste -sd, {{ printf "/network/files/%s" .Values.networkProfile.artifactBundle.files.consensusBootnodesText | quote }})"
 test -n "$bootnodes"
@@ -201,6 +203,7 @@ exec /opt/teku/bin/teku \
   --rest-api-enabled=true \
   --rest-api-interface=0.0.0.0 \
   --rest-api-port=5052 \
+  {{ printf "--rest-api-host-allowlist=%s,%s.%s.svc,%s.%s.svc.cluster.local" $fullname $fullname $namespace $fullname $namespace | quote }} \
   --metrics-enabled=true \
   --metrics-interface=0.0.0.0 \
   --metrics-port=8008 \
