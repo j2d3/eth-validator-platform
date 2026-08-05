@@ -133,6 +133,8 @@ Accepted architecture decisions.
 
 - [agentic-workflow.md](development/agentic-workflow.md) — narrative
   companion to [COLLABORATION.md](../COLLABORATION.md)
+- [two-agent-setup.md](development/two-agent-setup.md) — tool-neutral setup,
+  two-Codex notes, three-way comparison, and bounded-worker prompts
 - [two-claude-collaboration.md](development/two-claude-collaboration.md) —
   one-page setup guide for adapting the two-agent model to two Claude
   instances on any repository

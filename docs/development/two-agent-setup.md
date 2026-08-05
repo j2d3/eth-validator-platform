@@ -284,3 +284,7 @@ Finish by producing the GitHub artifact, not only a summary.
 The supervisor should still verify the resulting branch, PR, review, and
 commit identities. Prompts express policy; GitHub protection and the merge
 wrapper enforce it.
+
+For a Claude-specific human checklist and a paste-ready symmetric prompt, see
+[`two-claude-collaboration.md`](two-claude-collaboration.md) and
+[`two-claude-agent-prompt.md`](two-claude-agent-prompt.md).

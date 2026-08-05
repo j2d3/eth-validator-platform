@@ -4,32 +4,26 @@ This is a portable version of the two-agent build model
 ([agentic-workflow.md](agentic-workflow.md)) adapted for **two Claude Code
 instances** collaborating on any repository. The original experiment paired
 Claude with OpenAI Codex; this variant replaces Codex with a second Claude,
-which changes nothing structurally — the coordination primitives are all
-GitHub-native — but does change what disciplines you need to install by hand
-so the two Claude sessions don't drift into agreement.
+while retaining GitHub as the shared coordination and review surface.
 
 ## The one-sentence pitch
 
 Two Claude instances, two GitHub personas, one shared repository — each
 implements independently and reviews the other's work at exact head, and
-neither can approve its own PRs, so every merged commit has been read by an
-agent that did not write it.
+neither can approve its own PRs, so ordinary agent-authored changes are read
+by an agent session that did not write them.
 
 ## Why this trade-off
 
-A single Claude session that writes and self-approves a change tends to
-defend its own plausible logic; a second instance starting from just the
-diff and the runtime evidence catches the mismatch. The cost is 2× compute
-+ the coordination overhead of maintaining a review-required contract; the
-benefit is that failure modes an isolated session rationalizes past
-(fabricated metric names, silent typos that fall back to defaults, shell
-built-ins that don't exist in a specific container image) get caught before
-they land.
+A second session that starts from the exact diff and evidence can notice an
+assumption carried by the authoring session. The costs are additional compute
+and coordination. In this experiment, independent review caught fabricated
+metric names, silent configuration fallback, and utilities absent from the
+target container before those changes landed.
 
-The design specifically depends on the two sessions **not sharing state**.
-Two Claudes talking through a shared memory or with visibility into each
-other's context tend to converge; the value comes from adversarial review
-across an information gap.
+Independent review does not require artificial secrecy. Let the reviewer make
+a diff-first pass before reading the author's reasoning, then use the PR to
+exchange context and resolve disagreements.
 
 ## What you need to set up (one-time)
 
@@ -42,31 +36,33 @@ across an information gap.
    ```bash
    export GH_CONFIG_DIR=$HOME/.config/gh-claude-a   # or -claude-b
    ```
+   On macOS, separate config directories do not isolate Keychain-backed
+   tokens. Use protected file-backed `gh` storage as described in
+   [two-agent-setup.md](two-agent-setup.md), or use separate OS identities.
 
 3. **Two separate clones** of the repository, one per persona, on disk. Do
    not point both Claude sessions at the same working tree — the sessions
    need independent commit staging and independent uncommitted-file
-   footprints.
+   footprints. Pin each clone to a repo-local noreply commit identity and a
+   separate SSH key/host alias.
 
-4. **Branch-prefix convention**, enforced by branch protection:
+4. **Branch-prefix convention**, enforced by the merge wrapper or a separate
+   repository rule if available:
    - `claude-a/*` — only claude-a pushes here
    - `claude-b/*` — only claude-b pushes here
    - `main` — merges only through the guarded wrapper below
 
 5. **Branch protection on `main`** with:
-   - Required checks (four is a reasonable minimum: your test suite,
-     terraform/manifest validation, container-runtime contracts, and any
-     portal/docs contract you rely on).
+   - The repository's actual required checks.
    - **Require pull-request review before merging** — this is the
-     load-bearing rule; it enforces the "no self-approval" contract via
-     GitHub itself rather than trust.
-   - **Require the review to be from a user other than the author** (GitHub
-     enforces this by default when review is required; verify).
+     base review rule. The wrapper below additionally requires the exact
+     paired persona, not merely any approver.
 
 6. **Guarded merge wrapper** (`hack/merge-pr.sh` or equivalent). The
    wrapper must refuse to merge unless:
    - `mergeStateStatus == CLEAN` (branch current with main, no conflicts).
-   - All required checks are `success` (not `pending`, not `neutral`).
+   - All required checks have completed with a repository-accepted
+     conclusion; none is pending or failing.
    - A review is present **at the exact current HEAD** (rebased-away
      approvals do not count; a force-push after approval requires
      re-review).
@@ -81,10 +77,9 @@ across an information gap.
    ```
    These are file-based rather than in-repo because they carry rough drafts,
    coordination text, and evidence-in-progress that shouldn't be permanent
-   history. If you don't have a shared filesystem, an in-repo folder
-   (`.coord/`) added to `.gitignore` works too, provided both sessions read
-   the same clone-local path — but this loses the cross-session freshness
-   signal that makes the file-mtime approach useful.
+   history. Both sessions must read and write the same absolute shared path.
+   A gitignored file in two separate clones is two different files. Without a
+   shared filesystem, use the GitHub issue and PR threads only.
 
 ## How work flows day-to-day
 
@@ -103,10 +98,11 @@ issue picked up (comment claim on GitHub)
     every N minutes via /loop
 ```
 
-The `/loop` skill inside Claude Code is what keeps the agents moving
-autonomously between human check-ins. Each session's `/loop` runs a sweep
-(new review requests, new DMs, own-PR CI state, own-issue claim state),
-acts on anything that changed, and reschedules itself.
+While the Claude Code session remains available, `/loop` can repeat a sweep of
+new review requests, DMs, own-PR CI state, and issue claims. It is
+session-bound polling, not a durable background service. Continued operation
+after a terminal or session stops requires an external scheduler or
+supervisor.
 
 ## Six principles that make it work
 
@@ -114,64 +110,53 @@ acts on anything that changed, and reschedules itself.
    distinguishes what was actually observed at a specific timestamp from
    what remains unqualified. "Missing means unknown, never healthy-zero."
 
-2. **Runtime-verify against production, not synthetic tests.** Test
-   fixtures that shrink parameters or run in your host shell can hide
+2. **Runtime-verify against the target environment, not only synthetic
+   tests.** Fixtures that shrink parameters or run in your host shell can hide
    failures that only surface at real values, in the real container image.
    Before approving a shell-fragment PR, ask whether the shell built-ins
    used exist in the target image; before approving a scrypt/subprocess
-   wrapper, mentally instantiate it with production-size inputs.
+   wrapper, exercise it with the real parameter shape and bounds.
 
-3. **Quote the other agent verbatim; don't round.** When acting on a
-   report from the other agent (an approval, a rejection, a runtime
-   observation), the received text is the source of truth. Paraphrasing
-   introduces drift the reviewer can't catch.
+3. **Preserve the other agent's exact report.** Quote an approval, rejection,
+   or runtime observation before acting on it, then verify it against the
+   named evidence. Paraphrasing can silently strengthen the claim.
 
-4. **Check for parallel-agent PRs before starting a claimed issue.**
-   `gh pr list --author <you> --state open` before opening a branch on any
-   claimed issue — the other agent's session may have started the same
-   work from an isolated clone. Coordinating at PR time is much cheaper
-   than force-pushing over a competing draft.
+4. **Claim before branching.** Use an atomic GitHub issue claim with a lease,
+   then check all open PRs and remote branches for the same scope. Duplicate
+   implementation PRs are a coordination failure, not an expected race.
 
 5. **Never self-approve; never merge without exact-head review.** The
    guarded wrapper enforces this, but write the discipline into the
-   session prompt so the agent doesn't try. Self-approval is the point
-   the model degrades.
+   session prompt as well.
 
-6. **File follow-ups; don't gate merges on polish.** "Perfect is the
-   enemy of good." Merge on real blockers; open a follow-up issue for
+6. **File follow-ups; don't gate merges on polish.** Merge on correctness,
+   safety, and the agreed contract; open a follow-up issue for
    cosmetic corrections. Don't invalidate an at-head approval with a
    force-push for a comment tweak — file the tweak as a follow-up.
 
 ## What NOT to do
 
-- **Don't share memory or context between the two Claude sessions.** The
-  adversarial-review value collapses if both instances have the same prior
-  reasoning available. Independent sessions with independent memory files
-  is the whole point.
+- **Don't preload the reviewer with the author's conclusion.** Start from the
+  diff and evidence. Share context afterward when it helps evaluate or amend
+  the change.
 - **Don't let one agent merge unreviewed on the "small change" argument.**
-  Every merged commit was read by the other agent. If the change is truly
-  trivial, review is trivial too; don't skip it.
-- **Don't skip test files that guard cross-cutting contracts** because
-  they're slow. If a test enforces an overlay-patch contract or an EKS
-  sync-list contract, running the fast subset locally and pushing on green
-  will get the slow test to catch the miss in CI — but only after the CI
-  round-trip, which is a much slower feedback loop than just running the
-  full suite.
-- **Don't use `gh pr edit --body` for large PR bodies.** It silently
-  no-ops when the GraphQL response has warnings. Use
-  `gh api repos/OWNER/REPO/pulls/N -X PATCH -F body=@file.md` and verify
-  with `gh api ... --jq .body | grep <marker>`.
+  The ordinary agent-authored path requires paired review even when that
+  review is brief.
+- **Don't skip tests that guard a changed cross-cutting contract.** Run the
+  proportionate suite locally and let required CI enforce the complete
+  repository policy.
+- **Don't assume a GitHub write succeeded.** Read the PR, review, issue, or
+  branch back through the API and verify the intended state.
 - **Don't trust that both agents will independently discover the same
-  issue.** If one agent finds a runtime defect, DM it to the other; two
-  Claudes with the same context still miss the same failure modes.
+  issue.** If one agent finds a runtime defect, record it in the PR or issue;
+  no reviewer is guaranteed to rediscover it unaided.
 
 ## When one agent is offline
 
-The model degrades gracefully to single-agent operation for
-non-safety-critical work (docs, contained refactors) — the offline agent's
-PRs just wait for review. For safety-critical work (schema changes, key
-material, signing paths), pause the lane until both agents are available.
-The "no self-approval" contract is worth more than throughput.
+The available agent may continue authoring bounded work, but its PRs wait for
+the paired review. Do not turn an offline reviewer into an exception to the
+merge contract, especially for schema, key, signing, infrastructure, or
+credential paths.
 
 ## References
 

@@ -30,7 +30,8 @@ Before pasting either prompt, resolve these slots for your project:
 
 Confirm branch protection on `main` is set to require:
 - All expected required checks green.
-- One approving review from a user **other than the author**.
+- One approving review. The merge wrapper separately requires the configured
+  paired persona.
 - Force-push after approval invalidates the review.
 
 ---
@@ -53,13 +54,13 @@ the other.
 - The DM channel is two files. You **read** <DM_TO_A> for messages from
   Agent B; you **write** to <DM_TO_B> to send messages to Agent B.
 - Guarded merge wrapper: `<MERGE_WRAPPER>`. It refuses to merge on anything
-  other than a CLEAN mergeStateStatus, all required checks green, and a
-  review present at the exact current HEAD.
+  other than a CLEAN mergeStateStatus, all required checks completed with
+  accepted conclusions, and Agent B's fresh review on the exact current HEAD.
 
 ## Core discipline
 
-1. **Never self-approve.** The wrapper enforces this via branch protection;
-   don't try. Every merged commit must have an at-head review from Agent B.
+1. **Never self-approve.** The guarded wrapper requires Agent B's review on
+   the current head. Do not bypass it.
 
 2. **Evidence-only claims.** In every PR body, runbook edit, or doc change,
    distinguish what you actually observed at a specific timestamp from what
@@ -68,25 +69,22 @@ the other.
    commit + UTC timestamp + source of truth (Prometheus query, kubectl
    output, live API endpoint).
 
-3. **Runtime-verify against production, not synthetic tests.** Before
-   approving a shell fragment that runs in a container, probe the actual
-   image for the utilities used (`docker run --rm <image> /bin/sh -c
+3. **Runtime-verify against the target environment, not only synthetic
+   tests.** Before approving a shell fragment that runs in a container,
+   probe the actual image for the utilities used (`docker run --rm <image> /bin/sh -c
    'command -v grep sed awk'`). Before approving a wrapper around a stdlib
-   primitive, mentally instantiate it with the parameter values production
-   will pass. Test fixtures that shrink parameters for speed can hide
+   primitive, exercise it with the real parameter shape and bounds. Test
+   fixtures that shrink parameters for speed can hide
    default-limit issues that only surface at real values.
 
-4. **Quote Agent B verbatim.** When acting on a report Agent B DM'd or
-   commented, the received text is the source of truth. Paraphrasing loses
-   the exact contract Agent B verified — later drift is invisible to the
-   reviewer.
+4. **Preserve Agent B's exact report.** Quote a runtime observation or review
+   finding before acting on it, then verify it against its named evidence.
+   Do not silently strengthen "Ready" into "synced" or "attempted" into
+   "qualified."
 
-5. **Check before you start.** Before opening a branch on any claimed issue,
-   run `GH_CONFIG_DIR=<AGENT_A_GH_CONFIG> gh pr list --repo <REPO>
-   --search "author:<AGENT_A_HANDLE> is:open"` AND check for a competing
-   `<AGENT_B_HANDLE>/*` branch on the same scope. Two agents building the
-   same PR from independent clones is a common failure mode; the earlier
-   you notice, the cheaper the coordination.
+5. **Claim before you start.** Claim one bounded issue and file surface with a
+   lease, then check all open PRs and remote branches for the same scope. Keep
+   at most one authored PR open in this lane.
 
 6. **File follow-ups; don't gate merges on polish.** Merge on real
    blockers. Cosmetic corrections go on a separate follow-up issue; don't
@@ -94,10 +92,8 @@ the other.
 
 ## Working habits
 
-- Prefer `gh api repos/<REPO>/pulls/N -X PATCH -F body=@file.md` over
-  `gh pr edit --body` for large PR bodies — `gh pr edit` silently no-ops
-  when the GraphQL response has warnings. Verify writes with
-  `gh api ... --jq .body | grep <marker>`.
+- Verify every GitHub write by reading the resulting PR, issue, review, or
+  branch back through the API.
 - Run the full test suite (not a filtered subset) before pushing any PR
   that touches a cross-cutting contract (overlays, kustomize, dependency
   chains, schema).
@@ -107,7 +103,8 @@ the other.
 ## The /loop skill
 
 When you have work in flight or expect a response from Agent B, invoke
-`/loop` to establish an autonomous polling loop. Each tick:
+`/loop` for session-bound polling. This does not survive a stopped terminal;
+durable unattended work needs an external supervisor. Each tick:
 
 1. Sweep the review-request queue: `GH_CONFIG_DIR=<AGENT_A_GH_CONFIG> gh pr
    list --repo <REPO> --search "review-requested:<AGENT_A_HANDLE> is:open"`.
@@ -156,20 +153,17 @@ Once both sessions are running, the human's role is narrow:
   paid-cloud restore, DNS change — goes through a human hand-off, not
   agent automation. The [companion doc](two-claude-collaboration.md)
   enumerates the boundary.
-- **Direction-setter.** Pick the next issue for either agent to claim.
-  The agents self-coordinate on execution; scope belongs to the human.
-- **Redirect on drift.** When both agents start agreeing on something
-  wrong, the human's context (which the agents don't share) is the
-  correction path. Feedback goes onto the PR or the DM channel; the
-  agents will pick it up in the next /loop sweep.
+- **Scope owner.** Set product priorities and the boundary of the task queue;
+  the agents can claim bounded work within it.
+- **Redirect on drift.** When both agents converge on the wrong assumption,
+  the human supplies the correction or missing requirement through the PR or
+  coordination issue.
 
 ## Debugging the collaboration
 
-- **Both agents claim the same issue independently.** Expected under
-  concurrent /loop schedules. Whoever pushes first wins the branch name;
-  the other should close their local branch and coordinate on the PR
-  comment thread. Both agents' prompts include the "check before you
-  start" habit precisely to make this rare.
+- **Both agents claim the same issue independently.** Stop the later claim,
+  keep one implementation, and record how the lease or preflight failed.
+  Never choose by force-pushing one draft over the other.
 - **Agent A approves Agent B's PR at head H, but a fresh push moves head
   to H+1.** The wrapper correctly refuses to merge — an approval on H is
   not an approval on H+1. Agent B DMs Agent A the new SHA; Agent A
