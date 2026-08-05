@@ -38,6 +38,7 @@ type SigningSnapshot = {
 };
 
 type AlertSnapshot = {
+  available?: boolean;
   firingTotal: NullableNumber;
   critical: NullableNumber;
   warning: NullableNumber;
@@ -201,7 +202,9 @@ function isSnapshot(value: unknown): value is StatusSnapshot {
   }
   if (
     value.alerts !== undefined &&
-    !hasNullableNumbers(value.alerts, ["firingTotal", "critical", "warning"])
+    (!hasNullableNumbers(value.alerts, ["firingTotal", "critical", "warning"]) ||
+      (value.alerts.available !== undefined &&
+        typeof value.alerts.available !== "boolean"))
   ) {
     return false;
   }
@@ -338,6 +341,8 @@ export default function LiveStatus() {
   const cluster = snapshot.cluster;
   const workload = cluster.ethereumWorkloads;
   const freshness = snapshot.source.stale ? "Stale" : "Current";
+  const alertsAvailable = snapshot.alerts?.available === true;
+  const firingAlerts = alertsAvailable ? snapshot.alerts?.firingTotal : null;
 
   return (
     <>
@@ -404,20 +409,29 @@ export default function LiveStatus() {
         <a
           className="summary-item summary-item--link"
           href={alertsDashboard}
-          aria-label={`Open firing alerts in Grafana: ${formatNumber(
-            snapshot.alerts?.firingTotal,
-            0,
-          )} total`}
+          aria-label={
+            alertsAvailable
+              ? `Open firing alerts in Grafana: ${formatNumber(firingAlerts, 0)} total`
+              : "Open firing alerts in Grafana: alert evaluation unavailable"
+          }
         >
           <span className="summary-item__label">Firing alerts</span>
-          <strong>{formatNumber(snapshot.alerts?.firingTotal, 0)}</strong>
+          <strong>{formatNumber(firingAlerts, 0)}</strong>
           <span
             className={`detail ${
-              snapshot.alerts?.firingTotal === 0 ? "detail--ready" : "detail--off"
+              alertsAvailable && firingAlerts === 0
+                ? "detail--ready"
+                : "detail--off"
             }`}
           >
-            {formatNumber(snapshot.alerts?.critical, 0)} critical ·{" "}
-            {formatNumber(snapshot.alerts?.warning, 0)} warning · Grafana ↗
+            {alertsAvailable ? (
+              <>
+                {formatNumber(snapshot.alerts?.critical, 0)} critical ·{" "}
+                {formatNumber(snapshot.alerts?.warning, 0)} warning · Grafana ↗
+              </>
+            ) : (
+              <>Alert evaluation unavailable · Grafana ↗</>
+            )}
           </span>
         </a>
       </section>

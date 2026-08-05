@@ -238,6 +238,8 @@ test("live status uses the exact public adapter and polls without controls", asy
   assert.match(component, /cache:\s*"no-store"/);
   assert.match(component, /window\.setInterval\(load,\s*POLL_INTERVAL_MS\)/);
   assert.match(component, /Firing alerts/);
+  assert.match(component, /Alert evaluation unavailable/);
+  assert.match(component, /alertsAvailable/);
   assert.match(component, /href=\{alertsDashboard\}/);
   assert.match(registry, /alertsDashboard\s*=\s*`\$\{grafanaBase\}\/alerting\/list`/);
   assert.doesNotMatch(component, /<button\b|role="button"/i);
