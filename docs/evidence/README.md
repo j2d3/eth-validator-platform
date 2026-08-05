@@ -14,6 +14,7 @@ values, raw environment dumps, kubeconfigs, or credentials.
 
 - [EKS NetworkPolicy enforcement](2026-08-04-eks-network-policy.md)
 - [First Web3Signer-backed validator duty](2026-08-04-first-signing-validator.md)
+- [EKS Spot rebalance and validator fail-closed recovery](2026-08-05-eks-spot-rebalance.md)
 
 The first signing record covers the positive validator-client → Web3Signer →
 RDS → beacon-chain path. RDS recovery, conflicting-duty rejection, and
