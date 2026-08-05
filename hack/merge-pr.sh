@@ -14,11 +14,13 @@
 #      require exact-head approvals from both agents.
 #   3. The PR must be OPEN, non-draft, and mergeable.
 #   4. Every required agent's LATEST review must be APPROVED on the exact
-#      current head commit. Evaluating only the latest review from each
-#      reviewer prevents a subsequent CHANGES_REQUESTED from being
-#      silently ignored just because a historical APPROVED record still
-#      exists. Belt-and-braces: the PR's aggregate reviewDecision must
-#      also be APPROVED.
+#      current head commit and submitted no earlier than the force-push that
+#      installed that head. GitHub can rewrite historical review commit_id
+#      values after a force-push while preserving submitted_at; checking both
+#      fields prevents a remapped stale approval from passing as fresh.
+#      Evaluating only the latest review from each reviewer also prevents a
+#      subsequent CHANGES_REQUESTED from being silently ignored. Belt-and-
+#      braces: the PR's aggregate reviewDecision must also be APPROVED.
 #   5. CI is checked explicitly via /repos/O/R/commits/{sha}/check-runs;
 #      every check must be status=completed with conclusion in
 #      (success, neutral, skipped), and there must be at least one.
@@ -147,25 +149,52 @@ required_reviewers="$(required_reviewers_for "$pr_author")" \
 [[ "$mergeable" == 'MERGEABLE' ]] || fail "PR mergeable=$mergeable (need MERGEABLE)"
 
 # 6. Every required reviewer's LATEST review state must be APPROVED on the
-#    exact current head, AND the PR's aggregate reviewDecision must be
-#    APPROVED. Evaluating only the latest review prevents a later
-#    CHANGES_REQUESTED from being masked by historical approval.
+#    exact current head, submitted at or after the force-push that installed
+#    that head, AND the PR's aggregate reviewDecision must be APPROVED.
+#    Evaluating only the latest review prevents a later CHANGES_REQUESTED from
+#    being masked by historical approval.
 reviews_json="$(gh api "/repos/$REPO/pulls/$PR_NUMBER/reviews")" \
   || fail "gh api pulls/$PR_NUMBER/reviews failed"
+
+# GitHub has been observed rewriting a historical review's commit_id and
+# updated_at when a PR branch is force-pushed, while leaving its immutable
+# submitted_at unchanged. The issue-events endpoint retains the force-push
+# time, so use it as the freshness boundary for the current head. --slurp is
+# required because --paginate emits one JSON array per page.
+events_pages_json="$(gh api --paginate --slurp \
+  "/repos/$REPO/issues/$PR_NUMBER/events?per_page=100")" \
+  || fail "gh api issues/$PR_NUMBER/events failed"
+events_json="$(jq 'add // []' <<<"$events_pages_json")" \
+  || fail "cannot combine issue-event pages for PR #$PR_NUMBER"
+latest_head_force_push_at="$(jq -r --arg head "$head_oid" '
+  [.[]
+    | select(.event == "head_ref_force_pushed" and .commit_id == $head)
+    | .created_at]
+  | max // empty
+' <<<"$events_json")"
+
 reviewers_display=''
 while IFS= read -r required_reviewer; do
   [[ -n "$required_reviewer" ]] || continue
   latest_review="$(jq --arg reviewer "$required_reviewer" \
-    '[.[] | select(.user.login == $reviewer)] | if length == 0 then null else last end' \
+    '[.[] | select(.user.login == $reviewer)]
+     | sort_by(.submitted_at, .id)
+     | if length == 0 then null else last end' \
     <<<"$reviews_json")"
   [[ "$latest_review" != 'null' ]] \
     || fail "required reviewer '$required_reviewer' has not reviewed PR #$PR_NUMBER"
   latest_state="$(jq -r '.state' <<<"$latest_review")"
   latest_commit="$(jq -r '.commit_id' <<<"$latest_review")"
+  latest_submitted_at="$(jq -r '.submitted_at // empty' <<<"$latest_review")"
   [[ "$latest_state" == 'APPROVED' ]] \
     || fail "required reviewer '$required_reviewer' latest review state is $latest_state (need APPROVED); a later CHANGES_REQUESTED supersedes an earlier APPROVED"
   [[ "$latest_commit" == "$head_oid" ]] \
     || fail "required reviewer '$required_reviewer' latest APPROVED is on commit ${latest_commit:0:7}, not current head ${head_oid:0:7}; re-request review on the amended head"
+  [[ -n "$latest_submitted_at" ]] \
+    || fail "required reviewer '$required_reviewer' latest APPROVED has no submitted_at timestamp"
+  if [[ -n "$latest_head_force_push_at" && "$latest_submitted_at" < "$latest_head_force_push_at" ]]; then
+    fail "required reviewer '$required_reviewer' latest APPROVED was submitted at $latest_submitted_at, before current head force-push at $latest_head_force_push_at; GitHub remapped stale review metadata, so re-request a genuinely fresh review"
+  fi
   reviewers_display="${reviewers_display}${reviewers_display:+, }${required_reviewer}"
 done <<<"$required_reviewers"
 
