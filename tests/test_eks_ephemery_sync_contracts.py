@@ -510,9 +510,20 @@ class EksEphemeryFluxAndTelemetryTests(unittest.TestCase):
             for panel in dashboard["panels"]
             for target in panel.get("targets", [])
         ]
+        # Pair-scoped rules live in the chart; tier-scoped signer rules live in
+        # the shared web3signer base. A dashboard metric is verified against
+        # whichever file declares it — inventing a metric name in either file
+        # would still fail this join.
         rules = (CHART / "templates" / "prometheusrule.yaml").read_text(
             encoding="utf-8"
-        )
+        ) + (
+            ROOT
+            / "platform"
+            / "apps"
+            / "base"
+            / "web3signer"
+            / "prometheusrule.yaml"
+        ).read_text(encoding="utf-8")
         platform_metrics = {
             token.split("{")[0]
             for expression in expressions
@@ -528,7 +539,11 @@ class EksEphemeryFluxAndTelemetryTests(unittest.TestCase):
         self.assertIn("not an independent network-tip distance", text)
         self.assertNotIn("signing remain disabled", text)
         self.assertNotIn("public_key", text)
-        self.assertNotIn("web3signer", text)
+        # Signing-lane panels intentionally reference Web3Signer.
+        self.assertIn("web3signer", text)
+        # Slashing-prevented panel is a safety signal and must be labelled as
+        # such; a green-on-increase misconfiguration is a review defect.
+        self.assertIn("slashing signings prevented", text)
 
     def test_runbook_requires_generation_capacity_p2p_and_sustained_sync_evidence(
         self,
