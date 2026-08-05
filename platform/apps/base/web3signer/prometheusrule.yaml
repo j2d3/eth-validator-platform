@@ -38,3 +38,51 @@ spec:
         # available" — a request for an identity this signer does not hold.
         - record: validator_platform_signer_missing_identifier_total
           expr: max by (cluster, environment) (signing_bls_missing_identifier_count_total{platform="ethereum-validator",component="signer"})
+
+    - name: web3signer.alerts
+      interval: 30s
+      rules:
+        - alert: Web3SignerUnavailable
+          expr: >-
+            validator_platform_signer_up < 1
+            or absent(validator_platform_signer_up)
+          for: 2m
+          labels:
+            severity: critical
+          annotations:
+            summary: "Web3Signer metrics target unavailable"
+            description: "The shared signer target has been missing or down for two minutes."
+            runbook_url: "https://github.com/j2d3/eth-validator-platform/blob/main/docs/runbooks/ethereum-alerts.md"
+
+        - alert: Web3SignerKeyCountBelowEnabledValidators
+          expr: >-
+            sum by (cluster, environment) (validator_platform_validator_enabled)
+            > on (cluster, environment)
+            validator_platform_signer_keys_loaded
+          for: 2m
+          labels:
+            severity: critical
+          annotations:
+            summary: "Web3Signer has fewer loaded keys than enabled validators"
+            description: "One or more enabled validator clients cannot be matched to a loaded signer key."
+            runbook_url: "https://github.com/j2d3/eth-validator-platform/blob/main/docs/runbooks/ethereum-alerts.md"
+
+        - alert: Web3SignerSlashingCheckPrevented
+          expr: >-
+            increase(validator_platform_signer_slashing_prevented_total[5m]) > 0
+          labels:
+            severity: critical
+          annotations:
+            summary: "Web3Signer prevented a signing request"
+            description: "The slashing-protection database rejected at least one signing request during the last five minutes."
+            runbook_url: "https://github.com/j2d3/eth-validator-platform/blob/main/docs/runbooks/ethereum-alerts.md"
+
+        - alert: Web3SignerUnknownKeyRequest
+          expr: >-
+            increase(validator_platform_signer_missing_identifier_total[5m]) > 0
+          labels:
+            severity: warning
+          annotations:
+            summary: "Web3Signer received a request for an unknown key"
+            description: "A validator client requested a signing identity that is not loaded by the shared signer."
+            runbook_url: "https://github.com/j2d3/eth-validator-platform/blob/main/docs/runbooks/ethereum-alerts.md"

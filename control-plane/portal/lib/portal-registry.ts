@@ -20,6 +20,11 @@ export const imageSecurityRunbook =
 
 export const grafanaDashboards: ResourceLink[] = [
   {
+    name: "Alerts",
+    description: "Active and resolved Prometheus alerts",
+    href: `${grafanaBase}/alerting/list`,
+  },
+  {
     name: "Kubernetes and node dashboards",
     description: "Browse the dashboards installed by kube-prometheus-stack",
     href: `${grafanaBase}/dashboards`,

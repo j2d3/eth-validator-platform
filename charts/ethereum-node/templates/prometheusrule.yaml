@@ -205,4 +205,102 @@ spec:
                   ) + 1
                 )
             )
+
+    - name: ethereum-pair.alerts
+      interval: 30s
+      rules:
+        - alert: EthereumPairTargetUnavailable
+          expr: >-
+            validator_platform_pair_target_up{assignment_id="{{ .Values.identity.assignmentId }}",component=~"execution|consensus"} < 1
+            or absent(validator_platform_pair_target_up{assignment_id="{{ .Values.identity.assignmentId }}",component="execution"})
+            or absent(validator_platform_pair_target_up{assignment_id="{{ .Values.identity.assignmentId }}",component="consensus"})
+          for: 5m
+          labels:
+            severity: warning
+            assignment_id: {{ .Values.identity.assignmentId | quote }}
+            network: {{ .Values.networkProfile.family | quote }}
+            execution_client: {{ .Values.executionClient | quote }}
+            consensus_client: {{ .Values.consensusClient | quote }}
+          annotations:
+            summary: "Execution or consensus metrics target unavailable"
+            description: "An active client pair has a missing or failed execution/consensus metrics target for five minutes."
+            runbook_url: "https://github.com/j2d3/eth-validator-platform/blob/main/docs/runbooks/ethereum-alerts.md"
+
+        {{- if .Values.validator.enabled }}
+        - alert: EthereumValidatorTargetUnavailable
+          expr: >-
+            validator_platform_pair_target_up{assignment_id="{{ .Values.identity.assignmentId }}",component="validator"} < 1
+            or absent(validator_platform_pair_target_up{assignment_id="{{ .Values.identity.assignmentId }}",component="validator"})
+          for: 2m
+          labels:
+            severity: critical
+            assignment_id: {{ .Values.identity.assignmentId | quote }}
+            network: {{ .Values.networkProfile.family | quote }}
+            execution_client: {{ .Values.executionClient | quote }}
+            consensus_client: {{ .Values.consensusClient | quote }}
+          annotations:
+            summary: "Enabled validator metrics target unavailable"
+            description: "An enabled validator client's metrics target has been missing or down for two minutes."
+            runbook_url: "https://github.com/j2d3/eth-validator-platform/blob/main/docs/runbooks/ethereum-alerts.md"
+        {{- end }}
+
+        - alert: EthereumExecutionHeadStalled
+          expr: >-
+            validator_platform_execution_head_changes_15m{assignment_id="{{ .Values.identity.assignmentId }}"} < 1
+          for: 5m
+          labels:
+            severity: warning
+            assignment_id: {{ .Values.identity.assignmentId | quote }}
+            network: {{ .Values.networkProfile.family | quote }}
+            execution_client: {{ .Values.executionClient | quote }}
+            consensus_client: {{ .Values.consensusClient | quote }}
+          annotations:
+            summary: "Execution head has not advanced"
+            description: "The execution head recorded no change during the rolling 15-minute window and remained stalled for five minutes."
+            runbook_url: "https://github.com/j2d3/eth-validator-platform/blob/main/docs/runbooks/ethereum-alerts.md"
+
+        - alert: EthereumConsensusHeadStalled
+          expr: >-
+            validator_platform_consensus_head_changes_15m{assignment_id="{{ .Values.identity.assignmentId }}"} < 1
+          for: 5m
+          labels:
+            severity: warning
+            assignment_id: {{ .Values.identity.assignmentId | quote }}
+            network: {{ .Values.networkProfile.family | quote }}
+            execution_client: {{ .Values.executionClient | quote }}
+            consensus_client: {{ .Values.consensusClient | quote }}
+          annotations:
+            summary: "Consensus head has not advanced"
+            description: "The consensus head recorded no change during the rolling 15-minute window and remained stalled for five minutes."
+            runbook_url: "https://github.com/j2d3/eth-validator-platform/blob/main/docs/runbooks/ethereum-alerts.md"
+
+        - alert: EthereumConsensusSlotLagHigh
+          expr: >-
+            validator_platform_consensus_slot_lag{assignment_id="{{ .Values.identity.assignmentId }}"} > 8
+          for: 5m
+          labels:
+            severity: warning
+            assignment_id: {{ .Values.identity.assignmentId | quote }}
+            network: {{ .Values.networkProfile.family | quote }}
+            execution_client: {{ .Values.executionClient | quote }}
+            consensus_client: {{ .Values.consensusClient | quote }}
+          annotations:
+            summary: "Consensus head is more than eight slots behind"
+            description: "Consensus slot lag remained above eight slots for five minutes."
+            runbook_url: "https://github.com/j2d3/eth-validator-platform/blob/main/docs/runbooks/ethereum-alerts.md"
+
+        - alert: EthereumConsensusFinalityLagHigh
+          expr: >-
+            validator_platform_consensus_finality_lag_epochs{assignment_id="{{ .Values.identity.assignmentId }}"} > 4
+          for: 10m
+          labels:
+            severity: warning
+            assignment_id: {{ .Values.identity.assignmentId | quote }}
+            network: {{ .Values.networkProfile.family | quote }}
+            execution_client: {{ .Values.executionClient | quote }}
+            consensus_client: {{ .Values.consensusClient | quote }}
+          annotations:
+            summary: "Consensus finality is more than four epochs behind"
+            description: "Consensus finality lag remained above four epochs for ten minutes."
+            runbook_url: "https://github.com/j2d3/eth-validator-platform/blob/main/docs/runbooks/ethereum-alerts.md"
 {{- end }}
