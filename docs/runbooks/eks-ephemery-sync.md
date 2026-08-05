@@ -228,25 +228,38 @@ node affinity must remain in that zone. The PVC names and annotations must
 retain the generation-162 identity fingerprint, and the on-disk identity marker
 must match it; dynamically provisioned PV names do not encode that fingerprint.
 
-The internal Service exposes only beacon API and client metrics. The P2P
-Service is one internet-facing AWS Network Load Balancer with
-`externalTrafficPolicy: Local`; Kubernetes chooses valid NodePorts. Its source
-range is deliberately public because Ethereum P2P is public, while JSON-RPC,
-Engine API, beacon API, and metrics are not on that LoadBalancer.
+The internal Service exposes only beacon API and client metrics. Exactly one
+selected pair has an internet-facing P2P Network Load Balancer; the other
+client-diversity pairs retain ClusterIP P2P Services and use outbound peers.
+The public Service selects AWS Load Balancer Controller explicitly through
+`loadBalancerClass: service.k8s.aws/nlb`, uses Pod-IP targets, and health-checks
+the pair's consensus TCP listener on port 9000. Its source range is public
+because Ethereum P2P is public. JSON-RPC, Engine API, beacon API, and metrics
+are not ports on that LoadBalancer.
 
 ```bash
-kubectl get service -n ethereum pair-ephemery-162-synthetic-p2p \
-  -o jsonpath='{.spec.type}{"\n"}{.status.loadBalancer.ingress[0].hostname}{"\n"}'
+kubectl rollout status -n kube-system \
+  deployment/aws-load-balancer-controller --timeout=5m
+kubectl get service -n ethereum pair-ephemery-162-synthetic-p2p-nlb \
+  -o jsonpath='{.spec.type}{"\n"}{.spec.loadBalancerClass}{"\n"}{.status.loadBalancer.ingress[0].hostname}{"\n"}'
 kubectl get endpointslice -n ethereum \
-  -l kubernetes.io/service-name=pair-ephemery-162-synthetic-p2p
+  -l kubernetes.io/service-name=pair-ephemery-162-synthetic-p2p-nlb
+
+kubectl get service -n ethereum -o json | jq -e '
+  [.items[] | select(.spec.type == "LoadBalancer")
+    | select(.spec.loadBalancerClass == "service.k8s.aws/nlb")] | length == 1
+' >/dev/null
 ```
 
-A hostname and healthy endpoints prove only the Kubernetes/cloud-controller
-path. They do not prove UDP reachability, inbound peer traffic, or that the
-clients advertise a public address. Outbound peers are sufficient to begin a
-sync; count inbound traffic separately before claiming bidirectional P2P
-qualification. The NLB has a standing hourly cost, so remove it by returning
-the assignment to stopped when the exercise ends.
+A hostname and healthy endpoints prove only the Kubernetes/controller path.
+Before claiming the NLB is qualified, inspect its AWS listeners and target
+health and exercise both TCP and UDP from outside the VPC. Those checks still
+do not prove that either client advertises the public address in its ENR;
+observe attributable inbound peer traffic separately before claiming
+bidirectional discovery. The one NLB has a standing hourly cost. Returning its
+selected assignment to stopped removes the Service and therefore the NLB;
+resuming the assignment creates a new hostname without changing chain-data
+identity.
 
 ## 7. Verify exact chain identity
 

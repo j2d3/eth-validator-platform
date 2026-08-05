@@ -24,19 +24,29 @@ terraform -chdir=terraform/environments/dns plan \
 terraform -chdir=terraform/environments/dns apply operations-certificate.tfplan
 ```
 
-Load the non-secret ARN without printing it and create the Flux input:
+Load the non-secret controller inputs without printing them and create the Flux
+input. Reapplying this ConfigMap must preserve the cluster, region, and VPC
+fields consumed by AWS Load Balancer Controller; writing only the certificate
+field would make strict Flux substitution fail:
 
 ```bash
+TF_ROOT=terraform/environments/dev
+EKS_CLUSTER_NAME="$(terraform -chdir="$TF_ROOT" output -raw cluster_name)"
+AWS_REGION="$(terraform -chdir="$TF_ROOT" output -raw aws_region)"
+EKS_VPC_ID="$(terraform -chdir="$TF_ROOT" output -raw vpc_id)"
 OPERATIONS_CERTIFICATE_ARN="$(
   terraform -chdir=terraform/environments/dns output -raw \
     operations_acm_certificate_arn
 )"
 kubectl -n flux-system create configmap aws-ingress-inputs \
+  --from-literal=EKS_CLUSTER_NAME="$EKS_CLUSTER_NAME" \
+  --from-literal=AWS_REGION="$AWS_REGION" \
+  --from-literal=EKS_VPC_ID="$EKS_VPC_ID" \
   --from-literal=OPERATIONS_ACM_CERTIFICATE_ARN="$OPERATIONS_CERTIFICATE_ARN" \
   --dry-run=client -o yaml | kubectl apply -f -
 kubectl -n flux-system annotate configmap aws-ingress-inputs \
   kustomize.toolkit.fluxcd.io/prune=disabled --overwrite
-unset OPERATIONS_CERTIFICATE_ARN
+unset EKS_CLUSTER_NAME AWS_REGION EKS_VPC_ID OPERATIONS_CERTIFICATE_ARN
 ```
 
 The ARN is an identifier, not key material. The ConfigMap remains outside Git

@@ -5,6 +5,8 @@ resources:
   - ingress-nginx-namespace.yaml
   - ingress-nginx-repository.yaml
   - ingress-nginx.yaml
+  - aws-load-balancer-controller-repository.yaml
+  - aws-load-balancer-controller.yaml
   - grafana-ingress.yaml
 
 patches:

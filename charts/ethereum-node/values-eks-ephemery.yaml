@@ -17,20 +17,20 @@ executionClients:
   geth:
     syncMode: full
 
-# One public Network Load Balancer carries only Ethereum P2P traffic for this
-# one-pair lab. Kubernetes allocates valid NodePorts; fixed client port numbers
-# are retained only at the Service and container edges. JSON-RPC, Engine API,
-# beacon API, and metrics remain ClusterIP/NetworkPolicy bounded.
+# Client-diversity pairs sync through outbound peers by default. The dev
+# Kustomize overlay promotes exactly one selected pair to an AWS LBC-owned
+# public NLB, keeping the lab at one billed P2P load balancer instead of one
+# per pair. JSON-RPC, Engine API, beacon API, and metrics remain on the separate
+# ClusterIP Service.
 p2p:
   service:
     enabled: true
-    type: LoadBalancer
-    annotations:
-      service.beta.kubernetes.io/aws-load-balancer-type: nlb
-      service.beta.kubernetes.io/aws-load-balancer-scheme: internet-facing
-    externalTrafficPolicy: Local
-    loadBalancerSourceRanges:
-      - 0.0.0.0/0
+    nameSuffix: p2p
+    type: ClusterIP
+    loadBalancerClass: ""
+    annotations: {}
+    externalTrafficPolicy: Cluster
+    loadBalancerSourceRanges: []
 
 # Prefer the already-bounded zonal Spot groups while retaining an on-demand
 # recovery path. The hard workload selector and taint/toleration still prevent

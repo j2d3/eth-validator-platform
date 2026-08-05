@@ -20,13 +20,42 @@ python3 "${REPOSITORY_ROOT}/tools/render_local_assignments.py" \
       >"${temporary_directory}/ephemery-162.yaml"
 python3 "${REPOSITORY_ROOT}/tools/render_local_assignments.py" \
   --values-for assignment-ephemery-162-synthetic \
-  | helm template ephemery-eks "${CHART}" --namespace ethereum \
-      --values "${CHART}/values-eks-ephemery.yaml" \
-      --values - \
-      --set lifecycleState=active \
-      --set telemetry.cluster=eth-validator-platform-dev \
-      --set telemetry.environment=dev \
-      >"${temporary_directory}/ephemery-eks.yaml"
+  >"${temporary_directory}/ephemery-eks-projected-values.yaml"
+python3 - "${temporary_directory}/ephemery-eks-projected-values.yaml" <<'PY'
+import sys
+
+import yaml
+
+path = sys.argv[1]
+with open(path, encoding="utf-8") as stream:
+    values = yaml.safe_load(stream)
+values["p2p"] = {
+    "service": {
+        "enabled": True,
+        "nameSuffix": "p2p-nlb",
+        "type": "LoadBalancer",
+        "loadBalancerClass": "service.k8s.aws/nlb",
+        "annotations": {
+            "service.beta.kubernetes.io/aws-load-balancer-nlb-target-type": "ip",
+            "service.beta.kubernetes.io/aws-load-balancer-scheme": "internet-facing",
+            "service.beta.kubernetes.io/aws-load-balancer-healthcheck-protocol": "tcp",
+            "service.beta.kubernetes.io/aws-load-balancer-healthcheck-port": "9000",
+            "service.beta.kubernetes.io/aws-load-balancer-attributes": "load_balancing.cross_zone.enabled=true",
+        },
+        "externalTrafficPolicy": "Cluster",
+        "loadBalancerSourceRanges": ["0.0.0.0/0"],
+    }
+}
+with open(path, "w", encoding="utf-8") as stream:
+    yaml.safe_dump(values, stream, sort_keys=False)
+PY
+helm template ephemery-eks "${CHART}" --namespace ethereum \
+  --values "${CHART}/values-eks-ephemery.yaml" \
+  --values "${temporary_directory}/ephemery-eks-projected-values.yaml" \
+  --set lifecycleState=active \
+  --set telemetry.cluster=eth-validator-platform-dev \
+  --set telemetry.environment=dev \
+  >"${temporary_directory}/ephemery-eks.yaml"
 helm template ethereum-node "${CHART}" --namespace ethereum \
   --set lifecycleState=active \
   --set validator.enabled=true \
@@ -96,8 +125,13 @@ if grep -Eq 'validator-keystore|signingSecretRef' "${temporary_directory}/epheme
 fi
 
 grep -q '^ *type: LoadBalancer$' "${temporary_directory}/ephemery-eks.yaml"
-grep -q 'service.beta.kubernetes.io/aws-load-balancer-type: nlb' "${temporary_directory}/ephemery-eks.yaml"
-grep -q '^ *externalTrafficPolicy: Local$' "${temporary_directory}/ephemery-eks.yaml"
+grep -q '^ *loadBalancerClass: "service.k8s.aws/nlb"$' "${temporary_directory}/ephemery-eks.yaml"
+grep -q 'service.beta.kubernetes.io/aws-load-balancer-nlb-target-type: ip' "${temporary_directory}/ephemery-eks.yaml"
+grep -q '^ *externalTrafficPolicy: Cluster$' "${temporary_directory}/ephemery-eks.yaml"
+if grep -q 'service.beta.kubernetes.io/aws-load-balancer-type:' "${temporary_directory}/ephemery-eks.yaml"; then
+  printf 'EKS P2P Service still requests the legacy AWS cloud controller.\n' >&2
+  exit 1
+fi
 grep -q 'eks.amazonaws.com/capacityType' "${temporary_directory}/ephemery-eks.yaml"
 grep -q '^ *values: \[SPOT\]$' "${temporary_directory}/ephemery-eks.yaml"
 if grep -q 'nodePort:' "${temporary_directory}/ephemery-eks.yaml"; then

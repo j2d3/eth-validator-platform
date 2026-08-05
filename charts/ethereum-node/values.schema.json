@@ -342,10 +342,12 @@
         "service": {
           "type": "object",
           "additionalProperties": false,
-          "required": ["enabled", "type", "annotations", "externalTrafficPolicy", "loadBalancerSourceRanges"],
+          "required": ["enabled", "nameSuffix", "type", "loadBalancerClass", "annotations", "externalTrafficPolicy", "loadBalancerSourceRanges"],
           "properties": {
             "enabled": {"type": "boolean"},
+            "nameSuffix": {"type": "string", "pattern": "^[a-z0-9]([-a-z0-9]*[a-z0-9])?$", "maxLength": 24},
             "type": {"enum": ["ClusterIP", "NodePort", "LoadBalancer"]},
+            "loadBalancerClass": {"type": "string", "maxLength": 253},
             "annotations": {
               "type": "object",
               "additionalProperties": {"type": "string"}

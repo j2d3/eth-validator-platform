@@ -1,0 +1,73 @@
+apiVersion: helm.toolkit.fluxcd.io/v2
+kind: HelmRelease
+metadata:
+  name: aws-load-balancer-controller
+  namespace: kube-system
+spec:
+  interval: 30m
+  timeout: 10m
+  chart:
+    spec:
+      chart: aws-load-balancer-controller
+      version: 3.5.0
+      sourceRef:
+        kind: HelmRepository
+        name: aws-eks-charts
+        namespace: flux-system
+      interval: 1h
+  install:
+    crds: CreateReplace
+    remediation:
+      retries: 3
+  upgrade:
+    crds: CreateReplace
+    remediation:
+      retries: 3
+  values:
+    clusterName: ${EKS_CLUSTER_NAME}
+    region: ${AWS_REGION}
+    vpcId: ${EKS_VPC_ID}
+    replicaCount: 2
+    image:
+      repository: public.ecr.aws/eks/aws-load-balancer-controller
+      tag: v3.5.0@sha256:298acdff5a571731276aaea3d5cc450a264e4ad710a5bddf3e518f68a3f9f6cb
+      pullPolicy: IfNotPresent
+    serviceAccount:
+      create: true
+      name: aws-load-balancer-controller
+    # The controller is selected explicitly with Service.loadBalancerClass.
+    # Do not mutate unrelated LoadBalancer Services, including operations
+    # ingress, into this controller's ownership.
+    enableServiceMutatorWebhook: false
+    createIngressClassResource: false
+    ingressClassParams:
+      create: false
+    enableShield: false
+    enableWaf: false
+    enableWafv2: false
+    defaultTags:
+      Project: eth-validator-platform
+      Environment: dev
+      ManagedBy: Flux
+    nodeSelector:
+      kubernetes.io/os: linux
+      workload: system
+    topologySpreadConstraints:
+      - maxSkew: 1
+        topologyKey: kubernetes.io/hostname
+        whenUnsatisfiable: DoNotSchedule
+        labelSelector:
+          matchLabels:
+            app.kubernetes.io/name: aws-load-balancer-controller
+    podDisruptionBudget:
+      maxUnavailable: 1
+    resources:
+      requests:
+        cpu: 100m
+        memory: 128Mi
+      limits:
+        memory: 384Mi
+    serviceMonitor:
+      enabled: true
+      namespace: kube-system
+      interval: 30s

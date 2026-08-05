@@ -41,7 +41,8 @@ waits for that signer layer before admitting validator duties.
 | Lifecycle request preparation | GitHub Actions | Opens reviewed Git changes; has no AWS credential, kubeconfig, or cluster writer |
 | Secret values | Restricted operator path to AWS Secrets Manager | Verifies only object/property presence; never prints values |
 | EKS adapter inputs | Trusted-local Terraform outputs -> `flux-system/aws-secret-store-role-arns` ConfigMap | Initially supplies only the non-secret engine reader ARN for common/node reconciliation; signer reader ARNs and distinct Web3Signer runtime/migration Pod security-group IDs are added only before the signer-only layer is resumed |
-| HTTPS ingress input | Trusted-local DNS Terraform output -> `flux-system/aws-ingress-inputs` ConfigMap | Supplies the non-secret exact-hostname ACM certificate ARN; the operations-ingress runbook creates it before controller reconciliation |
+| AWS controller inputs | Trusted-local Terraform outputs -> `flux-system/aws-ingress-inputs` ConfigMap | Supplies the non-secret cluster name, region, VPC ID, and exact-hostname ACM certificate ARN before controller reconciliation |
+| AWS Load Balancer Controller identity | Terraform EKS Pod Identity association | Binds the controller's exact `kube-system/aws-load-balancer-controller` ServiceAccount to its own IAM role; no node-role or static AWS credential fallback |
 
 ## 1. Preflight without mutation
 
@@ -204,15 +205,27 @@ esac
 
 Do not substitute the base `external_secrets_role_arn` output.
 
-The controller layer independently requires the non-secret ACM certificate ARN
-prepared by `docs/runbooks/operations-ingress.md`. Load it without printing it:
+The controller layer independently requires non-secret EKS identity inputs and
+the ACM certificate ARN prepared by `docs/runbooks/operations-ingress.md`.
+Supplying region and VPC ID explicitly keeps the AWS Load Balancer Controller
+independent of node-metadata access. Load them without printing them:
 
 ```bash
+EKS_CLUSTER_NAME="$(terraform -chdir="$TF_ROOT" output -raw cluster_name)"
+AWS_REGION="$(terraform -chdir="$TF_ROOT" output -raw aws_region)"
+EKS_VPC_ID="$(terraform -chdir="$TF_ROOT" output -raw vpc_id)"
+LOAD_BALANCER_CONTROLLER_ROLE_ARN="$(
+  terraform -chdir="$TF_ROOT" output -raw load_balancer_controller_role_arn
+)"
 OPERATIONS_CERTIFICATE_ARN="$(
   terraform -chdir=terraform/environments/dns output -raw \
     operations_acm_certificate_arn
 )"
-test -n "$OPERATIONS_CERTIFICATE_ARN"
+test -n "$EKS_CLUSTER_NAME" \
+  && test -n "$AWS_REGION" \
+  && test -n "$EKS_VPC_ID" \
+  && test -n "$LOAD_BALANCER_CONTROLLER_ROLE_ARN" \
+  && test -n "$OPERATIONS_CERTIFICATE_ARN"
 ```
 
 `optional: false` on Flux `postBuild.substituteFrom` fails reconciliation when
@@ -273,11 +286,15 @@ kubectl -n flux-system annotate configmap aws-secret-store-role-arns \
   kustomize.toolkit.fluxcd.io/prune=disabled --overwrite
 
 kubectl -n flux-system create configmap aws-ingress-inputs \
+  --from-literal=EKS_CLUSTER_NAME="$EKS_CLUSTER_NAME" \
+  --from-literal=AWS_REGION="$AWS_REGION" \
+  --from-literal=EKS_VPC_ID="$EKS_VPC_ID" \
   --from-literal=OPERATIONS_ACM_CERTIFICATE_ARN="$OPERATIONS_CERTIFICATE_ARN" \
   --dry-run=client -o yaml | kubectl apply -f -
 kubectl -n flux-system annotate configmap aws-ingress-inputs \
   kustomize.toolkit.fluxcd.io/prune=disabled --overwrite
-unset OPERATIONS_CERTIFICATE_ARN
+unset EKS_CLUSTER_NAME AWS_REGION EKS_VPC_ID \
+  LOAD_BALANCER_CONTROLLER_ROLE_ARN OPERATIONS_CERTIFICATE_ARN
 
 kubectl -n flux-system get configmap aws-secret-store-role-arns \
   -o jsonpath='{.metadata.annotations.kustomize\.toolkit\.fluxcd\.io/prune}{"\n"}'
@@ -288,7 +305,12 @@ kubectl -n flux-system get configmap aws-secret-store-role-arns \
 kubectl -n flux-system get configmap aws-ingress-inputs \
   -o json | jq -e '
     (.metadata.annotations["kustomize.toolkit.fluxcd.io/prune"] == "disabled") and
-    ((.data | keys) == ["OPERATIONS_ACM_CERTIFICATE_ARN"])
+    ((.data | keys) == [
+      "AWS_REGION",
+      "EKS_CLUSTER_NAME",
+      "EKS_VPC_ID",
+      "OPERATIONS_ACM_CERTIFICATE_ARN"
+    ])
   ' >/dev/null
 
 flux create secret git flux-system \
@@ -353,6 +375,8 @@ test "$(kubectl get clustersecretstore aws-engine-secrets -o jsonpath='{.spec.pr
 Expected after the first reconciliation:
 
 - `infrastructure-controllers` and `infrastructure-configs` are Ready;
+- `kube-system/aws-load-balancer-controller` has two Ready replicas, and its
+  Pod Identity association names only that ServiceAccount;
 - `node-apps`, `signer-infrastructure-configs`, `signer-prerequisites`, and
   `apps` report suspended;
 - the encrypted gp3 class exists and is not the default;

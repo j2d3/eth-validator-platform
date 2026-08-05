@@ -236,7 +236,11 @@ def walk_workflow_container_values(
 
 
 def image_id(repository: str, digest: str) -> str:
-    readable = re.sub(r"[^a-z0-9]+", "-", repository.lower()).strip("-")[-36:]
+    readable = (
+        re.sub(r"[^a-z0-9]+", "-", repository.lower())
+        .strip("-")[-36:]
+        .strip("-")
+    )
     suffix = hashlib.sha256(f"{repository}@sha256:{digest}".encode()).hexdigest()[:10]
     return f"{readable}-{suffix}"
 
@@ -311,6 +315,12 @@ def discover_source_images() -> tuple[dict[str, set[str]], list[CoverageGap]]:
         except OSError as error:
             raise InventoryError(f"cannot read {relative_path}: {error}") from error
         for line_number, line in enumerate(raw_lines, start=1):
+            # Helm image maps may carry a valid ``tag@sha256:digest`` in the
+            # ``tag`` field. The YAML walker below combines that value with
+            # its sibling repository; treating the tag fragment as a second
+            # standalone image would produce an unscannable subject.
+            if re.match(r"^\s*tag\s*:", line):
+                continue
             for match in PINNED_IMAGE_TOKEN_RE.finditer(line):
                 add_image(
                     discovered,

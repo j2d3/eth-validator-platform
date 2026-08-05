@@ -72,6 +72,24 @@ class ImageInventoryTests(unittest.TestCase):
         for image in images:
             self.assertRegex(image, discover_container_images.PINNED_IMAGE_RE)
 
+    def test_helm_tag_digest_is_one_scannable_subject(self) -> None:
+        matches = [
+            image
+            for image in self.inventory.images
+            if "aws-load-balancer-controller" in image.image
+        ]
+        self.assertEqual(len(matches), 1)
+        subject = matches[0]
+        self.assertEqual(
+            subject.image,
+            "public.ecr.aws/eks/aws-load-balancer-controller:v3.5.0@"
+            "sha256:298acdff5a571731276aaea3d5cc450a264e4ad710a5bddf3e518f68a3f9f6cb",
+        )
+        self.assertRegex(subject.id, r"^[a-z0-9](?:[a-z0-9-]*[a-z0-9])?$")
+        self.assertFalse(
+            any(image.repository == "v3.5.0" for image in self.inventory.images)
+        )
+
     def test_unresolved_flux_and_chart_images_remain_visible(self) -> None:
         unpinned = {
             gap.subject for gap in self.inventory.gaps if gap.kind == "unpinned-image"
@@ -94,6 +112,7 @@ class ImageInventoryTests(unittest.TestCase):
             chart_gaps,
             {
                 "alloy@1.11.0",
+                "aws-load-balancer-controller@3.5.0",
                 "cloudnative-pg@0.29.0",
                 "external-secrets@2.8.0",
                 "ingress-nginx@4.15.1",
