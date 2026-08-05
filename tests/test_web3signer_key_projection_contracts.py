@@ -76,6 +76,14 @@ class Web3SignerKeyProjectionContracts(unittest.TestCase):
                     "key": "eth-validator-platform-dev/signing/validator-keystore-03",
                     "property": "password",
                 },
+                "keystore04": {
+                    "key": "eth-validator-platform-dev/signing/validator-keystore-04",
+                    "property": "keystore",
+                },
+                "password04": {
+                    "key": "eth-validator-platform-dev/signing/validator-keystore-04",
+                    "property": "password",
+                },
             },
         )
 
@@ -95,10 +103,18 @@ class Web3SignerKeyProjectionContracts(unittest.TestCase):
             "validator-03.json",
             "validator-03.password",
             "validator-03.yaml",
+            "validator-04.json",
+            "validator-04.password",
+            "validator-04.yaml",
         })
         descriptors = {
             name: yaml.safe_load(template["data"][name])
-            for name in ("validator.yaml", "validator-02.yaml", "validator-03.yaml")
+            for name in (
+                "validator.yaml",
+                "validator-02.yaml",
+                "validator-03.yaml",
+                "validator-04.yaml",
+            )
         }
         self.assertEqual(
             descriptors,
@@ -120,6 +136,12 @@ class Web3SignerKeyProjectionContracts(unittest.TestCase):
                     "keyType": "BLS",
                     "keystoreFile": "/var/run/web3signer/keys/validator-03.json",
                     "keystorePasswordFile": "/var/run/web3signer/keys/validator-03.password",
+                },
+                "validator-04.yaml": {
+                    "type": "file-keystore",
+                    "keyType": "BLS",
+                    "keystoreFile": "/var/run/web3signer/keys/validator-04.json",
+                    "keystorePasswordFile": "/var/run/web3signer/keys/validator-04.password",
                 },
             },
         )
@@ -151,6 +173,9 @@ class Web3SignerKeyProjectionContracts(unittest.TestCase):
                     {"key": "validator-03.json", "path": "validator-03.json"},
                     {"key": "validator-03.password", "path": "validator-03.password"},
                     {"key": "validator-03.yaml", "path": "validator-03.yaml"},
+                    {"key": "validator-04.json", "path": "validator-04.json"},
+                    {"key": "validator-04.password", "path": "validator-04.password"},
+                    {"key": "validator-04.yaml", "path": "validator-04.yaml"},
                 ],
             },
         )
