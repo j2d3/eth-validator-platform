@@ -32,10 +32,10 @@ recovery evidence.
 1. `make check` passes on a clean checkout of the revision being drilled.
 2. `make rds-drill-readiness` passes, so every recovery guard the drill depends
    on is still declared in Terraform.
-3. The reviewed change that adds the drill security group and the drill signer
-   manifests has merged. Those declarations are **not** in this repository yet;
-   introducing them is a separate pull request, because merging them creates
-   AWS resources.
+3. The reviewed change that adds the drill security group, the drill-only
+   connection `ExternalSecret`, and the drill signer manifests has merged. Those
+   declarations are **not** in this repository yet; introducing them is a
+   separate pull request, because merging them creates AWS resources.
 4. A drill-only BLS key exists: generated offline, never deposited, holding no
    funds, absent from `applications/validators/` and from every Secrets Manager
    signing container.
@@ -48,22 +48,32 @@ Each gate must pass before the next begins. The order is the safety argument,
 not a convenience: signing stops before anything is recovered, and a human
 decides before anything is billed.
 
-| # | Gate | Mutates AWS | Bills | Human approval |
-|---|---|---|---|---|
-| 1 | `signing-disabled` | no | no | no |
-| 2 | `source-fingerprint` | no | no | no |
-| 3 | `human-go-no-go` | no | no | **yes** |
-| 4 | `restore-isolated-target` | yes | yes | no |
-| 5 | `schema-compatibility` | no | no | no |
-| 6 | `row-continuity` | no | no | no |
-| 7 | `conflicting-duty-rejection` | yes | yes | no |
-| 8 | `cleanup` | yes | no | no |
-| 9 | `evidence` | no | no | no |
+| # | Gate | Mutates AWS | Changes cluster state | Bills | Human approval |
+|---|---|---|---|---|---|
+| 1 | `signing-disabled` | no | **yes** | no | no |
+| 2 | `source-fingerprint` | no | no | no | no |
+| 3 | `human-go-no-go` | no | no | no | **yes** |
+| 4 | `restore-isolated-target` | yes | no | yes | no |
+| 5 | `schema-compatibility` | no | no | no | no |
+| 6 | `row-continuity` | no | no | no | no |
+| 7 | `conflicting-duty-rejection` | yes | yes | yes | no |
+| 8 | `cleanup` | yes | yes | no | no |
+| 9 | `evidence` | no | no | no | no |
+
+The two mutation columns are separate because they are different risks. Gate 1
+merges two reviewed Git changes and removes running workloads — a real change,
+and the contract records it as one — but it creates, modifies, and bills no AWS
+resource. The ordering rule the drill enforces is about AWS: nothing is created
+or billed before gate 3.
 
 ### 1. `signing-disabled`
 
 Signing stops first, in Git, and is then observed to have stopped. A drill that
 begins while a validator can still request a signature is not a drill.
+
+This gate changes desired state and removes running workloads. It creates,
+modifies, and bills no AWS resource, which is why it is allowed to run before
+the human go/no-go.
 
 1. Merge one reviewed change setting `suspend: true` in
    `clusters/dev/node-apps.yaml`. This removes the validator clients, which are
@@ -93,14 +103,27 @@ Record what recovery must reproduce, without recording anything sensitive.
    latest restorable time at or after the moment gate 1 completed.
 2. Confirm the chosen recovery point is inside the automated-backup retention
    window declared in Terraform.
-3. Run the aggregate-only fingerprint queries from the contract's
-   `verification.continuity.queries` against the **source** database over a
-   `verify-full` TLS connection, as a read-only session.
+3. Run the aggregate-only queries from the contract's
+   `verification.schema.queries` and `verification.continuity.queries` against
+   the **source** database over a `verify-full` TLS connection, as a read-only
+   session. Record every returned value; gate 5 and gate 6 compare against them.
 
-The fingerprint is counts, minima, maxima, and one salted digest. The salt is
-generated per drill, lives only in the operator session, is never committed and
-never logged, and is discarded at cleanup. It exists so that the digest can
-prove continuity without a public key entering the comparison output.
+The fingerprint is one per-table digest for each safety-bearing table, plus the
+schema-object digests. Each row is reduced to `md5(:drill_salt || row::text)`,
+so every column takes part — public key, signing root, epochs, slots, and any
+column a future migration adds — while no raw value is ever projected. The
+per-row digests are then aggregated with `md5(string_agg(..., ORDER BY ...
+COLLATE "C"))`, which is order-independent and therefore comparable across two
+databases.
+
+Everything is PostgreSQL core. The pinned Web3Signer migrations do not create
+`pgcrypto`, so `hmac()` and `digest()` do not exist on this database, and
+installing an extension would be a mutation this drill is not permitted to make.
+The preflight rejects any contract query that calls one.
+
+The salt is generated per drill, lives only in the operator session, is never
+committed and never logged, and is discarded at cleanup. It exists so that a
+digest recorded during the drill is not a lookup table for a public key.
 
 Nothing in the fingerprint output may name a validator. The preflight rejects
 any contract query whose top-level projection is not an aggregate or digest call
@@ -138,21 +161,50 @@ a previous drill.
 Point-in-time restore to a **new** instance. The source instance is not stopped,
 not modified, not rebooted, and not failed over.
 
-Required properties of the restore target:
+A point-in-time restore does **not** reproduce the source's placement,
+networking, or parameters. Unless each value is supplied on the restore call,
+AWS creates the target in a system-selected availability zone with the *default*
+VPC security group, the *default* DB subnet group, and the *default* DB
+parameter group — and the default parameter group does not set
+`rds.force_ssl = 1`, so it accepts plaintext connections. What the restore does
+carry over is storage encryption and its KMS key, the engine and version, and
+the database contents at the recovery point, including every PostgreSQL role and
+that role's password.
 
-- an identifier distinct from the source;
-- the existing isolated database subnet group, which has no internet-gateway and
-  no NAT route;
-- the drill security group only — never the live database security group;
-- `publicly_accessible = false`;
-- Single-AZ, matching the source class and storage;
-- deletion protection **off**, so gate 8 can actually delete it.
+Supply all of these explicitly, and confirm each afterwards with a read-only
+`describe-db-instances` on the restored copy before running any query:
 
-The restore inherits the source's encryption and its parameter group's TLS
-requirement. Verify both on the restored instance before using it.
+| Restore parameter | Required setting | What AWS would do if it were omitted |
+|---|---|---|
+| `--db-subnet-group-name` | the existing isolated database subnet group | the default DB subnet group |
+| `--vpc-security-group-ids` | the drill security group and nothing else | the VPC's default security group |
+| `--db-parameter-group-name` | the custom group that sets `rds.force_ssl = 1` | the engine default group, which does not force TLS |
+| `--no-publicly-accessible` | public accessibility off | derived from the subnet group, not guaranteed |
+| `--no-multi-az` | Single-AZ | the source's Multi-AZ setting |
+| `--availability-zone` | one AZ of the isolated database subnet group | a system-selected zone |
+| `--deletion-protection false` | off, so gate 8 can delete the copy | the source's setting, which is on |
+| `--backup-retention-period 0` | no recovery points of the copy's own | the source's seven days |
 
-**Abort if** the restore fails, if the identifier collides, or if the restored
-instance comes up attached to any security group that the live signer can reach.
+Then confirm the identifier is distinct from the source, that TLS is actually
+enforced by attempting a non-TLS connection and being refused, and that the
+reported backup retention is zero. If retention is not zero, set it to zero with
+an explicit modify and re-verify before proceeding.
+
+**Connecting to the copy.** The live `web3signer-database` Secrets Manager object
+and the live `ExternalSecret` and Secret it feeds are not modified, not
+repointed, and not deleted. Roles and passwords are part of the restored data, so
+the restored copy already accepts the application role the live signer uses. A
+**drill-only** `ExternalSecret` in the drill namespace reads the same Secrets
+Manager object into a Secret with a **distinct target name**, and the operator
+supplies the restored endpoint as the host at drill time — it is never committed
+and never written back to Secrets Manager. The restored copy's RDS-managed master
+credential is never read; nothing in the drill handles a password value. The
+drill Secret is deleted at gate 8.
+
+**Abort if** the restore fails, if the identifier collides, if any explicit
+parameter above is missing from the restore call or disagrees with the describe
+output, if a non-TLS connection succeeds, or if the restored instance comes up
+attached to any security group that the live signer can reach.
 
 ### 5. `schema-compatibility`
 
@@ -160,42 +212,69 @@ Prove the restored copy is a database the pinned Web3Signer image would accept,
 without migrating it.
 
 Run the contract's `verification.schema.queries` as a read-only session against
-the restored copy and require:
+the restored copy and require all of:
 
-- the applied migration version equals the version the pinned Web3Signer image
-  ships and the Flyway Job applied;
-- every migration in the history is recorded successful;
-- the table inventory matches the expected set.
+- **Flyway history**: exactly twelve applied migrations, a highest installed
+  rank of twelve, every one recorded successful, and a digest of the version set
+  exactly equal to the source's. Flyway's `version` column is a string, so the
+  count, the rank, and the digest are used rather than a lexical maximum.
+- **Web3Signer's own schema version**: exactly one row in `database_version`
+  with `version = 12`. This is the value the signer itself reads to decide
+  whether the database is one it will accept, and a complete Flyway history does
+  not imply it.
+- **The exact table inventory**: `table-inventory-digest` returns
+  `md5` of the base-table names of schema `public`, sorted under the `C`
+  collation and joined with commas, and it must equal the digest declared in the
+  contract. A count would accept seven arbitrary tables; this does not. The
+  preflight recomputes the declared digest from the declared table list, so the
+  two cannot drift apart.
+- **The slashing-critical schema objects**: the constraint, index, and
+  routine/trigger digests must each be exactly equal to the value the same query
+  returns against the source. That covers the uniqueness that actually enforces
+  safety — one row per public key in `validators`, at most one block per
+  validator per slot, at most one attestation per validator per target epoch, one
+  watermark row per validator — and it also catches an object the source does not
+  have, such as a trigger added to `signed_blocks`.
 
-Take the expected table set from the migration files inside the pinned
-Web3Signer image at drill time. The contract lists them for review, but the
-image is the authority, and the list must be re-derived if the image is bumped.
+The contract lists the expected tables and the expected uniqueness for review,
+but the pinned image's migration files are the authority. Re-derive both at drill
+time, and re-derive them again if the image is bumped; a difference is an abort,
+not an edit to the contract.
 
 Do **not** run Flyway against the restored copy. A migration that repairs the
 restored copy would destroy the thing being measured.
 
-**Abort if** the applied version differs, any migration is recorded failed, or a
-table is missing.
+**Abort if** the Flyway history is not twelve successful migrations, if
+`database_version` is not a single row of 12, if the table inventory digest
+differs from the declared digest, or if any schema-object digest differs from the
+source.
 
 ### 6. `row-continuity`
 
-Run the same aggregate-only queries used at gate 2, now against the restored
-copy, with the same salt. Compare:
+Run the same continuity queries used at gate 2, now against the restored copy,
+in the same session with the same salt. Every safety-bearing table is covered:
+`validators`, `signed_blocks`, `signed_attestations`, `low_watermarks`, and
+`metadata`.
 
-- validator row count equals the source count;
-- attestation row count is greater than or equal to the source count;
-- block row count is greater than or equal to the source count;
-- every low-watermark minimum is not lower than the source minimum;
-- the fingerprint digest equals the source digest for the rows covered by the
-  recovery point.
+**The comparison is exact equality**, per table, of both the row count and the
+aggregate digest — and of every low-watermark minimum and maximum. Not "at
+least as many rows".
 
-The inequalities are deliberate. A restore taken at a recovery point after the
-fingerprint may legitimately contain more rows; it may never contain fewer, and
-a watermark may never move backwards. A lowered watermark is the specific shape
-of corruption that would let a recovered signer re-sign history.
+Signing stopped at gate 1, the source fingerprint was taken after that, and the
+recovery point is at or after the same moment. No row can therefore legitimately
+differ, so any difference at all is a failure. Tolerating "more rows than the
+source" would also mean tolerating a *replaced* interior row, which counts,
+minima, and maxima cannot see: a signed attestation whose signing root changed
+leaves the count unmoved. The per-row digest sees it.
 
-**Abort if** any comparison fails. A restored copy that lost a row is not a
-signing authority, and no amount of subsequent testing makes it one.
+A lowered watermark is the specific shape of corruption that would let a
+recovered signer re-sign history, so the watermark extents are compared as well
+as digested — a digest mismatch says something changed, and the extents say
+whether a watermark moved and in which direction.
+
+**Abort if** any count, digest, or extent differs. A restored copy that lost,
+gained, or altered a row is not a signing authority, and no amount of subsequent
+testing makes it one.
 
 ### 7. `conflicting-duty-rejection`
 
@@ -208,8 +287,9 @@ never sees — which is exactly the divergence the drill exists to rule out. So
 continuity is proven by comparison (gate 6) and enforcement is proven separately
 on a key with no live history.
 
-1. Start the drill Web3Signer instance. It is bound to the restored copy only.
-   It has no beacon connection, no validator client, and no publication path.
+1. Start the drill Web3Signer instance. It is bound to the restored copy only,
+   through the drill-only connection Secret and never the live one. It has no
+   beacon connection, no validator client, and no publication path.
 2. Load only the drill-only key.
 3. Request one attestation signature for a chosen source and target epoch
    through the signer's HTTP API. Expect success.
@@ -228,14 +308,18 @@ disabled and open an issue before anything else.
 Cleanup runs whether the drill passed, failed, or was aborted.
 
 1. Delete the drill signer and its namespace.
-2. Delete the drill-only key material.
-3. Delete the restored instance with no final snapshot and no retained automated
-   backups. It is a copy; retaining it doubles the number of places slashing
-   history lives, which is a liability, not a backup.
-4. Delete the drill security group.
-5. Discard the fingerprint salt.
-6. Confirm by read-only describe calls that no drill-named resource remains.
-7. Record observed cost against the estimate.
+2. Delete the drill-only connection `ExternalSecret` and the Secret it created.
+   The live credential path is untouched throughout, so there is nothing to
+   restore.
+3. Delete the drill-only key material.
+4. Delete the restored instance with `--skip-final-snapshot` and
+   `--delete-automated-backups`. It is a copy; retaining it doubles the number
+   of places slashing history lives, which is a liability, not a backup.
+5. Delete the drill security group.
+6. Discard the fingerprint salt.
+7. Confirm by read-only describe calls that no drill-named instance, snapshot,
+   automated backup, or security group remains.
+8. Record observed cost against the estimate.
 
 The drill target's maximum lifetime is six hours. Exceeding it is an abort
 condition in its own right, because an unattended restored copy of slashing
@@ -271,7 +355,7 @@ current regional prices then.
 |---|---|---|
 | Restored instance hours | one small instance, ≤ 6 h | well under USD 1 |
 | Restored storage | 20 GiB `gp3`, prorated | cents |
-| Incremental backup storage | only if the copy is retained, which cleanup forbids | none |
+| Backup storage for the copy | retention supplied as 0 on the restore call | none |
 | Data transfer | in-VPC, same region | none |
 
 The source instance is neither stopped nor modified, so the drill adds nothing
@@ -294,8 +378,10 @@ before the recovery is needed.
 ## What a passing drill would establish
 
 That, for this environment and this recovery point, a point-in-time restore
-produces a database with the expected Web3Signer schema, no lost slashing
-records, no reversed watermark, and working conflicting-duty enforcement.
+produces a database whose schema objects and Web3Signer schema version are the
+ones the pinned image expects, whose slashing records match the frozen source row
+for row across every safety-bearing table, and which still refuses a conflicting
+duty.
 
 ## What a passing drill would not establish
 

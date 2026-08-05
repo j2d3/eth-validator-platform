@@ -99,7 +99,7 @@ class DrillContractTests(unittest.TestCase):
         signing = next(
             gate for gate in contract["gates"] if gate["id"] == "signing-disabled"
         )
-        signing["mutating"] = True
+        signing["mutates_aws"] = True
 
         self.assertEqual(
             failed(preflight.run_checks(contract, ROOT)),
@@ -108,6 +108,37 @@ class DrillContractTests(unittest.TestCase):
                 "gates/signing-off-before-restore",
             },
         )
+
+    def test_signing_off_may_change_cluster_state_before_the_human_gate(self) -> None:
+        signing = next(
+            gate for gate in self.contract["gates"] if gate["id"] == "signing-disabled"
+        )
+
+        # The distinction is the point: suspending the layers removes running
+        # workloads, and the contract says so, but it creates no AWS resource.
+        self.assertIs(signing["mutates_cluster_state"], True)
+        self.assertIs(signing["mutates_aws"], False)
+        self.assertIs(signing["incurs_aws_cost"], False)
+        self.assertEqual(failed(preflight.run_checks(self.contract, ROOT)), set())
+
+    def test_a_signing_off_gate_that_hides_its_workload_effect_is_rejected(self) -> None:
+        contract = self.mutated()
+        signing = next(
+            gate for gate in contract["gates"] if gate["id"] == "signing-disabled"
+        )
+        signing["mutates_cluster_state"] = False
+
+        self.assertIn(
+            "gates/signing-off-declares-its-workload-effect",
+            failed(preflight.run_checks(contract, ROOT)),
+        )
+
+    def test_a_gate_missing_an_effect_flag_is_a_hard_error(self) -> None:
+        contract = self.mutated()
+        del contract["gates"][0]["mutates_cluster_state"]
+
+        with self.assertRaises(preflight.DrillContractError):
+            preflight.run_checks(contract, ROOT)
 
     def test_billing_before_the_human_gate_is_rejected(self) -> None:
         contract = self.mutated()
@@ -144,7 +175,7 @@ class DrillContractTests(unittest.TestCase):
         restore = next(
             gate for gate in contract["gates"] if gate["id"] == "restore-isolated-target"
         )
-        restore["mutating"] = False
+        restore["mutates_aws"] = False
 
         self.assertIn(
             "gates/restore-is-declared-mutating",
@@ -213,6 +244,326 @@ class DrillContractTests(unittest.TestCase):
 
         with self.assertRaises(preflight.DrillContractError):
             preflight.run_checks(contract, ROOT)
+
+
+class RestoreTargetTests(unittest.TestCase):
+    """A point-in-time restore inherits none of the source's safety posture."""
+
+    def setUp(self) -> None:
+        self.contract = preflight.load_contract(CONTRACT_PATH)
+
+    def mutated(self) -> dict:
+        return copy.deepcopy(self.contract)
+
+    def test_every_unsafe_aws_default_is_overridden_explicitly(self) -> None:
+        declared = {
+            parameter["id"]
+            for parameter in self.contract["restore_target"]["explicit_restore_parameters"]
+        }
+
+        self.assertEqual(preflight.REQUIRED_RESTORE_PARAMETERS - declared, set())
+        for parameter in self.contract["restore_target"]["explicit_restore_parameters"]:
+            with self.subTest(parameter=parameter["id"]):
+                # The stated AWS default is the reason the value must be given.
+                self.assertTrue(parameter["default_if_omitted"].strip())
+
+    def test_dropping_the_tls_parameter_group_is_rejected(self) -> None:
+        contract = self.mutated()
+        target = contract["restore_target"]
+        target["explicit_restore_parameters"] = [
+            parameter
+            for parameter in target["explicit_restore_parameters"]
+            if parameter["id"] != "db-parameter-group-name"
+        ]
+
+        self.assertIn(
+            "targets/restore-parameters-are-explicit",
+            failed(preflight.run_checks(contract, ROOT)),
+        )
+
+    def test_dropping_the_isolated_subnet_group_is_rejected(self) -> None:
+        contract = self.mutated()
+        target = contract["restore_target"]
+        target["explicit_restore_parameters"] = [
+            parameter
+            for parameter in target["explicit_restore_parameters"]
+            if parameter["id"] != "db-subnet-group-name"
+        ]
+
+        self.assertIn(
+            "targets/restore-parameters-are-explicit",
+            failed(preflight.run_checks(contract, ROOT)),
+        )
+
+    def test_a_restore_that_is_never_re_verified_is_rejected(self) -> None:
+        contract = self.mutated()
+        contract["restore_target"]["post_restore_verification"] = []
+
+        self.assertIn(
+            "targets/restore-parameters-are-explicit",
+            failed(preflight.run_checks(contract, ROOT)),
+        )
+
+    def test_repointing_the_live_credential_is_rejected(self) -> None:
+        contract = self.mutated()
+        contract["restore_target"]["credentials"]["live_external_secret_repoint"] = (
+            "permitted"
+        )
+
+        self.assertIn(
+            "targets/target-credentials-are-isolated",
+            failed(preflight.run_checks(contract, ROOT)),
+        )
+
+    def test_reading_the_target_master_credential_is_rejected(self) -> None:
+        contract = self.mutated()
+        contract["restore_target"]["credentials"]["master_credential"][
+            "read_by_operator"
+        ] = True
+
+        self.assertIn(
+            "targets/target-credentials-are-isolated",
+            failed(preflight.run_checks(contract, ROOT)),
+        )
+
+    def test_a_drill_secret_that_outlives_the_drill_is_rejected(self) -> None:
+        contract = self.mutated()
+        contract["restore_target"]["credentials"]["drill_secret"][
+            "deleted_at_cleanup"
+        ] = False
+
+        self.assertIn(
+            "targets/target-credentials-are-isolated",
+            failed(preflight.run_checks(contract, ROOT)),
+        )
+
+    def test_a_target_that_keeps_its_own_backups_is_rejected(self) -> None:
+        contract = self.mutated()
+        contract["restore_target"]["backup"]["target_backup_retention_days"] = 7
+
+        self.assertIn(
+            "targets/target-backups-are-not-retained",
+            failed(preflight.run_checks(contract, ROOT)),
+        )
+
+    def test_deleting_the_target_without_dropping_its_backups_is_rejected(self) -> None:
+        contract = self.mutated()
+        contract["restore_target"]["backup"]["delete_flags"] = ["skip-final-snapshot"]
+
+        self.assertIn(
+            "targets/target-backups-are-not-retained",
+            failed(preflight.run_checks(contract, ROOT)),
+        )
+
+    def test_a_target_without_a_credentials_plan_is_a_hard_error(self) -> None:
+        contract = self.mutated()
+        del contract["restore_target"]["credentials"]
+
+        with self.assertRaises(preflight.DrillContractError):
+            preflight.run_checks(contract, ROOT)
+
+
+class SchemaEvidenceTests(unittest.TestCase):
+    """Schema evidence has to pin objects, not count tables."""
+
+    def setUp(self) -> None:
+        self.contract = preflight.load_contract(CONTRACT_PATH)
+
+    def mutated(self) -> dict:
+        return copy.deepcopy(self.contract)
+
+    def test_the_declared_table_digest_matches_the_declared_table_set(self) -> None:
+        schema = self.contract["verification"]["schema"]
+
+        self.assertEqual(
+            schema["expected_table_digest"],
+            preflight.table_inventory_digest(schema["expected_tables"]),
+        )
+
+    def test_seven_arbitrary_tables_cannot_satisfy_the_inventory(self) -> None:
+        contract = self.mutated()
+        schema = contract["verification"]["schema"]
+        schema["expected_tables"] = [
+            f"table_{index}" for index in range(len(schema["expected_tables"]))
+        ]
+
+        # Same count, different tables: the digest no longer matches.
+        self.assertIn(
+            "verification/schema-inventory-digest",
+            failed(preflight.run_checks(contract, ROOT)),
+        )
+
+    def test_a_stale_table_digest_is_rejected(self) -> None:
+        contract = self.mutated()
+        contract["verification"]["schema"]["expected_table_digest"] = "0" * 32
+
+        self.assertIn(
+            "verification/schema-inventory-digest",
+            failed(preflight.run_checks(contract, ROOT)),
+        )
+
+    def test_the_web3signer_schema_version_is_pinned_to_twelve(self) -> None:
+        schema = self.contract["verification"]["schema"]
+
+        self.assertEqual(schema["expected_database_version"], 12)
+        self.assertEqual(schema["expected_migration_count"], 12)
+        self.assertIn(
+            "database_version_value equals 12",
+            " ".join(" ".join(schema["pass_conditions"]).split()),
+        )
+
+    def test_disagreeing_version_anchors_are_rejected(self) -> None:
+        contract = self.mutated()
+        contract["verification"]["schema"]["expected_database_version"] = 11
+
+        self.assertIn(
+            "verification/schema-version-anchors",
+            failed(preflight.run_checks(contract, ROOT)),
+        )
+
+    def test_dropping_the_database_version_query_is_rejected(self) -> None:
+        contract = self.mutated()
+        schema = contract["verification"]["schema"]
+        schema["queries"] = [
+            query for query in schema["queries"] if query["id"] != "database-version-row"
+        ]
+
+        self.assertIn(
+            "verification/schema-version-anchors",
+            failed(preflight.run_checks(contract, ROOT)),
+        )
+
+    def test_dropping_a_slashing_critical_object_is_rejected(self) -> None:
+        contract = self.mutated()
+        schema = contract["verification"]["schema"]
+        schema["slashing_critical_objects"] = [
+            entry
+            for entry in schema["slashing_critical_objects"]
+            if entry["table"] != "signed_attestations"
+        ]
+
+        self.assertIn(
+            "verification/slashing-critical-objects-declared",
+            failed(preflight.run_checks(contract, ROOT)),
+        )
+
+    def test_a_declared_object_outside_the_table_inventory_is_rejected(self) -> None:
+        contract = self.mutated()
+        contract["verification"]["schema"]["slashing_critical_objects"].append(
+            {
+                "table": "not_a_web3signer_table",
+                "unique_keys": [{"columns": ["id"], "enforces": "nothing real"}],
+            }
+        )
+
+        self.assertIn(
+            "verification/slashing-critical-objects-declared",
+            failed(preflight.run_checks(contract, ROOT)),
+        )
+
+
+class ContinuityCoverageTests(unittest.TestCase):
+    """Continuity is exact, salted, core-only, and covers every safety table."""
+
+    def setUp(self) -> None:
+        self.contract = preflight.load_contract(CONTRACT_PATH)
+
+    def mutated(self) -> dict:
+        return copy.deepcopy(self.contract)
+
+    def test_every_safety_bearing_table_has_a_digest_query(self) -> None:
+        continuity = self.contract["verification"]["continuity"]
+        query_ids = {query["id"] for query in continuity["queries"]}
+
+        for table in sorted(preflight.SAFETY_BEARING_TABLES):
+            with self.subTest(table=table):
+                self.assertIn(table, continuity["covered_tables"])
+                self.assertIn(f"{table.replace('_', '-')}-digest", query_ids)
+
+    def test_dropping_a_safety_bearing_table_is_rejected(self) -> None:
+        contract = self.mutated()
+        continuity = contract["verification"]["continuity"]
+        continuity["covered_tables"] = [
+            table for table in continuity["covered_tables"] if table != "low_watermarks"
+        ]
+
+        self.assertIn(
+            "verification/continuity-covers-every-safety-table",
+            failed(preflight.run_checks(contract, ROOT)),
+        )
+
+    def test_a_covered_table_without_a_digest_query_is_rejected(self) -> None:
+        contract = self.mutated()
+        continuity = contract["verification"]["continuity"]
+        continuity["queries"] = [
+            query for query in continuity["queries"] if query["id"] != "metadata-digest"
+        ]
+
+        self.assertIn(
+            "verification/continuity-covers-every-safety-table",
+            failed(preflight.run_checks(contract, ROOT)),
+        )
+
+    def test_tolerating_extra_rows_is_rejected(self) -> None:
+        contract = self.mutated()
+        continuity = contract["verification"]["continuity"]
+        continuity["pass_conditions"].append(
+            "restored signed_blocks_rows is greater than or equal to the source value"
+        )
+
+        self.assertIn(
+            "verification/continuity-requires-exact-equality",
+            failed(preflight.run_checks(contract, ROOT)),
+        )
+
+    def test_a_non_exact_comparison_is_rejected(self) -> None:
+        contract = self.mutated()
+        contract["verification"]["continuity"]["comparison"] = "at-least"
+
+        self.assertIn(
+            "verification/continuity-requires-exact-equality",
+            failed(preflight.run_checks(contract, ROOT)),
+        )
+
+    def test_an_unsalted_digest_is_rejected(self) -> None:
+        contract = self.mutated()
+        continuity = contract["verification"]["continuity"]
+        query = next(
+            item for item in continuity["queries"] if item["id"] == "validators-digest"
+        )
+        query["sql"] = query["sql"].replace(":drill_salt || ", "")
+
+        self.assertIn(
+            "verification/digests-are-salted",
+            failed(preflight.run_checks(contract, ROOT)),
+        )
+
+    def test_no_query_depends_on_an_extension_the_migrations_do_not_create(
+        self,
+    ) -> None:
+        verification = self.contract["verification"]
+        for section in ("schema", "continuity"):
+            for query in verification[section]["queries"]:
+                with self.subTest(query=query["id"]):
+                    for function in preflight.NON_CORE_FUNCTIONS:
+                        self.assertNotIn(f"{function}(", query["sql"])
+
+    def test_reintroducing_a_pgcrypto_digest_is_rejected(self) -> None:
+        contract = self.mutated()
+        continuity = contract["verification"]["continuity"]
+        query = next(
+            item for item in continuity["queries"] if item["id"] == "validators-digest"
+        )
+        # `pgcrypto` is not created by the pinned migrations, so this would fail
+        # at drill time on a database the drill may not alter.
+        query["sql"] = query["sql"].replace(
+            "md5(:drill_salt || t::text)",
+            "encode(hmac(t::text, :drill_salt, 'sha256'), 'hex')",
+        )
+
+        self.assertIn(
+            "query/validators-digest", failed(preflight.run_checks(contract, ROOT))
+        )
 
 
 class TerraformGuardTests(unittest.TestCase):
@@ -308,15 +659,74 @@ class VerificationQueryTests(unittest.TestCase):
     def test_unaliased_projection_is_rejected(self) -> None:
         self.assertFalse(self.check("SELECT count(*) FROM validators").passed)
 
-    def test_nested_aggregate_over_a_hashed_column_is_accepted(self) -> None:
+    def test_nested_aggregate_over_a_salted_core_digest_is_accepted(self) -> None:
         sql = (
             "SELECT count(*) AS covered_rows, "
-            "md5(string_agg(row_digest, ',' ORDER BY row_digest)) AS digest "
+            "md5(string_agg(row_digest, ',' ORDER BY row_digest COLLATE \"C\")) "
+            "AS covered_digest "
+            "FROM (SELECT md5(:drill_salt || v::text) AS row_digest "
+            "FROM validators v) AS covered"
+        )
+
+        self.assertTrue(self.check(sql).passed)
+
+    def test_a_pgcrypto_digest_is_rejected(self) -> None:
+        # The pinned Web3Signer migrations do not create pgcrypto, so hmac() is
+        # unavailable and reaching for it would mean installing an extension.
+        result = self.check(
+            "SELECT count(*) AS covered_rows, "
+            "md5(string_agg(row_digest, ',' ORDER BY row_digest)) AS covered_digest "
             "FROM (SELECT encode(hmac(v.public_key::text, :salt, 'sha256'), 'hex') "
             "AS row_digest FROM validators v) AS covered"
         )
 
-        self.assertTrue(self.check(sql).passed)
+        self.assertFalse(result.passed)
+        self.assertIn("hmac()", result.detail)
+
+
+class ContractLoadingTests(unittest.TestCase):
+    """A safety flag may not depend on which duplicated line wins."""
+
+    def load(self, text: str) -> dict:
+        with tempfile.TemporaryDirectory() as directory:
+            path = Path(directory) / "contract.yaml"
+            path.write_text(text, encoding="utf-8")
+            return preflight.load_contract(path)
+
+    def test_a_duplicate_key_is_rejected_rather_than_silently_overridden(self) -> None:
+        text = (
+            "apiVersion: platform.galaxy-lab/v1\n"
+            "kind: SlashingRecoveryDrillContract\n"
+            "gates:\n"
+            "  - id: conflicting-duty-rejection\n"
+            "    incurs_aws_cost: true\n"
+            "    incurs_aws_cost: false\n"
+        )
+
+        with self.assertRaises(preflight.DrillContractError) as raised:
+            self.load(text)
+
+        self.assertIn("duplicate key 'incurs_aws_cost'", str(raised.exception))
+
+    def test_a_duplicate_top_level_key_is_rejected(self) -> None:
+        text = (
+            "apiVersion: platform.galaxy-lab/v1\n"
+            "kind: SlashingRecoveryDrillContract\n"
+            "status:\n"
+            "  executed: false\n"
+            "status:\n"
+            "  executed: true\n"
+        )
+
+        with self.assertRaises(preflight.DrillContractError):
+            self.load(text)
+
+    def test_the_checked_in_contract_has_no_duplicate_key(self) -> None:
+        # PyYAML would have kept the last value; this loader would have raised.
+        self.assertEqual(
+            preflight.load_contract(CONTRACT_PATH)["metadata"]["name"],
+            "rds-slashing-recovery-drill",
+        )
 
 
 class RedactionTests(unittest.TestCase):
@@ -414,6 +824,22 @@ class DrillSourceCodeTests(unittest.TestCase):
         self.assertIn("the drill has never been run", runbook)
         self.assertIn("Live signing is unchanged", runbook)
         self.assertIn("It is never part of the drill session", runbook)
+
+    def test_the_runbook_does_not_claim_the_restore_inherits_tls(self) -> None:
+        runbook = " ".join(RUNBOOK_PATH.read_text(encoding="utf-8").split())
+
+        self.assertNotIn("parameter group's TLS requirement", runbook)
+        self.assertIn(
+            "A point-in-time restore does **not** reproduce the source's "
+            "placement, networking, or parameters",
+            runbook,
+        )
+
+    def test_the_runbook_keeps_the_live_credential_path_untouched(self) -> None:
+        runbook = " ".join(RUNBOOK_PATH.read_text(encoding="utf-8").split())
+
+        self.assertIn("not modified, not repointed, and not deleted", runbook)
+        self.assertIn("distinct target name", runbook)
 
 
 if __name__ == "__main__":

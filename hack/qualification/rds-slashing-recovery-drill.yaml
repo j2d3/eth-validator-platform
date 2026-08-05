@@ -7,14 +7,15 @@
 # opens no AWS API call, no PostgreSQL connection, and reads no secret value.
 #
 # Executing the drill requires a separate reviewed change that adds the drill
-# security group and drill signer manifests. Those declarations are deliberately
-# absent here so that merging this contract creates no AWS resource.
+# security group, the drill-only connection ExternalSecret, and the drill signer
+# manifests. Those declarations are deliberately absent here so that merging
+# this contract creates no AWS resource.
 apiVersion: platform.galaxy-lab/v1
 kind: SlashingRecoveryDrillContract
 
 metadata:
   name: rds-slashing-recovery-drill
-  revision: 1
+  revision: 2
   environment: dev
   tracking_issue: 180
   runbook: docs/runbooks/rds-slashing-recovery-drill.md
@@ -30,13 +31,15 @@ source:
   terraform_resource: aws_db_instance.web3signer
   access: read-only
   mutation_allowed: false
-  # The drill reads the source instance's recovery-point metadata and one
-  # aggregate fingerprint. It never writes to it, never restarts it, and never
-  # changes its parameter group, security group, or backup configuration.
+  # The drill reads the source instance's recovery-point metadata, its schema
+  # digests, and its continuity digests. It never writes to it, never restarts
+  # it, and never changes its parameter group, security group, or backup
+  # configuration.
   permitted_source_operations:
     - describe-db-instances
     - describe-db-instance-automated-backups
-    - aggregate-only fingerprint query over the slashing-protection schema
+    - aggregate-only schema and continuity digest queries over the
+      slashing-protection schema
 
 restore_target:
   identifier_template: "{source_identifier}-drill-{utc_date}"
@@ -44,10 +47,106 @@ restore_target:
   restore_type: point-in-time
   publicly_accessible: false
   multi_az: false
+  # A point-in-time restore does not reproduce the source's placement,
+  # networking, or parameters. AWS creates the target in a system-selected
+  # availability zone with the *default* VPC security group, DB subnet group,
+  # and DB parameter group unless each value is supplied on the restore call.
+  # The default parameter group does not carry `rds.force_ssl = 1`, so a restore
+  # that omits it accepts plaintext connections.
+  inherited_from_source:
+    - storage encryption and its KMS key
+    - engine and engine version
+    - the database contents at the recovery point, including every PostgreSQL
+      role and that role's password
+  not_inherited_from_source:
+    - db parameter group, so TLS enforcement is not inherited
+    - VPC security groups
+    - DB subnet group
+    - availability zone
+    - deletion protection
+    - backup retention period
+  # Every parameter below must be supplied explicitly on the restore call. The
+  # preflight fails if any is missing, so a silently dropped value fails the
+  # drill contract rather than being discovered on a running restored copy.
+  explicit_restore_parameters:
+    - id: db-subnet-group-name
+      value: the same isolated database subnet group the source uses, which has
+        no internet-gateway and no NAT route
+      terraform_reference: module.vpc.database_subnet_group_name
+      default_if_omitted: the account's default DB subnet group
+    - id: vpc-security-group-ids
+      value: the drill-only security group and nothing else
+      note: added by the separate reviewed change
+      default_if_omitted: the VPC's default security group
+    - id: db-parameter-group-name
+      value: the custom Web3Signer parameter group that sets rds.force_ssl = 1
+      terraform_reference: aws_db_parameter_group.web3signer
+      default_if_omitted: the engine default group, which does not force TLS
+    - id: no-publicly-accessible
+      value: public accessibility off
+      note: matches publicly_accessible = false on the source
+      default_if_omitted: derived from the subnet group, not guaranteed
+    - id: no-multi-az
+      value: Single-AZ
+      note: matches multi_az = false on the source
+      default_if_omitted: the source's Multi-AZ setting
+    - id: availability-zone
+      value: one availability zone of the isolated database subnet group,
+        supplied explicitly rather than system-selected
+      terraform_reference: local.azs[var.rds_availability_zone_index]
+      default_if_omitted: a system-selected zone
+    - id: deletion-protection
+      value: "false"
+      note: deliberately opposite to the source, so cleanup can delete the copy
+      default_if_omitted: the source's deletion-protection setting
+    - id: backup-retention-period
+      value: "0"
+      note: deliberately opposite to the source, so the copy creates no
+        further recovery points
+      default_if_omitted: the source's retention period
+  post_restore_verification:
+    # Read-only describe calls on the restored copy before any query runs.
+    - the restored copy reports the isolated DB subnet group
+    - the restored copy reports the drill security group and no other
+    - the restored copy reports the custom parameter group with rds.force_ssl = 1
+      in effect, and the connection is refused without TLS
+    - the restored copy reports publicly_accessible false and Multi-AZ false
+    - the restored copy reports deletion protection off
+    - the restored copy reports backup retention 0
+  credentials:
+    # The drill never touches the live credential path.
+    live_secret_mutation: forbidden
+    live_external_secret_repoint: forbidden
+    role: the restored copy's own application role. Roles and their passwords
+      are part of the restored data, so the restored copy accepts exactly the
+      username and password the live application already uses.
+    drill_secret:
+      target_name: distinct from every live target Secret name
+      namespace: the drill namespace only
+      username_password_source: the existing Secrets Manager connection object,
+        read through a drill-only ExternalSecret with a distinct target name
+      host_source: supplied by the operator at drill time from the restored
+        endpoint; never committed and never written back to Secrets Manager
+      deleted_at_cleanup: true
+    master_credential:
+      read_by_operator: false
+      handling: the restored copy's RDS-managed master credential is never read.
+        The drill uses the restored application role only, so no password value
+        is handled by a human or written to a file.
+  backup:
+    target_backup_retention_days: 0
+    verified_by: describe-db-instances on the restored copy before any query
+    on_mismatch: set to zero by an explicit modify, and re-verified, before the
+      drill proceeds
+    delete_flags:
+      - skip-final-snapshot
+      - delete-automated-backups
+    retained_after_cleanup: nothing
   network:
     subnet_group: the existing isolated database subnet group, which has no
-      internet-gateway and no NAT route
-    security_group: a dedicated drill security group added by a reviewed change
+      internet-gateway and no NAT route, supplied explicitly on the restore call
+    security_group: a dedicated drill security group added by a reviewed change,
+      supplied explicitly on the restore call
     ingress_from_live_signer_group: forbidden
     ingress_from_live_migration_group: forbidden
   lifecycle:
@@ -126,15 +225,15 @@ required_terraform_guards:
     scope: resource:aws_db_instance.web3signer
     expect: "publicly_accessible = false"
     rationale: >-
-      The restore target inherits the isolated database subnet group; the source
-      posture is the baseline it must not regress from.
+      The restore target must supply publicly_accessible false explicitly; the
+      source posture is the baseline it must not regress from.
   - id: isolated-subnet-group
     terraform_file: signer-foundation.tf
     scope: resource:aws_db_instance.web3signer
     expect: "db_subnet_group_name = module.vpc.database_subnet_group_name"
     rationale: >-
-      The restore target reuses this subnet group, which has no internet-gateway
-      and no NAT route.
+      The restore target must name this subnet group explicitly, because a
+      point-in-time restore otherwise lands in the default subnet group.
   - id: tls-parameter-declared
     terraform_file: signer-foundation.tf
     scope: resource:aws_db_parameter_group.web3signer
@@ -148,75 +247,107 @@ required_terraform_guards:
     rationale: >-
       Declaring the parameter without enabling it would leave plaintext
       connections possible on the restored copy.
+  - id: tls-parameter-group-attached
+    terraform_file: signer-foundation.tf
+    scope: resource:aws_db_instance.web3signer
+    expect: "parameter_group_name = aws_db_parameter_group.web3signer.name"
+    rationale: >-
+      The restore call supplies this parameter group by name. If the source
+      stopped using it, the value the drill supplies would be stale.
+  - id: source-single-az
+    terraform_file: signer-foundation.tf
+    scope: resource:aws_db_instance.web3signer
+    expect: "multi_az = false"
+    rationale: >-
+      The restore target is Single-AZ by explicit parameter, matching the shape
+      the drill costs and the source it is compared against.
   - id: master-password-not-in-state
     terraform_file: signer-foundation.tf
     scope: resource:aws_db_instance.web3signer
     expect: "manage_master_user_password = true"
     rationale: >-
-      The restored instance's master credential is managed by RDS, so the drill
-      never handles a password value.
+      The master credential is managed by RDS on both the source and the
+      restored copy, and the drill reads neither: it connects as the restored
+      application role.
 
 # Ordered. The preflight tool enforces this exact relative order, enforces that
-# no gate before `human-go-no-go` is mutating or billable, and enforces that
+# no gate before `human-go-no-go` mutates AWS or bills, and enforces that
 # `signing-disabled` precedes any restore.
+#
+# `mutates_aws` and `mutates_cluster_state` are separate on purpose. Stopping
+# signing changes Git and removes running workloads — that is a real mutation,
+# and the contract says so — but it creates, modifies, and bills no AWS
+# resource. The ordering rule that matters is about AWS mutation and cost.
 gates:
   - id: signing-disabled
     title: Signing is off and observed to be off
-    mutating: false
+    mutates_aws: false
+    mutates_cluster_state: true
     incurs_aws_cost: false
     requires_human_approval: false
     summary: >-
       Suspend the signer and node application layers in Git, confirm zero
       Web3Signer and validator-client Pods, and confirm the signer's permitted
-      and prevented counters are static before any recovery action.
+      and prevented counters are static before any recovery action. This merges
+      two reviewed changes and removes running workloads; it creates and
+      modifies no AWS resource.
   - id: source-fingerprint
     title: Non-sensitive source fingerprint and recovery point recorded
-    mutating: false
+    mutates_aws: false
+    mutates_cluster_state: false
     incurs_aws_cost: false
     requires_human_approval: false
     summary: >-
-      Record the latest restorable time and one aggregate-only fingerprint of
-      the slashing-protection schema. No public key, signing root, or row value
-      leaves the query session.
+      Record the latest restorable time, the source schema digests, and the
+      source continuity digests for every safety-bearing table. No public key,
+      signing root, or row value leaves the query session.
   - id: human-go-no-go
     title: Explicit human go/no-go on exact targets and estimated cost
-    mutating: false
+    mutates_aws: false
+    mutates_cluster_state: false
     incurs_aws_cost: false
     requires_human_approval: true
     summary: >-
       A named operator reviews the exact restore identifier, the exact recovery
-      point, the estimated cost, and the cleanup plan, then records an explicit
-      go or no-go. No AWS mutation happens before this gate passes.
+      point, every explicit restore parameter, the estimated cost, and the
+      cleanup plan, then records an explicit go or no-go. No AWS mutation
+      happens before this gate passes.
   - id: restore-isolated-target
     title: Restore into a separate isolated target only
-    mutating: true
+    mutates_aws: true
+    mutates_cluster_state: false
     incurs_aws_cost: true
     requires_human_approval: false
     summary: >-
       Point-in-time restore to a new instance whose identifier differs from the
-      source, in the isolated database subnet group, attached to the drill
-      security group only. The source instance is untouched.
+      source, with every explicit restore parameter supplied and then verified
+      by describe calls. The source instance is untouched.
   - id: schema-compatibility
     title: Web3Signer schema compatibility proven on the restored copy
-    mutating: false
+    mutates_aws: false
+    mutates_cluster_state: false
     incurs_aws_cost: false
     requires_human_approval: false
     summary: >-
-      Confirm the restored copy carries the same applied migration version and
-      the same table and constraint set that the pinned Web3Signer image
-      expects, without running a migration against it.
+      Prove the restored copy carries the exact table inventory, the exact
+      slashing-critical schema objects, a successful twelve-migration Flyway
+      history, and Web3Signer's own database_version of 12, without running a
+      migration against it.
   - id: row-continuity
-    title: Slashing-record continuity proven by aggregate comparison
-    mutating: false
+    title: Slashing-record continuity proven by exact digest equality
+    mutates_aws: false
+    mutates_cluster_state: false
     incurs_aws_cost: false
     requires_human_approval: false
     summary: >-
-      Compare the restored copy's aggregate fingerprint with the source
-      fingerprint recorded at `source-fingerprint`. Any missing validator row,
-      lowered watermark, or reduced attestation or block count fails the drill.
+      Compare the restored copy's per-table digests with the source digests
+      recorded at `source-fingerprint`. Signing was frozen before that
+      fingerprint, so every count and digest must be exactly equal; any
+      difference at all fails the drill.
   - id: conflicting-duty-rejection
     title: Conflicting-duty rejection proven with a drill-only key
-    mutating: true
+    mutates_aws: true
+    mutates_cluster_state: true
     incurs_aws_cost: true
     requires_human_approval: false
     summary: >-
@@ -226,15 +357,18 @@ gates:
       message is published.
   - id: cleanup
     title: Drill resources deleted and cost accounted
-    mutating: true
+    mutates_aws: true
+    mutates_cluster_state: true
     incurs_aws_cost: false
     requires_human_approval: false
     summary: >-
-      Delete the drill signer, the drill instance without a final snapshot, and
-      the drill security group. Record observed cost against the estimate.
+      Delete the drill signer, the drill connection Secret, the drill instance
+      without a final snapshot and without retained automated backups, and the
+      drill security group. Record observed cost against the estimate.
   - id: evidence
     title: Redacted evidence record published
-    mutating: false
+    mutates_aws: false
+    mutates_cluster_state: false
     incurs_aws_cost: false
     requires_human_approval: false
     summary: >-
@@ -243,12 +377,23 @@ gates:
       public key, or account reference.
 
 verification:
+  # Every query is read-only, uses PostgreSQL core functions only, and projects
+  # aggregates or digests only. `pgcrypto` is not created by the pinned
+  # migrations, so `hmac` and `digest` are unavailable on this database and
+  # installing an extension would be a mutation the drill is not permitted to
+  # make. `md5` is core and is what the digests use.
   schema:
-    expected_migration_version: "12"
-    migration_source: the pinned Web3Signer image's PostgreSQL migrations, as
-      applied by the Flyway Job
-    # Table names come from the migration files in the pinned image. Confirm the
-    # exact set from those files at drill time rather than trusting this list.
+    migration_source: >-
+      consensys/web3signer:26.4.2, /opt/web3signer/migrations/postgresql,
+      versions V00001 through V00012, applied by the Flyway Job
+    # The pinned image ships twelve migrations and stamps Web3Signer's own
+    # schema-version row with 12. Both are re-derived from the image if it is
+    # bumped; the preflight requires them to agree with each other.
+    expected_migration_count: 12
+    # Web3Signer reads this row at startup to decide whether the database is one
+    # it will accept. It is an integer column, so the comparison is exact rather
+    # than a lexical maximum over Flyway's version strings.
+    expected_database_version: 12
     expected_tables:
       - database_version
       - flyway_schema_history
@@ -257,60 +402,199 @@ verification:
       - signed_attestations
       - signed_blocks
       - validators
+    # md5 of the expected base-table names, sorted ascending under the C
+    # collation and joined with a single comma. The preflight recomputes this
+    # from `expected_tables`, so the declared digest and the declared list
+    # cannot drift apart, and `table-inventory-digest` must return exactly this
+    # value on the restored copy. A count alone would accept seven arbitrary
+    # tables; this does not.
+    table_digest_definition: >-
+      md5(string_agg(table_name, ',' ORDER BY table_name COLLATE "C")) over the
+      base tables of schema public
+    expected_table_digest: "4a6113238e3e735cce7731399919842f"
+    # Declared expectations, to be re-derived from the pinned image's migration
+    # files at drill time. Constraint and index *names* are deliberately not
+    # asserted here; identity is proven by digest equality with the source, and
+    # a difference from the migrations is an abort rather than an edit to this
+    # list.
+    slashing_critical_objects:
+      - table: validators
+        unique_keys:
+          - columns: [public_key]
+            enforces: one row per validator public key, so a validator cannot be
+              silently duplicated with a shorter history
+      - table: signed_blocks
+        unique_keys:
+          - columns: [validator_id, slot]
+            enforces: at most one signed block per validator per slot
+      - table: signed_attestations
+        unique_keys:
+          - columns: [validator_id, target_epoch]
+            enforces: at most one signed attestation per validator per target
+              epoch
+      - table: low_watermarks
+        unique_keys:
+          - columns: [validator_id]
+            enforces: exactly one watermark row per validator, which is what
+              makes a lowered watermark detectable rather than additive
+      - table: metadata
+        unique_keys:
+          - columns: [id]
+            enforces: a single metadata row, including the genesis validators
+              root and any high-watermark columns the pinned migrations define
+      - table: database_version
+        unique_keys:
+          - columns: [id]
+            enforces: a single schema-version row
     queries:
-      - id: applied-migration-version
+      # `version` is a Flyway-owned string column, so a maximum over it would
+      # be a lexical comparison. The count, the highest installed rank, the
+      # success flag, and a digest of the version set are all order-safe.
+      - id: applied-migration-history
         sql: >-
-          SELECT max(version) AS applied_version,
-                 count(*) AS applied_count,
-                 bool_and(success) AS all_successful
+          SELECT count(*) AS applied_count,
+                 max(installed_rank) AS applied_rank_max,
+                 bool_and(success) AS all_successful,
+                 md5(coalesce(string_agg(version, ','
+                      ORDER BY version COLLATE "C"), '')) AS applied_version_digest
           FROM flyway_schema_history
-      - id: table-inventory
+      - id: database-version-row
         sql: >-
-          SELECT count(*) AS table_count
+          SELECT count(*) AS database_version_rows,
+                 max(version) AS database_version_value
+          FROM database_version
+      - id: table-inventory-digest
+        sql: >-
+          SELECT count(*) AS table_count,
+                 md5(coalesce(string_agg(table_name::text, ','
+                      ORDER BY table_name::text COLLATE "C"), '')) AS table_inventory_digest
           FROM information_schema.tables
-          WHERE table_schema = 'public'
+          WHERE table_schema = 'public' AND table_type = 'BASE TABLE'
+      - id: constraint-digest
+        sql: >-
+          SELECT count(*) AS constraint_count,
+                 md5(coalesce(string_agg(object_text, ','
+                      ORDER BY object_text COLLATE "C"), '')) AS constraint_digest
+          FROM (
+            SELECT c.conrelid::regclass::text || '|' || c.contype::text
+                   || '|' || pg_get_constraintdef(c.oid) AS object_text
+            FROM pg_constraint c
+            JOIN pg_namespace n ON n.oid = c.connamespace
+            WHERE n.nspname = 'public'
+          ) AS covered
+      - id: index-digest
+        sql: >-
+          SELECT count(*) AS index_count,
+                 md5(coalesce(string_agg(object_text, ','
+                      ORDER BY object_text COLLATE "C"), '')) AS index_digest
+          FROM (
+            SELECT tablename || '|' || indexdef AS object_text
+            FROM pg_indexes WHERE schemaname = 'public'
+          ) AS covered
+      - id: routine-and-trigger-digest
+        sql: >-
+          SELECT count(*) AS routine_count,
+                 md5(coalesce(string_agg(object_text, ','
+                      ORDER BY object_text COLLATE "C"), '')) AS routine_digest
+          FROM (
+            SELECT p.proname || '|' || md5(coalesce(p.prosrc, '')) AS object_text
+            FROM pg_proc p
+            JOIN pg_namespace n ON n.oid = p.pronamespace
+            WHERE n.nspname = 'public'
+            UNION ALL
+            SELECT t.tgname || '|' || pg_get_triggerdef(t.oid) AS object_text
+            FROM pg_trigger t
+            JOIN pg_class r ON r.oid = t.tgrelid
+            JOIN pg_namespace n ON n.oid = r.relnamespace
+            WHERE n.nspname = 'public' AND NOT t.tgisinternal
+          ) AS covered
+    pass_conditions:
+      - applied_count equals 12, applied_rank_max equals 12, all_successful is
+        true, and applied_version_digest is exactly equal to the source value
+      - database_version_rows equals 1 and database_version_value equals 12
+      - table_count equals 7 and table_inventory_digest equals the declared
+        expected_table_digest
+      - constraint_digest, index_digest, and routine_digest are each exactly
+        equal to the value the same query returns against the source
+      - the constraint and index definitions carry every declared
+        slashing_critical_objects unique key, re-derived from the pinned image's
+        migration files
   continuity:
-    # Every query returns aggregates only. The preflight tool rejects any query
-    # that is not read-only or that projects a forbidden column.
+    # Signing is frozen at `signing-disabled`, before the source fingerprint is
+    # taken, and the recovery point is chosen at or after that freeze. No row
+    # may therefore legitimately differ between the source and the restored
+    # copy. Counts and minima cannot see a replaced or missing interior row, so
+    # the comparison is exact equality of a per-row digest over every
+    # safety-bearing table.
+    comparison: exact-equality
+    covered_tables:
+      - validators
+      - signed_blocks
+      - signed_attestations
+      - low_watermarks
+      - metadata
+    # Each row is reduced to md5(salt || the row's full text form), so every
+    # column participates — including public keys, signing roots, and any column
+    # a future migration adds — while no raw value is ever projected.
+    row_digest_definition: md5(:drill_salt || row::text) per row, aggregated as
+      md5 over the sorted per-row digests
+    salt_handling: per-drill, session-only, never committed, never logged
+    salt_parameter: ":drill_salt"
     queries:
-      - id: validator-count
+      - id: validators-digest
         sql: >-
-          SELECT count(*) AS validator_rows FROM validators
-      - id: attestation-extent
+          SELECT count(*) AS validators_rows,
+                 md5(coalesce(string_agg(row_digest, ','
+                      ORDER BY row_digest COLLATE "C"), '')) AS validators_digest
+          FROM (
+            SELECT md5(:drill_salt || t::text) AS row_digest FROM validators t
+          ) AS covered
+      - id: signed-blocks-digest
         sql: >-
-          SELECT count(*) AS attestation_rows,
+          SELECT count(*) AS signed_blocks_rows,
+                 md5(coalesce(string_agg(row_digest, ','
+                      ORDER BY row_digest COLLATE "C"), '')) AS signed_blocks_digest
+          FROM (
+            SELECT md5(:drill_salt || t::text) AS row_digest FROM signed_blocks t
+          ) AS covered
+      - id: signed-attestations-digest
+        sql: >-
+          SELECT count(*) AS signed_attestations_rows,
+                 md5(coalesce(string_agg(row_digest, ','
+                      ORDER BY row_digest COLLATE "C"), '')) AS signed_attestations_digest
+          FROM (
+            SELECT md5(:drill_salt || t::text) AS row_digest FROM signed_attestations t
+          ) AS covered
+      - id: low-watermarks-digest
+        sql: >-
+          SELECT count(*) AS low_watermarks_rows,
+                 md5(coalesce(string_agg(row_digest, ','
+                      ORDER BY row_digest COLLATE "C"), '')) AS low_watermarks_digest
+          FROM (
+            SELECT md5(:drill_salt || t::text) AS row_digest FROM low_watermarks t
+          ) AS covered
+      - id: metadata-digest
+        sql: >-
+          SELECT count(*) AS metadata_rows,
+                 md5(coalesce(string_agg(row_digest, ','
+                      ORDER BY row_digest COLLATE "C"), '')) AS metadata_digest
+          FROM (
+            SELECT md5(:drill_salt || t::text) AS row_digest FROM metadata t
+          ) AS covered
+      # Diagnostic only, and also required to be exactly equal. A digest
+      # mismatch says something changed; this says whether a watermark moved,
+      # which is the specific corruption that would let a recovered signer
+      # re-sign history.
+      - id: low-watermark-extent
+        sql: >-
+          SELECT count(*) AS low_watermarks_rows,
+                 min(slot) AS min_slot,
+                 max(slot) AS max_slot,
                  min(source_epoch) AS min_source_epoch,
                  max(source_epoch) AS max_source_epoch,
                  min(target_epoch) AS min_target_epoch,
                  max(target_epoch) AS max_target_epoch
-          FROM signed_attestations
-      - id: block-extent
-        sql: >-
-          SELECT count(*) AS block_rows,
-                 min(slot) AS min_slot,
-                 max(slot) AS max_slot
-          FROM signed_blocks
-      - id: watermark-extent
-        sql: >-
-          SELECT count(*) AS watermark_rows,
-                 min(slot) AS min_slot,
-                 min(source_epoch) AS min_source_epoch,
-                 min(target_epoch) AS min_target_epoch
           FROM low_watermarks
-      - id: fingerprint-digest
-        sql: >-
-          SELECT count(*) AS covered_rows,
-                 md5(string_agg(row_digest, ',' ORDER BY row_digest)) AS digest
-          FROM (
-            SELECT encode(hmac(v.public_key::text, :drill_salt, 'sha256'), 'hex')
-                   || ':' || a.source_epoch::text
-                   || ':' || a.target_epoch::text AS row_digest
-            FROM signed_attestations a JOIN validators v ON v.id = a.validator_id
-          ) AS covered
-    # `:drill_salt` is generated per drill, held only in the operator session,
-    # and discarded afterwards. It exists so the digest proves continuity
-    # without carrying a public key into the comparison output.
-    salt_handling: per-drill, session-only, never committed, never logged
     forbidden_result_columns:
       - public_key
       - pubkey
@@ -318,12 +602,20 @@ verification:
       - genesis_validators_root
       - validator_id
     pass_conditions:
-      - restored validator_rows equals source validator_rows
-      - restored attestation_rows is greater than or equal to source attestation_rows
-      - restored block_rows is greater than or equal to source block_rows
-      - restored watermark minimums are not lower than source watermark minimums
-      - restored fingerprint digest equals source fingerprint digest for the
-        rows covered by the recorded recovery point
+      - the same per-drill salt is used for the source session and the restored
+        session, and is discarded afterwards
+      - restored validators_rows and validators_digest are exactly equal to the
+        source values
+      - restored signed_blocks_rows and signed_blocks_digest are exactly equal
+        to the source values
+      - restored signed_attestations_rows and signed_attestations_digest are
+        exactly equal to the source values
+      - restored low_watermarks_rows and low_watermarks_digest are exactly equal
+        to the source values
+      - restored metadata_rows and metadata_digest are exactly equal to the
+        source values
+      - every low-watermark minimum and maximum is exactly equal to the source
+        value, so no watermark moved in either direction
 
 rejection_test:
   key_class: drill-only
@@ -341,6 +633,7 @@ rejection_test:
   signer:
     instance: drill-only Web3Signer, separate from the live signer
     database: the restored copy only
+    connection_secret: the drill-only connection Secret, never the live one
     beacon_connection: forbidden
     validator_client_connection: forbidden
     publication: forbidden
@@ -367,9 +660,9 @@ cost:
   billable_items:
     - restored DB instance hours
     - restored DB storage, prorated
-    - incremental backup storage for the restored instance, if any
   not_billable:
     - the source instance, which is neither stopped nor modified
+    - backup storage for the restored copy, whose retention is set to zero
     - cross-AZ or internet data transfer, since the drill stays in-VPC
   cost_control: the six-hour maximum lifetime and the mandatory cleanup gate
 
@@ -379,8 +672,15 @@ failure_handling:
     - the recorded recovery point is outside the automated-backup retention window
     - the restore identifier would collide with the source identifier or an
       existing instance
-    - the restored copy reports a different applied migration version
-    - any continuity pass condition fails
+    - any explicit restore parameter was not supplied, or the restored copy's
+      describe output disagrees with it
+    - the restored copy reports non-zero backup retention that cannot be set to
+      zero
+    - the restored copy's table inventory digest differs from the declared
+      expected digest, or database_version is not 12, or the Flyway history is
+      not twelve successful migrations
+    - any schema-object digest on the restored copy differs from the source
+    - any continuity count or digest differs from the source
     - the conflicting attestation is signed rather than refused
     - the drill exceeds its six-hour lifetime for any reason
   on_abort:

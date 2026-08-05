@@ -14,6 +14,7 @@ stdout, so a contract edit cannot turn this into an identifier leak.
 from __future__ import annotations
 
 import argparse
+import hashlib
 import json
 import re
 import sys
@@ -46,12 +47,77 @@ REQUIRED_GATE_ORDER = (
 )
 APPROVAL_GATE = "human-go-no-go"
 RESTORE_GATE = "restore-isolated-target"
+SIGNING_GATE = "signing-disabled"
+
+# A gate declares AWS-resource mutation and cluster-state mutation separately.
+# Stopping signing merges Git changes and removes running workloads, which is a
+# real mutation; it creates and bills no AWS resource. Conflating the two is how
+# a contract ends up claiming a gate does nothing when it does.
+GATE_FLAGS = (
+    "mutates_aws",
+    "mutates_cluster_state",
+    "incurs_aws_cost",
+    "requires_human_approval",
+)
+
+# A point-in-time restore does not carry the source's placement, networking, or
+# parameters onto the target. Each of these must be supplied on the restore call
+# or AWS substitutes a default, and the default DB parameter group does not
+# enforce TLS.
+REQUIRED_RESTORE_PARAMETERS = frozenset(
+    {
+        "db-subnet-group-name",
+        "vpc-security-group-ids",
+        "db-parameter-group-name",
+        "no-publicly-accessible",
+        "no-multi-az",
+        "availability-zone",
+        "deletion-protection",
+        "backup-retention-period",
+    }
+)
+
+# Continuity must cover every table that carries slashing-safety state. Counts
+# and extents cannot see a replaced interior row, so each of these needs a
+# per-row digest compared for exact equality.
+SAFETY_BEARING_TABLES = frozenset(
+    {
+        "validators",
+        "signed_blocks",
+        "signed_attestations",
+        "low_watermarks",
+        "metadata",
+    }
+)
 
 # Verification output must be aggregate-only. Restricting the top-level
 # projection to these calls is what keeps public keys and signing roots inside
 # the query session instead of inside an evidence record.
 AGGREGATE_FUNCTIONS = frozenset(
     {"count", "min", "max", "sum", "avg", "bool_and", "bool_or", "md5"}
+)
+
+# The pinned Web3Signer migrations do not create `pgcrypto`, so these are not
+# available on the restored copy. Reaching for one would mean installing an
+# extension, which is a mutation the drill is not permitted to make.
+NON_CORE_FUNCTIONS = (
+    "hmac",
+    "digest",
+    "crypt",
+    "gen_random_bytes",
+    "gen_salt",
+    "pgp_sym_encrypt",
+)
+
+# Continuity that accepts "at least as many rows" cannot detect a replaced or
+# missing interior row. Signing is frozen before the source fingerprint, so
+# there is no legitimate difference to tolerate.
+INEQUALITY_PHRASES = (
+    "greater than or equal",
+    "at least",
+    "not lower",
+    "no lower",
+    "or more",
 )
 WRITE_KEYWORDS = (
     "insert",
@@ -99,9 +165,40 @@ class CheckResult:
     detail: str
 
 
+class UniqueKeyLoader(yaml.SafeLoader):
+    """A safe loader that refuses a repeated mapping key.
+
+    PyYAML keeps the last value for a duplicated key and reports nothing, so a
+    contract could declare `incurs_aws_cost` twice and be read as the opposite
+    of what a reviewer saw first. A safety contract may not have a value that
+    depends on which line wins.
+    """
+
+
+def _construct_unique_mapping(
+    loader: yaml.SafeLoader, node: yaml.MappingNode, deep: bool = False
+) -> dict[Any, Any]:
+    mapping: dict[Any, Any] = {}
+    for key_node, value_node in node.value:
+        key = loader.construct_object(key_node, deep=deep)
+        if key in mapping:
+            raise DrillContractError(
+                f"duplicate key {key!r} at line {key_node.start_mark.line + 1}"
+            )
+        mapping[key] = loader.construct_object(value_node, deep=deep)
+    return mapping
+
+
+UniqueKeyLoader.add_constructor(
+    yaml.resolver.BaseResolver.DEFAULT_MAPPING_TAG, _construct_unique_mapping
+)
+
+
 def load_contract(path: Path) -> dict[str, Any]:
     try:
-        document = yaml.safe_load(path.read_text(encoding="utf-8"))
+        document = yaml.load(path.read_text(encoding="utf-8"), Loader=UniqueKeyLoader)
+    except DrillContractError as error:
+        raise DrillContractError(f"drill contract {path} is malformed: {error}") from error
     except (OSError, yaml.YAMLError) as error:
         raise DrillContractError(f"cannot read drill contract {path}: {error}") from error
     if not isinstance(document, dict):
@@ -203,7 +300,7 @@ def check_gates(contract: dict[str, Any]) -> list[CheckResult]:
             raise DrillContractError("each gate needs a string id")
         if gate_id in by_id:
             raise DrillContractError(f"duplicate gate id {gate_id!r}")
-        for flag in ("mutating", "incurs_aws_cost", "requires_human_approval"):
+        for flag in GATE_FLAGS:
             if not isinstance(gate.get(flag), bool):
                 raise DrillContractError(f"gate {gate_id!r} needs a boolean {flag}")
         if not isinstance(gate.get("summary"), str) or not gate["summary"].strip():
@@ -229,7 +326,7 @@ def check_gates(contract: dict[str, Any]) -> list[CheckResult]:
 
     approval_index = ordered_ids.index(APPROVAL_GATE)
     restore_index = ordered_ids.index(RESTORE_GATE)
-    signing_index = ordered_ids.index("signing-disabled")
+    signing_index = ordered_ids.index(SIGNING_GATE)
 
     approvers = [
         gate_id for gate_id, gate in by_id.items() if gate["requires_human_approval"]
@@ -249,48 +346,209 @@ def check_gates(contract: dict[str, Any]) -> list[CheckResult]:
     premature = [
         gate_id
         for gate_id in ordered_ids[:approval_index]
-        if by_id[gate_id]["mutating"] or by_id[gate_id]["incurs_aws_cost"]
+        if by_id[gate_id]["mutates_aws"] or by_id[gate_id]["incurs_aws_cost"]
     ]
     results.append(
         CheckResult(
             check_id="gates/nothing-billable-before-approval",
             passed=not premature,
             detail=(
-                "no gate mutates or bills before the human go/no-go"
+                "no gate creates, modifies, or bills an AWS resource before the "
+                "human go/no-go"
                 if not premature
-                else f"gates before approval that mutate or bill: {premature}"
+                else f"gates before approval that mutate AWS or bill: {premature}"
             ),
         )
     )
 
+    signing_first = (
+        signing_index < restore_index and not by_id[SIGNING_GATE]["mutates_aws"]
+    )
     results.append(
         CheckResult(
             check_id="gates/signing-off-before-restore",
-            passed=signing_index < restore_index
-            and not by_id["signing-disabled"]["mutating"],
+            passed=signing_first,
             detail=(
-                "signing is disabled, non-mutatingly, before any restore"
-                if signing_index < restore_index
-                and not by_id["signing-disabled"]["mutating"]
-                else "signing-disabled does not precede the restore as a non-mutating gate"
+                "signing stops before any restore, and stopping it mutates no "
+                "AWS resource"
+                if signing_first
+                else "signing-disabled does not precede the restore without an "
+                "AWS mutation"
             ),
         )
     )
 
+    # The honest reading of this gate: it changes Git and removes workloads. A
+    # contract that called that "not mutating" would be describing a different
+    # procedure from the one an operator actually runs.
+    declares_workload_effect = by_id[SIGNING_GATE]["mutates_cluster_state"]
+    results.append(
+        CheckResult(
+            check_id="gates/signing-off-declares-its-workload-effect",
+            passed=declares_workload_effect,
+            detail=(
+                "signing-disabled declares that it changes desired state and "
+                "removes running workloads"
+                if declares_workload_effect
+                else "signing-disabled understates its effect on cluster state"
+            ),
+        )
+    )
+
+    restore_declared = (
+        by_id[RESTORE_GATE]["mutates_aws"] and by_id[RESTORE_GATE]["incurs_aws_cost"]
+    )
     results.append(
         CheckResult(
             check_id="gates/restore-is-declared-mutating",
-            passed=by_id[RESTORE_GATE]["mutating"]
-            and by_id[RESTORE_GATE]["incurs_aws_cost"],
+            passed=restore_declared,
             detail=(
-                "the restore gate is declared mutating and billable"
-                if by_id[RESTORE_GATE]["mutating"]
-                and by_id[RESTORE_GATE]["incurs_aws_cost"]
+                "the restore gate is declared to mutate AWS and to bill"
+                if restore_declared
                 else "the restore gate understates its effect"
             ),
         )
     )
     return results
+
+
+def check_restore_parameters(target: dict[str, Any]) -> list[CheckResult]:
+    """Require every unsafe AWS restore default to be overridden explicitly."""
+
+    parameters = target.get("explicit_restore_parameters")
+    if not isinstance(parameters, list) or not parameters:
+        raise DrillContractError(
+            "restore_target needs a non-empty explicit_restore_parameters list"
+        )
+
+    declared: set[str] = set()
+    incomplete: list[str] = []
+    for parameter in parameters:
+        if not isinstance(parameter, dict):
+            raise DrillContractError("each restore parameter must be a mapping")
+        parameter_id = parameter.get("id")
+        if not isinstance(parameter_id, str) or not parameter_id:
+            raise DrillContractError("each restore parameter needs a string id")
+        if parameter_id in declared:
+            raise DrillContractError(f"duplicate restore parameter {parameter_id!r}")
+        declared.add(parameter_id)
+        # `default_if_omitted` is required because it is the reason the value
+        # has to be supplied at all. A parameter without it reads like a
+        # preference rather than an override of an unsafe default.
+        if not all(
+            isinstance(parameter.get(field), str) and parameter[field].strip()
+            for field in ("value", "default_if_omitted")
+        ):
+            incomplete.append(parameter_id)
+
+    missing = sorted(REQUIRED_RESTORE_PARAMETERS - declared)
+    verification = target.get("post_restore_verification")
+    verified = isinstance(verification, list) and len(verification) >= 4
+
+    if missing:
+        detail = f"restore parameters not supplied explicitly: {missing}"
+    elif incomplete:
+        detail = f"restore parameters without a value and stated AWS default: {sorted(incomplete)}"
+    elif not verified:
+        detail = "the restored copy's properties are not re-verified after the restore"
+    else:
+        detail = (
+            "every network, parameter-group, placement, protection, and backup "
+            "value is supplied on the restore call and re-verified afterwards"
+        )
+
+    return [
+        CheckResult(
+            check_id="targets/restore-parameters-are-explicit",
+            passed=not missing and not incomplete and verified,
+            detail=detail,
+        )
+    ]
+
+
+def check_target_credentials(target: dict[str, Any]) -> list[CheckResult]:
+    """Require the drill to reach the restored copy without touching live credentials."""
+
+    credentials = target.get("credentials")
+    if not isinstance(credentials, dict):
+        raise DrillContractError("restore_target needs a credentials mapping")
+    drill_secret = credentials.get("drill_secret")
+    master = credentials.get("master_credential")
+    if not isinstance(drill_secret, dict) or not isinstance(master, dict):
+        raise DrillContractError(
+            "credentials needs drill_secret and master_credential mappings"
+        )
+
+    live_untouched = (
+        credentials.get("live_secret_mutation") == "forbidden"
+        and credentials.get("live_external_secret_repoint") == "forbidden"
+    )
+    drill_path_declared = (
+        drill_secret.get("deleted_at_cleanup") is True
+        and bool(str(drill_secret.get("target_name") or "").strip())
+        and bool(str(drill_secret.get("username_password_source") or "").strip())
+        and bool(str(drill_secret.get("host_source") or "").strip())
+    )
+    master_untouched = master.get("read_by_operator") is False
+
+    if not live_untouched:
+        detail = "the drill does not forbid mutating or repointing the live credential"
+    elif not drill_path_declared:
+        detail = "the drill-only connection Secret's origin and disposal are not stated"
+    elif not master_untouched:
+        detail = "the drill would read the restored copy's master credential"
+    else:
+        detail = (
+            "the drill connects as the restored application role through a "
+            "drill-only Secret; the live credential is neither mutated nor "
+            "repointed and no master password is read"
+        )
+
+    return [
+        CheckResult(
+            check_id="targets/target-credentials-are-isolated",
+            passed=live_untouched and drill_path_declared and master_untouched,
+            detail=detail,
+        )
+    ]
+
+
+def check_target_backups(target: dict[str, Any]) -> list[CheckResult]:
+    """Require the restored copy to leave no recovery points of its own behind."""
+
+    backup = target.get("backup")
+    if not isinstance(backup, dict):
+        raise DrillContractError("restore_target needs a backup mapping")
+
+    flags = backup.get("delete_flags")
+    retention_zero = backup.get("target_backup_retention_days") == 0
+    deletes_backups = isinstance(flags, list) and {
+        "skip-final-snapshot",
+        "delete-automated-backups",
+    }.issubset(set(flags))
+    accounted = bool(backup.get("verified_by")) and backup.get(
+        "retained_after_cleanup"
+    ) == "nothing"
+
+    if not retention_zero:
+        detail = "the restored copy would keep automated backups of slashing history"
+    elif not deletes_backups:
+        detail = "deletion does not skip the final snapshot and drop automated backups"
+    elif not accounted:
+        detail = "target backup state is not verified, or something is retained after cleanup"
+    else:
+        detail = (
+            "the restored copy takes no backups of its own and leaves nothing "
+            "behind after cleanup"
+        )
+
+    return [
+        CheckResult(
+            check_id="targets/target-backups-are-not-retained",
+            passed=retention_zero and deletes_backups and accounted,
+            detail=detail,
+        )
+    ]
 
 
 def check_targets(contract: dict[str, Any]) -> list[CheckResult]:
@@ -308,6 +566,9 @@ def check_targets(contract: dict[str, Any]) -> list[CheckResult]:
     identifier_template = target.get("identifier_template")
 
     return [
+        *check_restore_parameters(target),
+        *check_target_credentials(target),
+        *check_target_backups(target),
         CheckResult(
             check_id="targets/source-is-read-only",
             passed=source.get("mutation_allowed") is False
@@ -401,6 +662,16 @@ def check_query_is_aggregate_only(
                 passed=False,
                 detail=f"query is not read-only; it contains {keyword.upper()}",
             )
+    for function in NON_CORE_FUNCTIONS:
+        if re.search(rf"\b{function}\s*\(", lowered):
+            return CheckResult(
+                check_id=f"query/{query_id}",
+                passed=False,
+                detail=(
+                    f"query calls {function}(), which the pinned migrations do "
+                    "not provide; only PostgreSQL core functions are available"
+                ),
+            )
 
     try:
         items = top_level_projection(compact)
@@ -468,16 +739,8 @@ def check_verification(contract: dict[str, Any]) -> list[CheckResult]:
             seen.add(query_id)
             results.append(check_query_is_aggregate_only(query_id, sql, forbidden))
 
-    expected_tables = schema.get("expected_tables")
-    results.append(
-        CheckResult(
-            check_id="verification/schema-inventory-declared",
-            passed=isinstance(expected_tables, list)
-            and len(expected_tables) >= 5
-            and isinstance(schema.get("expected_migration_version"), str),
-            detail="the expected table set and applied migration version are declared",
-        )
-    )
+    results.extend(check_schema_evidence(schema))
+    results.extend(check_continuity_coverage(continuity, seen))
 
     pass_conditions = continuity.get("pass_conditions")
     results.append(
@@ -485,6 +748,196 @@ def check_verification(contract: dict[str, Any]) -> list[CheckResult]:
             check_id="verification/continuity-pass-conditions",
             passed=isinstance(pass_conditions, list) and len(pass_conditions) >= 4,
             detail="continuity has explicit pass conditions rather than an opinion",
+        )
+    )
+    return results
+
+
+def table_inventory_digest(tables: Iterable[str]) -> str:
+    """The digest `table-inventory-digest` must return: md5 of the sorted names.
+
+    Python's sort is codepoint order, which is what `COLLATE "C"` gives the
+    query, so the two sides cannot disagree about ordering.
+    """
+
+    return hashlib.md5(",".join(sorted(tables)).encode("utf-8")).hexdigest()
+
+
+def check_schema_evidence(schema: dict[str, Any]) -> list[CheckResult]:
+    """Require schema evidence that pins the exact objects, not a table count."""
+
+    tables = schema.get("expected_tables")
+    declared_digest = schema.get("expected_table_digest")
+    named = (
+        isinstance(tables, list)
+        and len(tables) >= 5
+        and all(isinstance(table, str) and table for table in tables)
+        and len(set(tables)) == len(tables)
+    )
+    digest_matches = named and declared_digest == table_inventory_digest(tables)
+
+    results = [
+        CheckResult(
+            check_id="verification/schema-inventory-digest",
+            passed=digest_matches and bool(schema.get("table_digest_definition")),
+            detail=(
+                "the expected table inventory is pinned by a digest recomputed "
+                "from the declared table set, not by a count"
+                if digest_matches and bool(schema.get("table_digest_definition"))
+                else "the declared table digest does not match the declared table set"
+            ),
+        )
+    ]
+
+    migration_count = schema.get("expected_migration_count")
+    database_version = schema.get("expected_database_version")
+    query_ids = {
+        query.get("id") for query in schema.get("queries", []) if isinstance(query, dict)
+    }
+    # Flyway's own history and Web3Signer's `database_version` row are separate
+    # claims. A restored copy can carry a complete Flyway history and still be a
+    # schema version the signer refuses, so both are required.
+    anchored = (
+        isinstance(migration_count, int)
+        and not isinstance(migration_count, bool)
+        and migration_count > 0
+        and migration_count == database_version
+        and {"applied-migration-history", "database-version-row"}.issubset(query_ids)
+    )
+    results.append(
+        CheckResult(
+            check_id="verification/schema-version-anchors",
+            passed=anchored,
+            detail=(
+                "the Flyway history and Web3Signer's own database_version are "
+                "both pinned to the pinned image's migration count"
+                if anchored
+                else "the migration count and database_version anchors disagree "
+                "or are not queried"
+            ),
+        )
+    )
+
+    objects = schema.get("slashing_critical_objects")
+    described: set[str] = set()
+    well_formed = isinstance(objects, list) and bool(objects)
+    if well_formed:
+        for entry in objects:
+            if not isinstance(entry, dict):
+                well_formed = False
+                break
+            table = entry.get("table")
+            keys = entry.get("unique_keys")
+            if not isinstance(table, str) or not isinstance(keys, list) or not keys:
+                well_formed = False
+                break
+            for key in keys:
+                if (
+                    not isinstance(key, dict)
+                    or not isinstance(key.get("columns"), list)
+                    or not key["columns"]
+                    or not str(key.get("enforces") or "").strip()
+                ):
+                    well_formed = False
+                    break
+            described.add(table)
+    covered = well_formed and SAFETY_BEARING_TABLES.issubset(described)
+    named_tables = set(tables) if named else set()
+    consistent = covered and described.issubset(named_tables)
+    results.append(
+        CheckResult(
+            check_id="verification/slashing-critical-objects-declared",
+            passed=consistent,
+            detail=(
+                "every safety-bearing table declares the uniqueness the pinned "
+                "migrations give it, and what that uniqueness enforces"
+                if consistent
+                else "the slashing-critical object set is incomplete or names a "
+                "table outside the expected inventory"
+            ),
+        )
+    )
+    return results
+
+
+def check_continuity_coverage(
+    continuity: dict[str, Any], query_ids: set[str]
+) -> list[CheckResult]:
+    """Require an exact per-row digest for every safety-bearing table."""
+
+    covered = continuity.get("covered_tables")
+    covered_set = set(covered) if isinstance(covered, list) else set()
+    uncovered = sorted(SAFETY_BEARING_TABLES - covered_set)
+    missing_queries = sorted(
+        table
+        for table in covered_set
+        if f"{table.replace('_', '-')}-digest" not in query_ids
+    )
+
+    if uncovered:
+        detail = f"safety-bearing tables with no continuity coverage: {uncovered}"
+    elif missing_queries:
+        detail = f"covered tables with no digest query: {missing_queries}"
+    else:
+        detail = (
+            "every safety-bearing table is reduced to a per-row digest, so a "
+            "replaced or missing interior row cannot pass"
+        )
+    results = [
+        CheckResult(
+            check_id="verification/continuity-covers-every-safety-table",
+            passed=not uncovered and not missing_queries,
+            detail=detail,
+        )
+    ]
+
+    conditions = continuity.get("pass_conditions")
+    tolerant = [
+        condition
+        for condition in (conditions if isinstance(conditions, list) else [])
+        if any(phrase in str(condition).lower() for phrase in INEQUALITY_PHRASES)
+    ]
+    exact = continuity.get("comparison") == "exact-equality" and not tolerant
+    results.append(
+        CheckResult(
+            check_id="verification/continuity-requires-exact-equality",
+            passed=exact,
+            detail=(
+                "continuity is exact equality; signing is frozen before the "
+                "fingerprint, so no difference is legitimate"
+                if exact
+                else "continuity tolerates a difference between the source and "
+                "the restored copy"
+            ),
+        )
+    )
+
+    salt = continuity.get("salt_parameter")
+    queries = continuity.get("queries") if isinstance(continuity.get("queries"), list) else []
+    unsalted = sorted(
+        str(query.get("id"))
+        for query in queries
+        if isinstance(query, dict)
+        and str(query.get("id", "")).endswith("-digest")
+        and isinstance(salt, str)
+        and salt not in str(query.get("sql", ""))
+    )
+    salted = (
+        isinstance(salt, str)
+        and salt.startswith(":")
+        and bool(continuity.get("salt_handling"))
+        and not unsalted
+    )
+    results.append(
+        CheckResult(
+            check_id="verification/digests-are-salted",
+            passed=salted,
+            detail=(
+                "every row digest is salted with a session-only per-drill value, "
+                "so no committed digest is a lookup table for a public key"
+                if salted
+                else f"digest queries without the per-drill salt: {unsalted}"
+            ),
         )
     )
     return results
