@@ -345,11 +345,12 @@ consensusClients:
   # Prysm adapter. Written in Go by Prysmatic Labs. Prysm cannot consume the
   # generic Ephemery config.yaml directly — it rejects `EPHEMERY_RESET_PERIOD`
   # and `NUMBER_OF_COLUMNS` and then inherits a mainnet Gloas fork-version
-  # collision — so the chart's prysm init container derives
-  # `/network/files/prysm-config.yaml` from the bundle's `config.yaml`
+  # collision — so the chart's prysm consensus container derives
+  # `/tmp/prysm-config.yaml` pre-exec from the bundle's `config.yaml`
   # (strip the two rejected keys, append `GLOAS_FORK_VERSION` /
-  # `GLOAS_FORK_EPOCH`, fail on unexpected source shape) after bundle SHA
-  # verification. Prysm's Prometheus surface exposes `beacon_head_slot`,
+  # `GLOAS_FORK_EPOCH`, fail on unexpected source shape). Runs after
+  # `set -eu`, before `exec /beacon-chain`; the bundle SHA has already
+  # been verified by the network-artifact-loader init container. Prysm's Prometheus surface exposes `beacon_head_slot`,
   # `beacon_clock_time_slot`, `beacon_finalized_epoch`, and
   # `connected_libp2p_peers`; it does NOT publish a direct present-epoch
   # gauge, so we declare `presentEpochDivisor: 32` and the recording rules
