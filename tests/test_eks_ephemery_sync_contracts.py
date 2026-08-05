@@ -226,6 +226,64 @@ class EksEphemeryRenderTests(unittest.TestCase):
             "geth"
         ]["properties"]["syncMode"]
         self.assertEqual(sync_mode["enum"], ["snap", "full"])
+        self.assertFalse(
+            schema["properties"]["executionClients"]["properties"]["geth"][
+                "additionalProperties"
+            ]
+        )
+
+        default_result = subprocess.run(
+            [
+                "helm",
+                "template",
+                "default-geth",
+                str(CHART),
+                "--namespace",
+                "ethereum",
+                "--set",
+                "lifecycleState=active",
+            ],
+            check=True,
+            capture_output=True,
+            text=True,
+        )
+        default_documents = load_documents(default_result.stdout)
+        default_stateful_set = next(
+            document
+            for document in default_documents
+            if document["kind"] == "StatefulSet"
+        )
+        default_execution = next(
+            container
+            for container in default_stateful_set["spec"]["template"]["spec"][
+                "containers"
+            ]
+            if container["name"] == "execution"
+        )
+        self.assertIn("--syncmode=snap", default_execution["args"])
+
+        typo_result = subprocess.run(
+            [
+                "helm",
+                "template",
+                "invalid-geth",
+                str(CHART),
+                "--namespace",
+                "ethereum",
+                "--set",
+                "lifecycleState=active",
+                "--set",
+                "executionClients.geth.syncmode=full",
+            ],
+            check=False,
+            capture_output=True,
+            text=True,
+        )
+        self.assertNotEqual(typo_result.returncode, 0)
+        rejection = typo_result.stderr.lower()
+        self.assertIn("syncmode", rejection)
+        self.assertIn("additional propert", rejection)
+        self.assertIn("not allowed", rejection)
 
         monitor = self.by_kind["PodMonitor"][0]
         execution_endpoint = next(
@@ -293,7 +351,9 @@ class EksEphemeryRenderTests(unittest.TestCase):
     def test_restricted_runtime_and_spot_preference_fit_one_bounded_worker(
         self,
     ) -> None:
-        pod_spec = self.by_kind["StatefulSet"][0]["spec"]["template"]["spec"]
+        stateful_set_spec = self.by_kind["StatefulSet"][0]["spec"]
+        self.assertEqual(stateful_set_spec["updateStrategy"], {"type": "OnDelete"})
+        pod_spec = stateful_set_spec["template"]["spec"]
         security = pod_spec["securityContext"]
         self.assertTrue(security["runAsNonRoot"])
         self.assertEqual((security["runAsUser"], security["runAsGroup"]), (1000, 1000))
@@ -639,6 +699,25 @@ class EksEphemeryFluxAndTelemetryTests(unittest.TestCase):
         ):
             with self.subTest(required=required):
                 self.assertIn(required, text)
+
+    def test_restart_drill_preserves_deleted_pod_shutdown_evidence(self) -> None:
+        text = RUNBOOK.read_text(encoding="utf-8")
+        for required in (
+            "graceful Geth restart",
+            "It was not run by",
+            'EVIDENCE_DIR="$(mktemp -d)"',
+            'CAPTURE_STARTED_AT="$(date -u +%Y-%m-%dT%H:%M:%SZ)"',
+            '--since-time="$CAPTURE_STARTED_AT"',
+            "Got interrupt, shutting down",
+            "Ethereum protocol stopped",
+            "Blockchain stopped",
+            "missing trie node",
+            "sustained\n15-minute window",
+            "section 8",
+        ):
+            with self.subTest(required=required):
+                self.assertIn(required, text)
+        self.assertNotIn("kubectl delete pod -n ethereum \"$POD\" --force", text)
 
 
 if __name__ == "__main__":

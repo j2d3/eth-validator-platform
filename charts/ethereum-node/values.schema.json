@@ -191,6 +191,7 @@
       "properties": {
         "geth": {
           "type": "object",
+          "additionalProperties": false,
           "required": ["image", "syncMode", "metrics"],
           "properties": {
             "image": {"type": "string", "pattern": "@sha256:[0-9a-f]{64}$"},
