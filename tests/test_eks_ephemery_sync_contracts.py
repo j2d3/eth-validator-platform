@@ -46,6 +46,26 @@ class EksEphemeryRenderTests(unittest.TestCase):
             "cluster": "eth-validator-platform-dev",
             "environment": "dev",
         }
+        # The shared EKS values file keeps client-diversity pairs on
+        # ClusterIP. The dev overlay promotes only this selected pair to the
+        # one billed public NLB.
+        release["spec"]["values"]["p2p"] = {
+            "service": {
+                "enabled": True,
+                "nameSuffix": "p2p-nlb",
+                "type": "LoadBalancer",
+                "loadBalancerClass": "service.k8s.aws/nlb",
+                "annotations": {
+                    "service.beta.kubernetes.io/aws-load-balancer-nlb-target-type": "ip",
+                    "service.beta.kubernetes.io/aws-load-balancer-scheme": "internet-facing",
+                    "service.beta.kubernetes.io/aws-load-balancer-healthcheck-protocol": "tcp",
+                    "service.beta.kubernetes.io/aws-load-balancer-healthcheck-port": "9000",
+                    "service.beta.kubernetes.io/aws-load-balancer-attributes": "load_balancing.cross_zone.enabled=true",
+                },
+                "externalTrafficPolicy": "Cluster",
+                "loadBalancerSourceRanges": ["0.0.0.0/0"],
+            }
+        }
         with tempfile.TemporaryDirectory() as directory:
             projected_values = Path(directory) / "values.yaml"
             projected_values.write_text(
@@ -206,23 +226,34 @@ class EksEphemeryRenderTests(unittest.TestCase):
         ]["properties"]["syncMode"]
         self.assertEqual(sync_mode["enum"], ["snap", "full"])
 
-    def test_p2p_has_one_public_nlb_and_never_exposes_http_or_metrics(self) -> None:
+    def test_selected_p2p_pair_uses_aws_lbc_without_exposing_http_or_metrics(
+        self,
+    ) -> None:
         services = self.by_kind["Service"]
         p2p = next(
             service
             for service in services
-            if service["metadata"]["name"].endswith("-p2p")
+            if service["metadata"]["name"].endswith("-p2p-nlb")
         )
         internal = next(service for service in services if service is not p2p)
 
         self.assertEqual(p2p["spec"]["type"], "LoadBalancer")
-        self.assertEqual(p2p["spec"]["externalTrafficPolicy"], "Local")
+        self.assertEqual(p2p["spec"]["externalTrafficPolicy"], "Cluster")
+        self.assertEqual(p2p["spec"]["loadBalancerClass"], "service.k8s.aws/nlb")
         self.assertEqual(p2p["spec"]["loadBalancerSourceRanges"], ["0.0.0.0/0"])
+        annotations = p2p["metadata"]["annotations"]
+        self.assertNotIn("service.beta.kubernetes.io/aws-load-balancer-type", annotations)
         self.assertEqual(
-            p2p["metadata"]["annotations"][
-                "service.beta.kubernetes.io/aws-load-balancer-type"
+            annotations[
+                "service.beta.kubernetes.io/aws-load-balancer-nlb-target-type"
             ],
-            "nlb",
+            "ip",
+        )
+        self.assertEqual(
+            annotations[
+                "service.beta.kubernetes.io/aws-load-balancer-healthcheck-port"
+            ],
+            "9000",
         )
         p2p_ports = {
             (port["port"], port.get("protocol", "TCP")) for port in p2p["spec"]["ports"]
@@ -457,6 +488,23 @@ class EksEphemeryFluxAndTelemetryTests(unittest.TestCase):
                     ],
                 )
 
+        public_p2p = [
+            release
+            for release in releases
+            if release["spec"]["values"].get("p2p", {}).get("service", {}).get("type")
+            == "LoadBalancer"
+        ]
+        self.assertEqual(
+            [release["metadata"]["name"] for release in public_p2p],
+            ["assignment-ephemery-162-synthetic"],
+        )
+        self.assertEqual(
+            public_p2p[0]["spec"]["values"]["p2p"]["service"][
+                "loadBalancerClass"
+            ],
+            "service.k8s.aws/nlb",
+        )
+
         signing_releases = {
             release["metadata"]["name"]: release
             for release in releases
@@ -560,7 +608,8 @@ class EksEphemeryFluxAndTelemetryTests(unittest.TestCase):
             "deposited signing identity",
             "Engine JWT",
             "LoadBalancer",
-            "externalTrafficPolicy: Local",
+            "loadBalancerClass: service.k8s.aws/nlb",
+            "Pod-IP targets",
             "same Availability Zone",
             "30-second",
             "Spot interruption",

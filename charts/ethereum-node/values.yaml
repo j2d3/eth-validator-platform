@@ -96,7 +96,9 @@ storage:
 p2p:
   service:
     enabled: true
+    nameSuffix: p2p
     type: ClusterIP
+    loadBalancerClass: ""
     annotations: {}
     externalTrafficPolicy: Cluster
     loadBalancerSourceRanges: []

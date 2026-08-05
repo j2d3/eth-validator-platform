@@ -55,3 +55,6 @@ render \
 render \
   "${REPOSITORY_ROOT}/platform/infrastructure/overlays/dev/controllers/ingress-nginx.yaml" \
   "https://kubernetes.github.io/ingress-nginx"
+render \
+  "${REPOSITORY_ROOT}/platform/infrastructure/overlays/dev/controllers/aws-load-balancer-controller.yaml" \
+  "https://aws.github.io/eks-charts"

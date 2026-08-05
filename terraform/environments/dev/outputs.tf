@@ -13,6 +13,16 @@ output "aws_region" {
   value       = var.aws_region
 }
 
+output "vpc_id" {
+  description = "VPC identifier supplied to AWS-native controllers without relying on node metadata."
+  value       = module.vpc.vpc_id
+}
+
+output "load_balancer_controller_role_arn" {
+  description = "Pod Identity role scoped to the AWS Load Balancer Controller ServiceAccount."
+  value       = aws_iam_role.load_balancer_controller.arn
+}
+
 output "engine_jwt_secret_arn" {
   description = "Secrets Manager ARN populated by the deployment workflow after apply."
   value       = aws_secretsmanager_secret.engine_jwt.arn

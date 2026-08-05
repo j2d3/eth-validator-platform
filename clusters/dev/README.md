@@ -44,10 +44,11 @@ missing database/signing role or Pod security-group ID. The ConfigMap is annotat
 not a Git-managed application object.
 
 The controller Kustomization also requires the separate
-`flux-system/aws-ingress-inputs` ConfigMap containing only the exact-hostname
-ACM certificate ARN from the DNS Terraform root. It is non-secret but
-account-specific, uses the same prune-disabled bootstrap-input boundary, and
-must exist before ingress-nginx reconciliation.
+`flux-system/aws-ingress-inputs` ConfigMap containing the cluster name, AWS
+region, VPC ID, and exact-hostname ACM certificate ARN from the two Terraform
+roots. These values are non-secret but environment-specific, use the same
+prune-disabled bootstrap-input boundary, and must exist before ingress-nginx
+or AWS Load Balancer Controller reconciliation.
 
 Before the `signer-infrastructure-configs` layer is admitted, the operator adds
 the database/signing reader fields and distinct
@@ -60,7 +61,8 @@ fail the signer branch closed without preventing node-only sync. Every reader
 value must be its corresponding scoped role ARN, never the base Pod Identity
 role.
 
-The EKS controller overlay installs Prometheus/Grafana but deliberately excludes
+The EKS controller overlay installs Prometheus/Grafana and the AWS Load
+Balancer Controller but deliberately excludes
 the local Loki/Alloy topology and local-only dashboard ConfigMaps. Pair and
 signer metrics still retain the EKS `cluster`/`environment` label contract; an
 AWS logging/RDS-dashboard adapter must land separately rather than presenting

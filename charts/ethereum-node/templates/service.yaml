@@ -19,7 +19,7 @@ spec:
 apiVersion: v1
 kind: Service
 metadata:
-  name: {{ include "ethereum-node.fullname" . }}-p2p
+  name: {{ include "ethereum-node.fullname" . }}-{{ .Values.p2p.service.nameSuffix }}
   labels:
     {{- include "ethereum-node.labels" . | nindent 4 }}
   {{- with .Values.p2p.service.annotations }}
@@ -28,6 +28,9 @@ metadata:
   {{- end }}
 spec:
   type: {{ .Values.p2p.service.type }}
+  {{- if and (eq .Values.p2p.service.type "LoadBalancer") .Values.p2p.service.loadBalancerClass }}
+  loadBalancerClass: {{ .Values.p2p.service.loadBalancerClass | quote }}
+  {{- end }}
   {{- if ne .Values.p2p.service.type "ClusterIP" }}
   externalTrafficPolicy: {{ .Values.p2p.service.externalTrafficPolicy }}
   {{- end }}

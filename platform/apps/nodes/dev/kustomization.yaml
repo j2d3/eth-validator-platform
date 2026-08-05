@@ -59,6 +59,31 @@ patches:
           secretStoreName: aws-engine-secrets
           remoteSecretKey: eth-validator-platform-dev/ethereum/engine-jwt
           remoteSecretProperty: jwt.hex
+      # Exactly one pair owns the public P2P NLB. The other client-diversity
+      # pairs retain ClusterIP P2P Services and sync through outbound peers.
+      # loadBalancerClass assigns this Service to AWS LBC without mutating the
+      # existing operations-ingress LoadBalancer into the same controller.
+      - op: add
+        path: /spec/values/p2p
+        value:
+          service:
+            enabled: true
+            # loadBalancerClass is immutable after Service creation. A new
+            # suffix makes the controller migration a Helm delete/create
+            # instead of an invalid in-place mutation of the failed legacy
+            # -p2p Service.
+            nameSuffix: p2p-nlb
+            type: LoadBalancer
+            loadBalancerClass: service.k8s.aws/nlb
+            annotations:
+              service.beta.kubernetes.io/aws-load-balancer-nlb-target-type: ip
+              service.beta.kubernetes.io/aws-load-balancer-scheme: internet-facing
+              service.beta.kubernetes.io/aws-load-balancer-healthcheck-protocol: tcp
+              service.beta.kubernetes.io/aws-load-balancer-healthcheck-port: "9000"
+              service.beta.kubernetes.io/aws-load-balancer-attributes: load_balancing.cross_zone.enabled=true
+            externalTrafficPolicy: Cluster
+            loadBalancerSourceRanges:
+              - 0.0.0.0/0
   - target:
       version: v1
       kind: ConfigMap
