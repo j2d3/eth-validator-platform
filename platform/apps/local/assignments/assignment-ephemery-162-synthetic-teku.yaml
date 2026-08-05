@@ -58,6 +58,9 @@ spec:
         besu:
           mode: artifact-bundle
           network: null
+        nethermind:
+          mode: artifact-bundle
+          network: null
         lighthouse:
           mode: artifact-bundle
           network: null
@@ -77,6 +80,7 @@ spec:
         sha256: 478ca7181212f2d87137c337e854befbed8aacde8bee8f64d6ca7e28967ee2fb
         files:
           executionGenesis: genesis.json
+          executionChainspec: chainspec.json
           consensusConfig: config.yaml
           consensusGenesis: genesis.ssz
           consensusGenesisValidatorsRoot: genesis_validators_root.txt

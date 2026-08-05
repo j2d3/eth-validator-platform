@@ -28,7 +28,7 @@ GENERATED_HEADER = (
     "# Do not edit by hand; change the catalog and rerun the renderer.\n"
 )
 
-SUPPORTED_EXECUTION_CLIENTS = {"geth", "reth", "erigon", "besu"}
+SUPPORTED_EXECUTION_CLIENTS = {"geth", "reth", "erigon", "besu", "nethermind"}
 SUPPORTED_CONSENSUS_CLIENTS = {"lighthouse", "teku", "nimbus"}
 
 

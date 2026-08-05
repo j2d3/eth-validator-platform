@@ -120,10 +120,14 @@ class NetworkProfileCatalogTests(unittest.TestCase):
             profile["spec"]["artifactBundle"]["sha256"],
             "478ca7181212f2d87137c337e854befbed8aacde8bee8f64d6ca7e28967ee2fb",
         )
-        self.assertEqual(len(profile["spec"]["artifactBundle"]["files"]), 13)
+        self.assertEqual(len(profile["spec"]["artifactBundle"]["files"]), 14)
         self.assertEqual(
             profile["spec"]["artifactBundle"]["files"]["depositContractBlock"],
             "deposit_contract_block.txt",
+        )
+        self.assertEqual(
+            profile["spec"]["artifactBundle"]["files"]["executionChainspec"],
+            "chainspec.json",
         )
         self.assertNotIn(
             "depositDeployBlock", profile["spec"]["artifactBundle"]["files"]

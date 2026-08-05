@@ -56,6 +56,7 @@
               "additionalProperties": false,
               "required": [
                 "executionGenesis",
+                "executionChainspec",
                 "consensusConfig",
                 "consensusGenesis",
                 "consensusGenesisValidatorsRoot",
@@ -71,6 +72,7 @@
               ],
               "properties": {
                 "executionGenesis": {"$ref": "#/$defs/bundlePath"},
+                "executionChainspec": {"$ref": "#/$defs/bundlePath"},
                 "consensusConfig": {"$ref": "#/$defs/bundlePath"},
                 "consensusGenesis": {"$ref": "#/$defs/bundlePath"},
                 "consensusGenesisValidatorsRoot": {"$ref": "#/$defs/bundlePath"},
@@ -96,6 +98,7 @@
             "reth": {"$ref": "#/$defs/rethAdapter"},
             "erigon": {"$ref": "#/$defs/erigonAdapter"},
             "besu": {"$ref": "#/$defs/besuAdapter"},
+            "nethermind": {"$ref": "#/$defs/nethermindAdapter"},
             "lighthouse": {"$ref": "#/$defs/lighthouseAdapter"},
             "teku": {"$ref": "#/$defs/tekuAdapter"},
             "nimbus": {"$ref": "#/$defs/nimbusAdapter"}
@@ -258,6 +261,27 @@
       ]
     },
     "besuAdapter": {
+      "oneOf": [
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["mode", "network"],
+          "properties": {
+            "mode": {"const": "builtin"},
+            "network": {"enum": ["sepolia", "hoodi"]}
+          }
+        },
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["mode"],
+          "properties": {
+            "mode": {"const": "artifact-bundle"}
+          }
+        }
+      ]
+    },
+    "nethermindAdapter": {
       "oneOf": [
         {
           "type": "object",

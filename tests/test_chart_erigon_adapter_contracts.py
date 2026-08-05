@@ -72,6 +72,7 @@ def erigon_ephemery_values() -> dict:
                 "sha256": "0" * 64,
                 "files": {
                     "executionGenesis": "genesis.json",
+                    "executionChainspec": "chainspec.json",
                     "consensusConfig": "config.yaml",
                     "consensusGenesis": "genesis.ssz",
                     "consensusGenesisValidatorsRoot":

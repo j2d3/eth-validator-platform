@@ -88,14 +88,15 @@ class LocalAssignmentProjectionTests(unittest.TestCase):
             self.release(catalog)
 
     def test_projection_refuses_unimplemented_client_adapter(self) -> None:
-        # Reth is now a supported adapter (see PR-B chart change + PR-C
-        # projection extension). This test still needs a client name the
-        # projection tool does not know so its fail-closed path is exercised;
-        # Nethermind is the next-in-line EL adapter (see the ServiceProfile
-        # schema's enum) and has not been implemented.
+        # Every EL currently on the ServiceProfile enum has an
+        # implemented adapter (geth, reth, erigon, besu, nethermind). The
+        # fail-closed path is still exercised with a client name the
+        # projection tool does not know; Prysm is the next-in-line CL
+        # (see the ServiceProfile schema's `consensusClient` enum) and has
+        # not been implemented as a chart adapter.
         catalog = copy.deepcopy(self.catalog)
         profile = catalog["ServiceProfile"]["dedicated-geth-lighthouse"]
-        profile["spec"]["executionClient"] = "nethermind"
+        profile["spec"]["consensusClient"] = "prysm"
 
         with self.assertRaisesRegex(render_local_assignments.ProjectionError, "no local adapter"):
             self.release(catalog)

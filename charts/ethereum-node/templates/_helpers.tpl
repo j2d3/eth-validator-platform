@@ -110,6 +110,8 @@ namespacing, JWT mount, network artifact layout, security context).
 {{- include "ethereum-node.erigonInitCommand" . -}}
 {{- else if eq $client "besu" -}}
 {{- include "ethereum-node.besuInitCommand" . -}}
+{{- else if eq $client "nethermind" -}}
+{{- include "ethereum-node.nethermindInitCommand" . -}}
 {{- else -}}
 {{- fail (printf "no init-command adapter for executionClient=%q" $client) -}}
 {{- end -}}
@@ -125,6 +127,8 @@ namespacing, JWT mount, network artifact layout, security context).
 {{- include "ethereum-node.erigonRunCommand" . -}}
 {{- else if eq $client "besu" -}}
 {{- include "ethereum-node.besuRunCommand" . -}}
+{{- else if eq $client "nethermind" -}}
+{{- include "ethereum-node.nethermindRunCommand" . -}}
 {{- else -}}
 {{- fail (printf "no run-command adapter for executionClient=%q" $client) -}}
 {{- end -}}
@@ -136,6 +140,7 @@ namespacing, JWT mount, network artifact layout, security context).
 {{- else if eq $client "reth" -}}db
 {{- else if eq $client "erigon" -}}chaindata
 {{- else if eq $client "besu" -}}database
+{{- else if eq $client "nethermind" -}}nethermind_db
 {{- else -}}
 {{- fail (printf "no dataDirMarker for executionClient=%q" $client) -}}
 {{- end -}}
@@ -147,7 +152,7 @@ other client adapters so a new client cannot silently inherit Geth's endpoint.
 */}}
 {{- define "ethereum-node.executionMetricsPath" -}}
 {{- $client := .Values.executionClient -}}
-{{- if eq $client "besu" -}}/metrics
+{{- if or (eq $client "besu") (eq $client "nethermind") -}}/metrics
 {{- else if or (eq $client "geth") (eq $client "reth") (eq $client "erigon") -}}/debug/metrics/prometheus
 {{- else -}}
 {{- fail (printf "no metrics-path adapter for executionClient=%q" $client) -}}
@@ -492,6 +497,90 @@ exec besu \
   --metrics-enabled \
   --metrics-host=0.0.0.0 \
   --metrics-port=6060
+{{- end -}}
+
+{{- define "ethereum-node.nethermindInitCommand" -}}
+set -eu
+marker=/data/.platform-network-identity
+expected={{ .Values.networkProfile.identityFingerprint | quote }}
+test "$(cat /network/.verified-identity)" = "$expected"
+if [ -f "$marker" ]; then
+  test "$(cat "$marker")" = "$expected" || {
+    echo "execution PVC belongs to another network identity" >&2
+    exit 1
+  }
+  # Nethermind creates /data/nethermind_db itself on first execution start
+  # from --Init.ChainSpecPath + --Init.BaseDbPath. A Pod may be replaced
+  # after this init writes the platform marker but before Nethermind
+  # creates that directory, especially on Spot capacity. A marker-only
+  # claim (or marker + /data/keystore only) is therefore a resumable
+  # first start. If unrelated content exists without the Nethermind DB
+  # directory, fail closed so foreign data cannot ride into a wrong-
+  # network Pod on the same PVC.
+  if [ ! -d /data/{{ include "ethereum-node.executionDataDirMarker" . }} ]; then
+    for entry in /data/.[!.]* /data/..?* /data/*; do
+      [ -e "$entry" ] || continue
+      [ "$entry" = /data/lost+found ] && continue
+      [ "$entry" = "$marker" ] && continue
+      [ "$entry" = /data/keystore ] && continue
+      echo "execution PVC marker exists without initialized Nethermind data" >&2
+      exit 1
+    done
+  fi
+  # Keystore may or may not exist yet (resumable path). Ensure it before
+  # Nethermind's run command tries --KeyStore.KeyStoreDirectory=/data/keystore.
+  mkdir -p /data/keystore
+  exit 0
+fi
+for entry in /data/.[!.]* /data/..?* /data/*; do
+  [ -e "$entry" ] || continue
+  [ "$entry" = /data/lost+found ] && continue
+  echo "refusing to initialize an unmarked non-empty execution PVC" >&2
+  exit 1
+done
+# Two-phase init: write the platform network-identity marker FIRST, then
+# create the keystore directory. Nethermind creates /data/nethermind_db
+# itself on first run from --Init.ChainSpecPath + --Init.BaseDbPath, so
+# this helper never pre-creates a Nethermind-owned database directory
+# (matching the Besu #155 pattern — a pre-created empty client-DB
+# directory can be interpreted by the client as an existing DB with
+# missing metadata and rejected).
+#
+# If the Pod is interrupted between the marker write and the keystore
+# mkdir, the next boot sees marker-only and takes the resumable path
+# above (which idempotently re-runs the keystore mkdir).
+printf '%s\n' "$expected" > "$marker"
+mkdir -p /data/keystore
+{{- end -}}
+
+{{- define "ethereum-node.nethermindRunCommand" -}}
+set -eu
+bootnode="$(cat {{ printf "/network/files/%s" .Values.networkProfile.artifactBundle.files.executionBootnode | quote }})"
+test -n "$bootnode"
+# Nethermind wants its own chainspec file (not geth-style genesis.json).
+# --config=none disables the built-in-network selector; the whole runtime
+# is driven by --Init.ChainSpecPath + explicit CLI flags. --KeyStore.
+# KeyStoreDirectory is pinned into /data because Nethermind's default
+# /nethermind/keystore/node.key.plain path is read-only under the
+# chart's hardened Pod contract.
+exec ./Nethermind.Runner \
+  --config=none \
+  {{ printf "--Init.ChainSpecPath=/network/files/%s" .Values.networkProfile.artifactBundle.files.executionChainspec | quote }} \
+  --Init.BaseDbPath=/data \
+  --KeyStore.KeyStoreDirectory=/data/keystore \
+  --Network.DiscoveryPort=30303 \
+  --Network.P2PPort=30303 \
+  --Network.Bootnodes="$bootnode" \
+  --JsonRpc.Enabled=true \
+  --JsonRpc.Host=0.0.0.0 \
+  --JsonRpc.Port=8545 \
+  --JsonRpc.EnabledModules=Eth,Net,Web3 \
+  --JsonRpc.EngineHost=0.0.0.0 \
+  --JsonRpc.EnginePort=8551 \
+  --JsonRpc.JwtSecretFile=/jwt/jwt.hex \
+  --Metrics.Enabled=true \
+  --Metrics.ExposeHost=0.0.0.0 \
+  --Metrics.ExposePort=6060
 {{- end -}}
 
 {{- define "ethereum-node.metricRelabelings" -}}
