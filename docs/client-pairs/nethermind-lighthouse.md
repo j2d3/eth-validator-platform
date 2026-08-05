@@ -83,12 +83,25 @@ Per #156's chart adapter:
   `tpl-chainspec.json`).
 - `--Init.BaseDbPath=/data` — data directory root; Nethermind creates
   `/data/nethermind_db` on first execution start.
+- `--Init.StaticNodesPath=/tmp/static-nodes.json` and
+  `--Init.TrustedNodesPath=/tmp/trusted-nodes.json` — keep reconstructible peer
+  files on the writable ephemeral mount instead of Nethermind's read-only
+  application directory or the durable execution PVC. Logs use `/tmp/logs`.
 - `--KeyStore.KeyStoreDirectory=/data/keystore` — required override
   because Nethermind's default `/nethermind/keystore/node.key.plain`
   path fails under the chart's read-only-root Pod contract. The init
   helper creates this directory (idempotently, before any Nethermind
   process starts).
-- `--Network.Bootnodes` sourced from the bundle's `boot_enode.txt`.
+- `--Network.Bootnodes` receives the complete line-delimited `enodes.txt`
+  bundle file as one comma-delimited argument.
+
+The first EKS start verified the init state machine but exposed two run-command
+requirements before Engine API opened: passing newline-delimited enodes as one
+argument made Nethermind parse the second line as an invalid ENR, and the
+default static-nodes path targeted read-only `/nethermind`. The corrected
+command was then exercised against the pinned image with UID 1000, a read-only
+root filesystem, dropped capabilities, and no-new-privileges; it parsed both
+enodes, opened JSON-RPC and Engine API, and formed peers.
 
 ## Metric normalization
 

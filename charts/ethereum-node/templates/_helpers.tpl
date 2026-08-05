@@ -555,22 +555,25 @@ mkdir -p /data/keystore
 
 {{- define "ethereum-node.nethermindRunCommand" -}}
 set -eu
-bootnode="$(cat {{ printf "/network/files/%s" .Values.networkProfile.artifactBundle.files.executionBootnode | quote }})"
-test -n "$bootnode"
+bootnodes="$(tr '\n' ',' < {{ printf "/network/files/%s" .Values.networkProfile.artifactBundle.files.executionBootnodes }})"
+bootnodes="${bootnodes%,}"
+test -n "$bootnodes"
 # Nethermind wants its own chainspec file (not geth-style genesis.json).
 # --config=none disables the built-in-network selector; the whole runtime
-# is driven by --Init.ChainSpecPath + explicit CLI flags. --KeyStore.
-# KeyStoreDirectory is pinned into /data because Nethermind's default
-# /nethermind/keystore/node.key.plain path is read-only under the
+# is driven by --Init.ChainSpecPath + explicit CLI flags. Every mutable path
+# is pinned into /data or /tmp because /nethermind is read-only under the
 # chart's hardened Pod contract.
 exec ./Nethermind.Runner \
   --config=none \
   {{ printf "--Init.ChainSpecPath=/network/files/%s" .Values.networkProfile.artifactBundle.files.executionChainspec | quote }} \
   --Init.BaseDbPath=/data \
+  --Init.StaticNodesPath=/tmp/static-nodes.json \
+  --Init.TrustedNodesPath=/tmp/trusted-nodes.json \
+  --Init.LogDirectory=/tmp/logs \
   --KeyStore.KeyStoreDirectory=/data/keystore \
   --Network.DiscoveryPort=30303 \
   --Network.P2PPort=30303 \
-  --Network.Bootnodes="$bootnode" \
+  --Network.Bootnodes="$bootnodes" \
   --JsonRpc.Enabled=true \
   --JsonRpc.Host=0.0.0.0 \
   --JsonRpc.Port=8545 \
