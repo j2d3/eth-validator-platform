@@ -18,6 +18,7 @@ on:
       - tools/discover_container_images.py
       - tools/evaluate_image_scan.py
       - tools/verify_image_scan_evidence.py
+      - tools/verify_image_sbom.py
       - tools/verify_container_contracts.py
       - schemas/image-vulnerability-exceptions.schema.json
       - security/image-vulnerability-exceptions/**
@@ -34,6 +35,7 @@ on:
       - tools/discover_container_images.py
       - tools/evaluate_image_scan.py
       - tools/verify_image_scan_evidence.py
+      - tools/verify_image_sbom.py
       - tools/verify_container_contracts.py
       - schemas/image-vulnerability-exceptions.schema.json
       - security/image-vulnerability-exceptions/**
@@ -92,6 +94,7 @@ jobs:
             tools/evaluate_image_scan.py \
             tools/verify_container_contracts.py \
             tools/verify_image_scan_evidence.py \
+            tools/verify_image_sbom.py \
             schemas/image-vulnerability-exceptions.schema.json \
             security/image-vulnerability-exceptions)"
           if [[ -n "$critical_changes" ]]; then
@@ -204,6 +207,19 @@ jobs:
               f"{result['decision']['outcome']} (evidence only; not a promotion gate)."
           )
           PY
+      - name: Generate and bind a CycloneDX SBOM
+        shell: bash
+        run: |
+          set -euo pipefail
+          trivy convert \
+            --format cyclonedx \
+            --output image-sbom.cdx.json \
+            trivy-results.json
+          python3 tools/verify_image_sbom.py \
+            --sbom image-sbom.cdx.json \
+            --scan-subject scan-subject.json \
+            --output sbom-subject.json
+          printf 'Generated a verified CycloneDX SBOM for the exact scan subject.\n' >> "$GITHUB_STEP_SUMMARY"
       - name: Retain scanner evidence
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a
         with:
@@ -211,6 +227,8 @@ jobs:
           path: |
             scan-subject.json
             image-scan-decision.json
+            image-sbom.cdx.json
+            sbom-subject.json
             trivy-results.json
             trivy-version.json
           if-no-files-found: error
@@ -226,6 +244,7 @@ jobs:
       available: ${{ steps.aggregate.outputs.available }}
       exact_subjects: ${{ steps.aggregate.outputs.exact_subjects }}
       scanned_subjects: ${{ steps.aggregate.outputs.scanned_subjects }}
+      sbom_subjects: ${{ steps.aggregate.outputs.sbom_subjects }}
       coverage_gaps: ${{ steps.aggregate.outputs.coverage_gaps }}
       critical_total: ${{ steps.aggregate.outputs.critical_total }}
       critical_available: ${{ steps.aggregate.outputs.critical_available }}
@@ -287,7 +306,7 @@ jobs:
           retention-days: 14
 
   public-finding-counts:
-    name: Image findings - ${{ needs.evidence-decision.outputs.scanned_subjects }}/${{ needs.evidence-decision.outputs.exact_subjects }} exact subjects - ${{ needs.evidence-decision.outputs.coverage_gaps }} coverage gaps - Critical ${{ needs.evidence-decision.outputs.critical_total }} (${{ needs.evidence-decision.outputs.critical_available }} fix available) - High ${{ needs.evidence-decision.outputs.high_total }} (${{ needs.evidence-decision.outputs.high_available }} fix available)
+    name: Image findings - ${{ needs.evidence-decision.outputs.scanned_subjects }}/${{ needs.evidence-decision.outputs.exact_subjects }} exact subjects - ${{ needs.evidence-decision.outputs.coverage_gaps }} coverage gaps - SBOM ${{ needs.evidence-decision.outputs.sbom_subjects }}/${{ needs.evidence-decision.outputs.exact_subjects }} - Critical ${{ needs.evidence-decision.outputs.critical_total }} (${{ needs.evidence-decision.outputs.critical_available }} fix available) - High ${{ needs.evidence-decision.outputs.high_total }} (${{ needs.evidence-decision.outputs.high_available }} fix available)
     needs: evidence-decision
     if: needs.evidence-decision.outputs.available == 'true'
     runs-on: ubuntu-latest
@@ -296,4 +315,4 @@ jobs:
       - name: Publish coverage and counts in the public check name
         run: |
           printf '%s\n' 'Evidence only; findings do not block promotion.'
-          printf '%s\n' 'Counts cover the exact discovered subjects only. Coverage gaps are unresolved image sources whose findings remain unknown.'
+          printf '%s\n' 'Counts and verified SBOMs cover the exact discovered subjects only. Coverage gaps are unresolved image sources whose findings remain unknown.'

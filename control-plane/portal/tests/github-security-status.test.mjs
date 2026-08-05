@@ -27,7 +27,7 @@ const validRun = {
 const validEvidence = {
   check_runs: [
     {
-      name: "Image findings - 21/21 exact subjects - 11 coverage gaps - Critical 3 (2 fix available) - High 47 (31 fix available)",
+      name: "Image findings - 21/21 exact subjects - 11 coverage gaps - SBOM 21/21 - Critical 3 (2 fix available) - High 47 (31 fix available)",
       head_sha: "a".repeat(40),
       status: "completed",
       conclusion: "success",
@@ -65,6 +65,7 @@ test("parses exact-subject coverage and counts bound to the exact workflow run",
   const run = parseImageSecurityRun(validRun);
   assert.deepEqual(parseImageSecurityEvidence(validEvidence, run), {
     exactSubjects: { scanned: 21, expected: 21 },
+    sbomSubjects: { generated: 21, expected: 21 },
     coverageGaps: 11,
     critical: { total: 3, available: 2 },
     high: { total: 47, available: 31 },
@@ -77,7 +78,7 @@ test("parses exact-subject coverage and counts bound to the exact workflow run",
 test("keeps unresolved coverage gaps visible when nothing is missing", () => {
   const response = structuredClone(validEvidence);
   response.check_runs[0].name =
-    "Image findings - 9/9 exact subjects - 0 coverage gaps - Critical 0 (0 fix available) - High 0 (0 fix available)";
+    "Image findings - 9/9 exact subjects - 0 coverage gaps - SBOM 9/9 - Critical 0 (0 fix available) - High 0 (0 fix available)";
   const evidence = parseImageSecurityEvidence(
     response,
     parseImageSecurityRun(validRun),
@@ -89,7 +90,7 @@ test("keeps unresolved coverage gaps visible when nothing is missing", () => {
 test("rejects more scanned subjects than were discovered", () => {
   const response = structuredClone(validEvidence);
   response.check_runs[0].name =
-    "Image findings - 22/21 exact subjects - 11 coverage gaps - Critical 3 (2 fix available) - High 47 (31 fix available)";
+    "Image findings - 22/21 exact subjects - 11 coverage gaps - SBOM 21/21 - Critical 3 (2 fix available) - High 47 (31 fix available)";
   assert.throws(() =>
     parseImageSecurityEvidence(response, parseImageSecurityRun(validRun)),
   );
@@ -98,7 +99,7 @@ test("rejects more scanned subjects than were discovered", () => {
 test("rejects partial exact-subject coverage", () => {
   const response = structuredClone(validEvidence);
   response.check_runs[0].name =
-    "Image findings - 20/21 exact subjects - 11 coverage gaps - Critical 3 (2 fix available) - High 47 (31 fix available)";
+    "Image findings - 20/21 exact subjects - 11 coverage gaps - SBOM 21/21 - Critical 3 (2 fix available) - High 47 (31 fix available)";
   assert.throws(() =>
     parseImageSecurityEvidence(response, parseImageSecurityRun(validRun)),
   );
@@ -107,7 +108,7 @@ test("rejects partial exact-subject coverage", () => {
 test("rejects an inventory with no discovered subject", () => {
   const response = structuredClone(validEvidence);
   response.check_runs[0].name =
-    "Image findings - 0/0 exact subjects - 11 coverage gaps - Critical 3 (2 fix available) - High 47 (31 fix available)";
+    "Image findings - 0/0 exact subjects - 11 coverage gaps - SBOM 0/0 - Critical 3 (2 fix available) - High 47 (31 fix available)";
   assert.throws(() =>
     parseImageSecurityEvidence(response, parseImageSecurityRun(validRun)),
   );
@@ -149,10 +150,21 @@ test("does not accept finding counts from another workflow run", () => {
 test("rejects impossible public finding counts", () => {
   const response = structuredClone(validEvidence);
   response.check_runs[0].name =
-    "Image findings - 21/21 exact subjects - 11 coverage gaps - Critical 3 (4 fix available) - High 47 (31 fix available)";
+    "Image findings - 21/21 exact subjects - 11 coverage gaps - SBOM 21/21 - Critical 3 (4 fix available) - High 47 (31 fix available)";
   assert.throws(() =>
     parseImageSecurityEvidence(response, parseImageSecurityRun(validRun)),
   );
+});
+
+test("rejects partial or differently scoped SBOM evidence", () => {
+  for (const coverage of ["20/21", "21/22"]) {
+    const response = structuredClone(validEvidence);
+    response.check_runs[0].name =
+      `Image findings - 21/21 exact subjects - 11 coverage gaps - SBOM ${coverage} - Critical 3 (2 fix available) - High 47 (31 fix available)`;
+    assert.throws(() =>
+      parseImageSecurityEvidence(response, parseImageSecurityRun(validRun)),
+    );
+  }
 });
 
 test("counts only open Dependabot pull requests", () => {

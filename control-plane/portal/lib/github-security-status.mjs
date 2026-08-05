@@ -9,7 +9,7 @@ export const DEPENDABOT_PULLS_API =
   `https://api.github.com/repos/${REPOSITORY}/pulls?state=open&per_page=100`;
 
 const FINDINGS_NAME =
-  /^Image findings - (\d+)\/(\d+) exact subjects - (\d+) coverage gaps - Critical (\d+) \((\d+) fix available\) - High (\d+) \((\d+) fix available\)$/;
+  /^Image findings - (\d+)\/(\d+) exact subjects - (\d+) coverage gaps - SBOM (\d+)\/(\d+) - Critical (\d+) \((\d+) fix available\) - High (\d+) \((\d+) fix available\)$/;
 
 function isRecord(value) {
   return typeof value === "object" && value !== null && !Array.isArray(value);
@@ -91,6 +91,8 @@ export function parseImageSecurityEvidence(value, run) {
     scannedSubjects,
     exactSubjects,
     coverageGaps,
+    sbomSubjects,
+    sbomExpected,
     criticalTotal,
     criticalAvailable,
     highTotal,
@@ -99,6 +101,8 @@ export function parseImageSecurityEvidence(value, run) {
   if (
     exactSubjects < 1 ||
     scannedSubjects !== exactSubjects ||
+    sbomSubjects !== exactSubjects ||
+    sbomExpected !== exactSubjects ||
     criticalAvailable > criticalTotal ||
     highAvailable > highTotal
   ) {
@@ -107,6 +111,7 @@ export function parseImageSecurityEvidence(value, run) {
 
   return {
     exactSubjects: { scanned: scannedSubjects, expected: exactSubjects },
+    sbomSubjects: { generated: sbomSubjects, expected: sbomExpected },
     coverageGaps,
     critical: { total: criticalTotal, available: criticalAvailable },
     high: { total: highTotal, available: highAvailable },
