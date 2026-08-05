@@ -482,6 +482,7 @@ exec besu \
   --bootnodes="$bootnodes" \
   --rpc-http-enabled \
   --rpc-http-host=0.0.0.0 \
+  --host-allowlist='*' \
   --rpc-http-port=8545 \
   --rpc-http-api=ETH,NET,WEB3 \
   --engine-rpc-enabled \
