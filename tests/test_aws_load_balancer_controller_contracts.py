@@ -140,6 +140,12 @@ class AwsLoadBalancerControllerTests(unittest.TestCase):
             ],
             "ip",
         )
+        self.assertEqual(
+            service["annotations"][
+                "service.beta.kubernetes.io/aws-load-balancer-enable-tcp-udp-listener"
+            ],
+            "true",
+        )
         self.assertNotIn(
             "service.beta.kubernetes.io/aws-load-balancer-type",
             service["annotations"],
