@@ -1,7 +1,7 @@
 """Offline chart-render contract for the Nethermind execution-client adapter.
 
 Proves the chart accepts `executionClient: nethermind`, uses the Nethermind
-helpers end-to-end (init creates the /data/nethermind_db marker + keystore
+helpers end-to-end (init binds the PVC identity and creates the keystore
 subdir, run command execs Nethermind with the runtime-verified flag shape:
 `--config=none --Init.ChainSpecPath=... --KeyStore.KeyStoreDirectory=...`),
 and preserves the Geth path unchanged. Does NOT prove any catalog/projection
@@ -199,7 +199,7 @@ class NethermindAdapterRenderTests(unittest.TestCase):
 
         # Reconstructible peer files stay off the durable PVC. Otherwise a
         # first-start interruption after Nethermind creates one of these files
-        # but before /data/nethermind_db exists would make the init state
+        # but before /data/metadata exists would make the init state
         # machine classify its own partial start as foreign data.
         self.assertNotIn("--Init.StaticNodesPath=/data/", script)
         self.assertNotIn("--Init.TrustedNodesPath=/data/", script)
@@ -254,7 +254,7 @@ class NethermindAdapterRenderTests(unittest.TestCase):
         # claim (or marker + /data/keystore only) is resumable because Pod
         # replacement can happen between the marker write and Nethermind's
         # first DB creation on Spot capacity.
-        self.assertIn("if [ ! -d /data/nethermind_db ]; then", script)
+        self.assertIn("if [ ! -d /data/metadata ]; then", script)
         self.assertIn('[ "$entry" = "$marker" ] && continue', script)
         self.assertIn('[ "$entry" = /data/keystore ] && continue', script)
         self.assertNotIn("test -d /data/geth", script)
@@ -262,16 +262,16 @@ class NethermindAdapterRenderTests(unittest.TestCase):
         self.assertNotIn("test -d /data/chaindata", script)
         self.assertNotIn("test -d /data/database", script)
         # Nethermind has no init subcommand. It must create its own DB
-        # directory; a pre-created /data/nethermind_db could be interpreted
-        # by Nethermind as an existing DB with missing metadata (same
-        # failure class Besu had in #155).
+        # directories directly under /data; a pre-created /data/metadata
+        # could be interpreted by Nethermind as an existing DB with missing
+        # content (same failure class Besu had in #155).
         for line in script.splitlines():
             normalized = line.strip().replace('"', "").replace("'", "")
             self.assertFalse(
                 normalized.startswith(
                     (
-                        "mkdir /data/nethermind_db",
-                        "mkdir -p /data/nethermind_db",
+                        "mkdir /data/metadata",
+                        "mkdir -p /data/metadata",
                     )
                 ),
                 msg="init script must leave Nethermind database creation to Nethermind",
@@ -318,7 +318,11 @@ class NethermindAdapterRenderTests(unittest.TestCase):
                 elif state == "initialized":
                     marker.write_text(fingerprint, encoding="utf-8")
                     (data / "keystore").mkdir()
-                    (data / "nethermind_db").mkdir()
+                    # Runtime-observed with --Init.BaseDbPath=/data: the
+                    # databases are direct children, and metadata is the
+                    # restart sentinel used by the init guard.
+                    (data / "metadata").mkdir()
+                    (data / "blocks").mkdir()
                 elif state == "wrong-network":
                     marker.write_text("f" * 64, encoding="utf-8")
                 elif state == "unrelated-data":

@@ -140,7 +140,7 @@ namespacing, JWT mount, network artifact layout, security context).
 {{- else if eq $client "reth" -}}db
 {{- else if eq $client "erigon" -}}chaindata
 {{- else if eq $client "besu" -}}database
-{{- else if eq $client "nethermind" -}}nethermind_db
+{{- else if eq $client "nethermind" -}}metadata
 {{- else -}}
 {{- fail (printf "no dataDirMarker for executionClient=%q" $client) -}}
 {{- end -}}
@@ -584,12 +584,13 @@ if [ -f "$marker" ]; then
     echo "execution PVC belongs to another network identity" >&2
     exit 1
   }
-  # Nethermind creates /data/nethermind_db itself on first execution start
-  # from --Init.ChainSpecPath + --Init.BaseDbPath. A Pod may be replaced
+  # Nethermind creates its database directories directly under /data when
+  # --Init.BaseDbPath=/data; /data/metadata is the runtime-observed sentinel.
+  # A Pod may be replaced
   # after this init writes the platform marker but before Nethermind
   # creates that directory, especially on Spot capacity. A marker-only
   # claim (or marker + /data/keystore only) is therefore a resumable
-  # first start. If unrelated content exists without the Nethermind DB
+  # first start. If unrelated content exists without the observed metadata
   # directory, fail closed so foreign data cannot ride into a wrong-
   # network Pod on the same PVC.
   if [ ! -d /data/{{ include "ethereum-node.executionDataDirMarker" . }} ]; then
@@ -614,9 +615,10 @@ for entry in /data/.[!.]* /data/..?* /data/*; do
   exit 1
 done
 # Two-phase init: write the platform network-identity marker FIRST, then
-# create the keystore directory. Nethermind creates /data/nethermind_db
-# itself on first run from --Init.ChainSpecPath + --Init.BaseDbPath, so
-# this helper never pre-creates a Nethermind-owned database directory
+# create the keystore directory. Nethermind creates its RocksDB directories
+# directly below /data on first run from --Init.ChainSpecPath +
+# --Init.BaseDbPath=/data, so this helper never pre-creates a
+# Nethermind-owned database directory
 # (matching the Besu #155 pattern — a pre-created empty client-DB
 # directory can be interpreted by the client as an existing DB with
 # missing metadata and rejected).
