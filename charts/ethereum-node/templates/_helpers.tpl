@@ -428,10 +428,20 @@ if [ -f "$marker" ]; then
     echo "execution PVC belongs to another network identity" >&2
     exit 1
   }
-  test -d /data/{{ include "ethereum-node.executionDataDirMarker" . }} || {
-    echo "execution PVC marker exists without initialized Besu data" >&2
-    exit 1
-  }
+  # Besu creates /data/database itself on first execution start. A Pod may be
+  # replaced after this init container writes the platform marker but before
+  # Besu creates that directory, especially on Spot capacity. Marker-only is
+  # therefore a resumable first start. If any other content exists, require
+  # the Besu data directory so unrelated or partially lost data fails closed.
+  if [ ! -d /data/{{ include "ethereum-node.executionDataDirMarker" . }} ]; then
+    for entry in /data/.[!.]* /data/..?* /data/*; do
+      [ -e "$entry" ] || continue
+      [ "$entry" = /data/lost+found ] && continue
+      [ "$entry" = "$marker" ] && continue
+      echo "execution PVC marker exists without initialized Besu data" >&2
+      exit 1
+    done
+  fi
   exit 0
 fi
 for entry in /data/.[!.]* /data/..?* /data/*; do
@@ -440,12 +450,10 @@ for entry in /data/.[!.]* /data/..?* /data/*; do
   echo "refusing to initialize an unmarked non-empty execution PVC" >&2
   exit 1
 done
-# Besu creates the database directory on first run when the genesis file is
-# supplied via --genesis-file; there is no separate `besu init` subcommand.
-# The marker directory is created preemptively so the marker check on
-# subsequent Pod restarts sees a non-empty directory before Besu's own
-# initialization completes.
-mkdir -p /data/{{ include "ethereum-node.executionDataDirMarker" . }}
+# Besu creates and initializes the database directory atomically on first run
+# when --genesis-file is supplied; there is no separate `besu init` command.
+# Do not pre-create /data/database: Besu treats that as an existing database
+# and refuses to open it when its own metadata file is absent.
 printf '%s\n' "$expected" > "$marker"
 {{- end -}}
 

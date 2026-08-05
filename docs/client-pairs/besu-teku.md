@@ -70,6 +70,16 @@ EL adapters; Teku is documented in [`geth-teku`](geth-teku.md).
 Besu+Teku exercises the union with `BesuTekuCompositionRenderTests`
 guarding the dispatch.
 
+The first live EKS start exposed a Besu initialization constraint: creating
+`/data/database` in the init container makes Besu classify the path as an
+existing database, then refuse it because Besu has not written its metadata
+file. The init adapter records the platform network-identity marker but leaves
+database-directory creation to Besu so the directory and metadata are created
+together. A claim containing only the matching platform identity marker is a
+resumable first start: the Pod may have been replaced between the init
+container and Besu startup. A marked claim containing other data but no Besu
+database directory remains rejected.
+
 ## Metric normalization
 
 **Status: configured but runtime-unverified.**
@@ -91,8 +101,10 @@ missing panels rather than broken dashboards — treat missing series as
 
 ## Non-signing qualification
 
-Live sync qualification is the point of this pair. Test contract
-asserts that this release, plus the other five Ephemery pairs, all
+**Status: live execution startup defect observed; correction pending
+qualification.** Teku checkpoint-synced and formed peers, while Besu refused
+the pre-created database directory described above. Sync remains unproven.
+The test contract asserts that all Ephemery releases
 render with the same EKS-required patches (`valuesFiles`, dev
 telemetry, `aws-engine-secrets` Engine JWT) — a missing overlay patch
 on any release would fail CI.

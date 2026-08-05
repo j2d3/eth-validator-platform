@@ -1,7 +1,7 @@
 """Offline chart-render contract for the Besu execution-client adapter.
 
 Proves the chart accepts `executionClient: besu`, uses the Besu helpers
-end-to-end (init creates /data/database marker, run command execs `besu`
+end-to-end (init leaves database creation to Besu, run command execs `besu`
 with the right hyphen-flag shape), and preserves the Geth path unchanged.
 Does NOT prove any catalog/projection integration or runtime metric-name
 accuracy — those live in a separate serviceProfile + assignment + runtime-
@@ -146,21 +146,80 @@ class BesuAdapterRenderTests(unittest.TestCase):
         )
         self.assertEqual(genesis_init["name"], "initialize-besu-genesis")
         script = genesis_init["args"][0]
-        # Marker check specific to Besu's on-disk layout.
-        self.assertIn("test -d /data/database", script)
+        # Marker check specific to Besu's on-disk layout. A marker-only claim
+        # is resumable because Pod replacement can happen between the init
+        # container and Besu's first database creation on Spot capacity.
+        self.assertIn("if [ ! -d /data/database ]; then", script)
+        self.assertIn('[ "$entry" = "$marker" ] && continue', script)
         self.assertNotIn("test -d /data/geth", script)
         self.assertNotIn("test -d /data/db", script)
         self.assertNotIn("test -d /data/chaindata", script)
-        # Besu has no `besu init` subcommand; the helper preemptively
-        # creates the marker directory for restart idempotence. Assert the
-        # mkdir shape is present and that no line executes `besu init`.
-        self.assertIn("mkdir -p /data/database", script)
+        # Besu has no `besu init` subcommand. It must create its own database
+        # directory and metadata together; a pre-created /data/database makes
+        # Besu fail with "Database exists but metadata file not found".
+        for line in script.splitlines():
+            normalized = line.strip().replace('"', "").replace("'", "")
+            self.assertFalse(
+                normalized.startswith(
+                    ("mkdir /data/database", "mkdir -p /data/database")
+                ),
+                msg="init script must leave Besu database creation to Besu",
+            )
         for line in script.splitlines():
             with self.subTest(line=line):
                 self.assertFalse(
                     line.lstrip().startswith("besu init"),
                     msg="init script must not invoke `besu init` (no such subcommand)",
                 )
+
+    def test_init_state_machine_handles_interrupted_first_start(self) -> None:
+        sts = self.by_kind["StatefulSet"][0]
+        init_containers = sts["spec"]["template"]["spec"]["initContainers"]
+        genesis_init = next(
+            ic for ic in init_containers if ic["name"] == "initialize-besu-genesis"
+        )
+        rendered_script = genesis_init["args"][0]
+        fingerprint = besu_ephemery_values()["networkProfile"][
+            "identityFingerprint"
+        ]
+
+        def run(state: str) -> subprocess.CompletedProcess[str]:
+            with tempfile.TemporaryDirectory() as directory:
+                root = Path(directory)
+                data = root / "data"
+                network = root / "network"
+                data.mkdir()
+                network.mkdir()
+                (network / ".verified-identity").write_text(
+                    fingerprint, encoding="utf-8"
+                )
+                marker = data / ".platform-network-identity"
+                if state != "empty":
+                    marker.write_text(fingerprint, encoding="utf-8")
+                if state == "initialized":
+                    (data / "database").mkdir()
+                elif state == "foreign":
+                    (data / "unrelated").write_text("x", encoding="utf-8")
+                # Use placeholders so replacing `/data` does not subsequently
+                # rewrite the `/data` prefix inside the temporary path when it
+                # appears in `/database`.
+                script = (
+                    rendered_script.replace("/data/", "__DATA_ROOT__/")
+                    .replace("/network/", "__NETWORK_ROOT__/")
+                    .replace("__DATA_ROOT__", str(data))
+                    .replace("__NETWORK_ROOT__", str(network))
+                )
+                return subprocess.run(
+                    ["/bin/sh", "-ec", script],
+                    check=False,
+                    capture_output=True,
+                    text=True,
+                )
+
+        for state in ("empty", "marker-only", "initialized"):
+            with self.subTest(state=state):
+                self.assertEqual(run(state).returncode, 0)
+        self.assertNotEqual(run("foreign").returncode, 0)
 
     def test_geth_ephemery_still_renders_unchanged(self) -> None:
         # Flip the same profile to Geth and confirm we get the Geth shell wrap.
