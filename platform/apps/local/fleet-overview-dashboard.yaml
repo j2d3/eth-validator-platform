@@ -15,7 +15,7 @@ data:
       "graphTooltip": 1,
       "links": [
         {"type": "link", "title": "Validator detail", "url": "/d/eth-validator-detail", "icon": "external link", "tooltip": "Per-validator duty, pair and resource detail", "targetBlank": false, "asDropdown": false, "includeVars": true, "keepTime": true},
-        {"type": "link", "title": "Pair detail (Geth + Lighthouse)", "url": "/d/eth-validator-geth-lighthouse", "icon": "external link", "tooltip": "Normalized pair health for the qualified client pair", "targetBlank": false, "asDropdown": false, "includeVars": true, "keepTime": true},
+        {"type": "link", "title": "Pair detail", "url": "/d/eth-validator-geth-lighthouse", "icon": "external link", "tooltip": "Normalized pair health", "targetBlank": false, "asDropdown": false, "includeVars": true, "keepTime": true},
         {"type": "link", "title": "Logs", "url": "/d/eth-platform-logs", "icon": "external link", "tooltip": "Correlated Pod logs via Loki", "targetBlank": false, "asDropdown": false, "includeVars": true, "keepTime": true}
       ],
       "panels": [

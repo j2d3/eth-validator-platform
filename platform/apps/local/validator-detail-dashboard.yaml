@@ -15,7 +15,7 @@ data:
       "graphTooltip": 1,
       "links": [
         {"type": "link", "title": "Fleet overview", "url": "/d/eth-fleet-overview", "icon": "external link", "tooltip": "Fleet and client-diversity overview", "targetBlank": false, "asDropdown": false, "includeVars": true, "keepTime": true},
-        {"type": "link", "title": "Pair detail (Geth + Lighthouse)", "url": "/d/eth-validator-geth-lighthouse", "icon": "external link", "tooltip": "Normalized pair health for the qualified client pair", "targetBlank": false, "asDropdown": false, "includeVars": true, "keepTime": true},
+        {"type": "link", "title": "Pair detail", "url": "/d/eth-validator-geth-lighthouse", "icon": "external link", "tooltip": "Normalized pair health", "targetBlank": false, "asDropdown": false, "includeVars": true, "keepTime": true},
         {"type": "link", "title": "Logs", "url": "/d/eth-platform-logs", "icon": "external link", "tooltip": "Correlated Pod logs via Loki", "targetBlank": false, "asDropdown": false, "includeVars": true, "keepTime": true}
       ],
       "panels": [

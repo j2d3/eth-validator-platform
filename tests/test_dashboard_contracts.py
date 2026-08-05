@@ -78,6 +78,20 @@ PUBLIC_KEY_PATTERN = re.compile(r"0x[0-9a-fA-F]{96}")
 FORBIDDEN_LABEL_NAMES = ("pubkey", "public_key", "publickey", "validator_pubkey")
 
 
+def user_visible_text(dashboard: dict) -> str:
+    """Return dashboard copy visible in Grafana, excluding stable URLs and UIDs."""
+    values = [dashboard.get("title", ""), dashboard.get("description", "")]
+    values.extend(dashboard.get("tags", []))
+    for link in dashboard.get("links", []):
+        values.extend((link.get("title", ""), link.get("tooltip", "")))
+    for panel in dashboard.get("panels", []):
+        values.extend((panel.get("title", ""), panel.get("description", "")))
+        values.append(panel.get("options", {}).get("content", ""))
+        for target in panel.get("targets", []):
+            values.append(target.get("legendFormat", ""))
+    return " ".join(value for value in values if isinstance(value, str))
+
+
 def load_dashboards() -> list[tuple[Path, str, dict]]:
     """Return (path, payload name, parsed dashboard) for every provisioned dashboard."""
     dashboards: list[tuple[Path, str, dict]] = []
@@ -218,6 +232,15 @@ class DashboardContractTests(unittest.TestCase):
                         lowered,
                         f"{dashboard['uid']} references a public-key label {label!r}",
                     )
+
+    def test_dashboard_copy_is_role_based_and_neutral(self) -> None:
+        """User-facing labels describe roles and signals, not the first pair or a reaction."""
+        for path, name, dashboard in self.dashboards:
+            copy = user_visible_text(dashboard).lower()
+            with self.subTest(path=path.name, dashboard=name):
+                self.assertNotIn("geth", copy)
+                self.assertNotIn("lighthouse", copy)
+                self.assertNotIn("celebrat", copy)
 
     def test_navigation_panels_declare_an_explicit_no_value_state(self) -> None:
         """Missing telemetry must never render as a confident zero."""

@@ -10,7 +10,7 @@ data:
   geth-lighthouse-pair.json: |-
     {
       "annotations": {"list": []},
-      "description": "Per-validator and grouped qualification view for the Geth + Lighthouse adapter. Select All for the cell view.",
+      "description": "Per-validator and grouped client-pair qualification view. Select All for the fleet view.",
       "editable": false,
       "graphTooltip": 1,
       "links": [],
@@ -20,7 +20,7 @@ data:
         {"type":"stat","title":"Consensus slot lag","id":3,"datasource":{"type":"prometheus","uid":"prometheus"},"targets":[{"refId":"A","expr":"validator_platform_consensus_slot_lag{network=~\"$network\",validator_id=~\"$validator_id\",assignment_id=~\"$assignment_id\"}","legendFormat":"{{validator_id}}"}],"fieldConfig":{"defaults":{"unit":"short","thresholds":{"mode":"absolute","steps":[{"color":"green","value":null},{"color":"orange","value":1},{"color":"red","value":3}]}},"overrides":[]},"gridPos":{"h":6,"w":6,"x":6,"y":4}},
         {"type":"stat","title":"Finality lag (epochs)","id":4,"datasource":{"type":"prometheus","uid":"prometheus"},"targets":[{"refId":"A","expr":"validator_platform_consensus_finality_lag_epochs{network=~\"$network\",validator_id=~\"$validator_id\",assignment_id=~\"$assignment_id\"}","legendFormat":"{{validator_id}}"}],"fieldConfig":{"defaults":{"unit":"short","thresholds":{"mode":"absolute","steps":[{"color":"green","value":null},{"color":"orange","value":2},{"color":"red","value":4}]}},"overrides":[]},"gridPos":{"h":6,"w":6,"x":12,"y":4}},
         {"type":"stat","title":"Web3Signer target","id":5,"datasource":{"type":"prometheus","uid":"prometheus"},"targets":[{"refId":"A","expr":"max(up{namespace=\"signing\",pod=~\"web3signer.*\"})"}],"fieldConfig":{"defaults":{"mappings":[{"type":"value","options":{"0":{"text":"DOWN","color":"red"},"1":{"text":"UP","color":"green"}}}],"thresholds":{"mode":"absolute","steps":[{"color":"red","value":null},{"color":"green","value":1}]}},"overrides":[]},"gridPos":{"h":6,"w":6,"x":18,"y":4}},
-        {"type":"timeseries","title":"Execution and consensus peers","id":6,"datasource":{"type":"prometheus","uid":"prometheus"},"targets":[{"refId":"A","expr":"validator_platform_execution_peers{network=~\"$network\",validator_id=~\"$validator_id\",assignment_id=~\"$assignment_id\"}","legendFormat":"{{validator_id}} / geth"},{"refId":"B","expr":"validator_platform_consensus_peers{network=~\"$network\",validator_id=~\"$validator_id\",assignment_id=~\"$assignment_id\"}","legendFormat":"{{validator_id}} / lighthouse"}],"fieldConfig":{"defaults":{"unit":"short","min":0},"overrides":[]},"gridPos":{"h":8,"w":12,"x":0,"y":10}},
+        {"type":"timeseries","title":"Execution and consensus peers","id":6,"datasource":{"type":"prometheus","uid":"prometheus"},"targets":[{"refId":"A","expr":"validator_platform_execution_peers{network=~\"$network\",validator_id=~\"$validator_id\",assignment_id=~\"$assignment_id\"}","legendFormat":"{{validator_id}} / execution"},{"refId":"B","expr":"validator_platform_consensus_peers{network=~\"$network\",validator_id=~\"$validator_id\",assignment_id=~\"$assignment_id\"}","legendFormat":"{{validator_id}} / consensus"}],"fieldConfig":{"defaults":{"unit":"short","min":0},"overrides":[]},"gridPos":{"h":8,"w":12,"x":0,"y":10}},
         {"type":"timeseries","title":"Previous-epoch consensus participation","id":7,"datasource":{"type":"prometheus","uid":"prometheus"},"targets":[{"refId":"A","expr":"beacon_participation_prev_epoch_attester{platform=\"ethereum-validator\",network=~\"$network\",validator_id=~\"$validator_id\",assignment_id=~\"$assignment_id\"}","legendFormat":"{{validator_id}} / attester"},{"refId":"B","expr":"beacon_participation_prev_epoch_target_attester{platform=\"ethereum-validator\",network=~\"$network\",validator_id=~\"$validator_id\",assignment_id=~\"$assignment_id\"}","legendFormat":"{{validator_id}} / target"},{"refId":"C","expr":"beacon_participation_prev_epoch_head_attester{platform=\"ethereum-validator\",network=~\"$network\",validator_id=~\"$validator_id\",assignment_id=~\"$assignment_id\"}","legendFormat":"{{validator_id}} / head"}],"fieldConfig":{"defaults":{"unit":"percentunit","min":0,"max":1},"overrides":[]},"gridPos":{"h":8,"w":12,"x":12,"y":10}},
         {"type":"timeseries","title":"Client process CPU","id":8,"datasource":{"type":"prometheus","uid":"prometheus"},"targets":[{"refId":"A","expr":"validator_platform_process_cpu_cores{network=~\"$network\",validator_id=~\"$validator_id\",assignment_id=~\"$assignment_id\"}","legendFormat":"{{validator_id}} / {{component}}"}],"fieldConfig":{"defaults":{"unit":"cores","min":0},"overrides":[]},"gridPos":{"h":8,"w":12,"x":0,"y":18}},
         {"type":"timeseries","title":"Client resident memory","id":9,"datasource":{"type":"prometheus","uid":"prometheus"},"targets":[{"refId":"A","expr":"validator_platform_process_resident_memory_bytes{network=~\"$network\",validator_id=~\"$validator_id\",assignment_id=~\"$assignment_id\"}","legendFormat":"{{validator_id}} / {{component}}"}],"fieldConfig":{"defaults":{"unit":"bytes","min":0},"overrides":[]},"gridPos":{"h":8,"w":12,"x":12,"y":18}},
@@ -28,7 +28,7 @@ data:
       ],
       "refresh": "30s",
       "schemaVersion": 41,
-      "tags": ["ethereum", "validator", "geth", "lighthouse", "local"],
+      "tags": ["ethereum", "validator", "client-pair", "local"],
       "templating": {"list": [
         {"name":"network","label":"Network","type":"query","datasource":{"type":"prometheus","uid":"prometheus"},"query":{"query":"label_values(validator_platform_pair_target_up, network)","refId":"network"},"includeAll":true,"allValue":".*","multi":true,"refresh":1},
         {"name":"validator_id","label":"Validator","type":"query","datasource":{"type":"prometheus","uid":"prometheus"},"query":{"query":"label_values(validator_platform_pair_target_up{network=~\"$network\"}, validator_id)","refId":"validator"},"includeAll":true,"allValue":".*","multi":true,"refresh":1},
@@ -36,7 +36,7 @@ data:
       ]},
       "time": {"from": "now-6h", "to": "now"},
       "timezone": "browser",
-      "title": "Ethereum Validator / Geth + Lighthouse",
+      "title": "Ethereum Validator / Client pair",
       "uid": "eth-validator-geth-lighthouse",
       "version": 1
     }
