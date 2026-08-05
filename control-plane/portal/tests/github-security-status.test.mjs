@@ -5,6 +5,8 @@ import {
   countOpenDependabotPulls,
   DEPENDABOT_PULLS_API,
   IMAGE_SECURITY_RUNS_API,
+  imageSecurityChecksApi,
+  parseImageSecurityEvidence,
   parseImageSecurityRun,
 } from "../lib/github-security-status.mjs";
 
@@ -18,6 +20,20 @@ const validRun = {
       html_url:
         "https://github.com/j2d3/eth-validator-platform/actions/runs/123456",
       updated_at: "2026-08-05T09:31:47Z",
+    },
+  ],
+};
+
+const validEvidence = {
+  check_runs: [
+    {
+      name: "Image findings - 21 images - Critical 3 (2 fix available) - High 47 (31 fix available)",
+      head_sha: "a".repeat(40),
+      status: "completed",
+      conclusion: "success",
+      completed_at: "2026-08-05T13:42:11Z",
+      html_url:
+        "https://github.com/j2d3/eth-validator-platform/actions/runs/123456/job/789",
     },
   ],
 };
@@ -45,6 +61,34 @@ test("rejects a non-main workflow result", () => {
   assert.throws(() => parseImageSecurityRun(response));
 });
 
+test("parses public finding counts bound to the exact workflow run", () => {
+  const run = parseImageSecurityRun(validRun);
+  assert.deepEqual(parseImageSecurityEvidence(validEvidence, run), {
+    images: 21,
+    critical: { total: 3, available: 2 },
+    high: { total: 47, available: 31 },
+    completedAt: "2026-08-05T13:42:11Z",
+    htmlUrl:
+      "https://github.com/j2d3/eth-validator-platform/actions/runs/123456/job/789",
+  });
+});
+
+test("does not accept finding counts from another workflow run", () => {
+  const response = structuredClone(validEvidence);
+  response.check_runs[0].html_url =
+    "https://github.com/j2d3/eth-validator-platform/actions/runs/999/job/789";
+  assert.equal(parseImageSecurityEvidence(response, parseImageSecurityRun(validRun)), null);
+});
+
+test("rejects impossible public finding counts", () => {
+  const response = structuredClone(validEvidence);
+  response.check_runs[0].name =
+    "Image findings - 21 images - Critical 3 (4 fix available) - High 47 (31 fix available)";
+  assert.throws(() =>
+    parseImageSecurityEvidence(response, parseImageSecurityRun(validRun)),
+  );
+});
+
 test("counts only open Dependabot pull requests", () => {
   assert.equal(
     countOpenDependabotPulls([
@@ -64,5 +108,9 @@ test("uses public read-only GitHub endpoints", () => {
   assert.equal(
     DEPENDABOT_PULLS_API,
     "https://api.github.com/repos/j2d3/eth-validator-platform/pulls?state=open&per_page=100",
+  );
+  assert.equal(
+    imageSecurityChecksApi("a".repeat(40)),
+    `https://api.github.com/repos/j2d3/eth-validator-platform/commits/${"a".repeat(40)}/check-runs?per_page=100`,
   );
 });

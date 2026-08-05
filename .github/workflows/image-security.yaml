@@ -14,6 +14,7 @@ on:
       - "**/Dockerfile*"
       - requirements-dev.txt
       - tools/compare_image_inventories.py
+      - tools/aggregate_image_scan_decisions.py
       - tools/discover_container_images.py
       - tools/evaluate_image_scan.py
       - tools/verify_image_scan_evidence.py
@@ -29,6 +30,7 @@ on:
       - "**/Dockerfile*"
       - requirements-dev.txt
       - tools/compare_image_inventories.py
+      - tools/aggregate_image_scan_decisions.py
       - tools/discover_container_images.py
       - tools/evaluate_image_scan.py
       - tools/verify_image_scan_evidence.py
@@ -84,6 +86,7 @@ jobs:
           critical_changes="$(git diff --name-only "$BASE_SHA"...HEAD -- \
             .github/workflows/image-security.yaml \
             requirements-dev.txt \
+            tools/aggregate_image_scan_decisions.py \
             tools/compare_image_inventories.py \
             tools/discover_container_images.py \
             tools/evaluate_image_scan.py \
@@ -219,7 +222,18 @@ jobs:
     needs: [inventory, scan]
     runs-on: ubuntu-latest
     timeout-minutes: 5
+    outputs:
+      available: ${{ steps.aggregate.outputs.available }}
+      images: ${{ steps.aggregate.outputs.images }}
+      critical_total: ${{ steps.aggregate.outputs.critical_total }}
+      critical_available: ${{ steps.aggregate.outputs.critical_available }}
+      high_total: ${{ steps.aggregate.outputs.high_total }}
+      high_available: ${{ steps.aggregate.outputs.high_available }}
     steps:
+      - name: Check out evidence aggregator
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          persist-credentials: false
       - name: Verify scan or reuse result
         env:
           DECISION: ${{ needs.inventory.outputs.decision }}
@@ -237,3 +251,38 @@ jobs:
             [[ "$SCAN_RESULT" == "skipped" ]]
             printf 'No new Trivy scan ran: %s. Existing evidence applies only to the unchanged exact digests.\n' "$DECISION" >> "$GITHUB_STEP_SUMMARY"
           fi
+      - name: Download per-image decisions
+        if: needs.inventory.outputs.scan_required == 'true' && needs.scan.result == 'success'
+        uses: actions/download-artifact@634f93cb2916e3fdff6788551b99b062d0335ce0
+        with:
+          pattern: image-scan-*
+          path: image-scan-decisions
+      - name: Aggregate public-safe finding counts
+        id: aggregate
+        if: needs.inventory.outputs.scan_required == 'true' && needs.scan.result == 'success'
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 tools/aggregate_image_scan_decisions.py \
+            --root image-scan-decisions \
+            --output image-scan-summary.json \
+            --github-output "$GITHUB_OUTPUT"
+          cat image-scan-summary.json >> "$GITHUB_STEP_SUMMARY"
+      - name: Retain aggregate evidence
+        if: needs.inventory.outputs.scan_required == 'true' && needs.scan.result == 'success'
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a
+        with:
+          name: image-scan-summary
+          path: image-scan-summary.json
+          if-no-files-found: error
+          retention-days: 14
+
+  public-finding-counts:
+    name: Image findings - ${{ needs.evidence-decision.outputs.images }} images - Critical ${{ needs.evidence-decision.outputs.critical_total }} (${{ needs.evidence-decision.outputs.critical_available }} fix available) - High ${{ needs.evidence-decision.outputs.high_total }} (${{ needs.evidence-decision.outputs.high_available }} fix available)
+    needs: evidence-decision
+    if: needs.evidence-decision.outputs.available == 'true'
+    runs-on: ubuntu-latest
+    timeout-minutes: 2
+    steps:
+      - name: Publish counts in the public check name
+        run: printf '%s\n' 'Evidence only; findings do not block promotion.'

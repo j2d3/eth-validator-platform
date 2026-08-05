@@ -4,15 +4,17 @@ Static status page and project index for the EKS development environment.
 
 The page contains:
 
-- a timestamped environment snapshot;
-- component status from the latest operator check;
+- live read-only EKS, Ethereum pair, signing, and alert status from the portal
+  telemetry adapter;
+- public GitHub workflow, image-finding, and dependency-update status;
 - links to tracked source, specifications, runbooks, dashboard definitions, and
   recorded evidence.
 
-The page has no AWS, Kubernetes, Prometheus, Grafana, GitHub, or secret
-credentials. It does not change platform state. Values from the cluster are
-stored as a timestamped static snapshot until a read-only data adapter is
-implemented.
+The public page has no AWS, Kubernetes, Prometheus, Grafana, GitHub, or secret
+credentials and cannot change platform state. Its same-origin status route is
+served by the separately deployed read-only telemetry adapter. Repository
+security cards use unauthenticated public GitHub API responses and render
+unavailable when the exact source/run binding cannot be verified.
 
 ## Local development
 

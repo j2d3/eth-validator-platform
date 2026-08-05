@@ -8,6 +8,9 @@ export const IMAGE_SECURITY_RUNS_API =
 export const DEPENDABOT_PULLS_API =
   `https://api.github.com/repos/${REPOSITORY}/pulls?state=open&per_page=100`;
 
+const FINDINGS_NAME =
+  /^Image findings - (\d+) images - Critical (\d+) \((\d+) fix available\) - High (\d+) \((\d+) fix available\)$/;
+
 function isRecord(value) {
   return typeof value === "object" && value !== null && !Array.isArray(value);
 }
@@ -42,6 +45,64 @@ export function parseImageSecurityRun(value) {
     sourceSha: run.head_sha,
     updatedAt: run.updated_at,
     htmlUrl: run.html_url,
+  };
+}
+
+export function imageSecurityChecksApi(sourceSha) {
+  if (typeof sourceSha !== "string" || !/^[0-9a-f]{40}$/.test(sourceSha)) {
+    throw new Error("Invalid image-security source SHA");
+  }
+  return `https://api.github.com/repos/${REPOSITORY}/commits/${sourceSha}/check-runs?per_page=100`;
+}
+
+export function parseImageSecurityEvidence(value, run) {
+  if (!isRecord(value) || !Array.isArray(value.check_runs)) {
+    throw new Error("Invalid image-security check response");
+  }
+  if (!isRecord(run) || typeof run.sourceSha !== "string" || typeof run.htmlUrl !== "string") {
+    throw new Error("Invalid image-security run binding");
+  }
+
+  const candidates = value.check_runs.filter(
+    (check) =>
+      isRecord(check) &&
+      typeof check.name === "string" &&
+      check.name.startsWith("Image findings - ") &&
+      check.head_sha === run.sourceSha &&
+      typeof check.html_url === "string" &&
+      check.html_url.startsWith(`${run.htmlUrl}/job/`),
+  );
+  if (candidates.length === 0) return null;
+
+  const check = candidates.sort((left, right) =>
+    String(right.completed_at).localeCompare(String(left.completed_at)),
+  )[0];
+  const match = FINDINGS_NAME.exec(check.name);
+  if (
+    !match ||
+    check.status !== "completed" ||
+    check.conclusion !== "success" ||
+    !isIsoDate(check.completed_at)
+  ) {
+    throw new Error("Invalid image-security finding check");
+  }
+
+  const [images, criticalTotal, criticalAvailable, highTotal, highAvailable] =
+    match.slice(1).map(Number);
+  if (
+    images < 1 ||
+    criticalAvailable > criticalTotal ||
+    highAvailable > highTotal
+  ) {
+    throw new Error("Invalid image-security finding counts");
+  }
+
+  return {
+    images,
+    critical: { total: criticalTotal, available: criticalAvailable },
+    high: { total: highTotal, available: highAvailable },
+    completedAt: check.completed_at,
+    htmlUrl: check.html_url,
   };
 }
 
