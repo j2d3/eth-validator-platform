@@ -15,6 +15,11 @@ for now the authoritative surface is the code plus the runbook.
 ## Related runbook
 
 - [`eks-flux-bootstrap`](../runbooks/eks-flux-bootstrap.md)
+- [`flux-source-authentication`](../runbooks/flux-source-authentication.md)
+
+## Related decision
+
+- [ADR 0002: Prefer signed OCI promotion for a private Flux source](../adrs/0002-private-flux-source-authentication.md)
 
 ## References
 
