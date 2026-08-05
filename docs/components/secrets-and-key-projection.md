@@ -157,6 +157,7 @@ record intent, then sign — is what makes it authoritative.
 - Terraform: [`terraform-aws-foundation`](terraform-aws-foundation.md)
 - Boundaries: [architecture/safety-and-custody-boundaries](../architecture/safety-and-custody-boundaries.md)
 - Onboarding tool: `hack/onboard-web3signer-keystore.py`
+- Operator procedure: [validator key ceremony](../runbooks/validator-key-ceremony.md)
 - Manifest: `platform/apps/dev/validator-keystore-secret.yaml`
 - Related PRs: #127 (Terraform `for_each` + `moved`), #128/#135 (shared
   ExternalSecret extensions per new key), #133/#139 (empty-container
