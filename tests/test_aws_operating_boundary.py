@@ -48,13 +48,21 @@ class AwsOperatingBoundaryTests(unittest.TestCase):
                 self.assertNotIn(forbidden, payload)
 
     def test_documentation_names_the_writer_boundaries(self) -> None:
-        readme = " ".join((ROOT / "README.md").read_text(encoding="utf-8").split())
+        # The writer-boundary content moved from the top-level README to the
+        # architecture overview when the docs tree was reorganized; the top
+        # README now points readers there. Assertions target the durable
+        # location.
+        architecture = " ".join(
+            (ROOT / "docs" / "architecture" / "system-overview.md")
+            .read_text(encoding="utf-8")
+            .split()
+        )
         environment = " ".join(
             (EKS_ROOT / "README.md").read_text(encoding="utf-8").split()
         )
 
-        self.assertIn("Amazon EKS is the only cloud Kubernetes target", readme)
-        self.assertIn("Terraform, applied from a trusted workstation", readme)
+        self.assertIn("Amazon EKS is the only cloud Kubernetes target", architecture)
+        self.assertIn("Terraform, run from a trusted operator workstation", architecture)
         self.assertIn("There is intentionally no GitHub Actions Terraform apply/destroy workflow", environment)
         self.assertIn("Flux is the continuous writer for in-cluster applications", environment)
 
