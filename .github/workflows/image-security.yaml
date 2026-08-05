@@ -15,8 +15,11 @@ on:
       - requirements-dev.txt
       - tools/compare_image_inventories.py
       - tools/discover_container_images.py
+      - tools/evaluate_image_scan.py
       - tools/verify_image_scan_evidence.py
       - tools/verify_container_contracts.py
+      - schemas/image-vulnerability-exceptions.schema.json
+      - security/image-vulnerability-exceptions/**
   pull_request:
     paths:
       - "**/*.yaml"
@@ -27,8 +30,11 @@ on:
       - requirements-dev.txt
       - tools/compare_image_inventories.py
       - tools/discover_container_images.py
+      - tools/evaluate_image_scan.py
       - tools/verify_image_scan_evidence.py
       - tools/verify_container_contracts.py
+      - schemas/image-vulnerability-exceptions.schema.json
+      - security/image-vulnerability-exceptions/**
 
 permissions:
   contents: read
@@ -80,8 +86,11 @@ jobs:
             requirements-dev.txt \
             tools/compare_image_inventories.py \
             tools/discover_container_images.py \
+            tools/evaluate_image_scan.py \
             tools/verify_container_contracts.py \
-            tools/verify_image_scan_evidence.py)"
+            tools/verify_image_scan_evidence.py \
+            schemas/image-vulnerability-exceptions.schema.json \
+            security/image-vulnerability-exceptions)"
           if [[ -n "$critical_changes" ]]; then
             printf 'scan_required=true\n' >> "$GITHUB_OUTPUT"
             printf 'decision=image evidence tooling changed\n' >> "$GITHUB_OUTPUT"
@@ -157,12 +166,48 @@ jobs:
             --run-attempt "$WORKFLOW_RUN_ATTEMPT" \
             --event "$WORKFLOW_EVENT"
           printf 'Scanned exact subject `%s`. Findings are evidence, not yet a promotion gate.\n' "$IMAGE_REF" >> "$GITHUB_STEP_SUMMARY"
+      - name: Evaluate Critical and High evidence
+        env:
+          IMAGE_ID: ${{ matrix.id }}
+          IMAGE_REF: ${{ matrix.image }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 tools/evaluate_image_scan.py \
+            --expected-image "$IMAGE_REF" \
+            --report trivy-results.json \
+            --scan-subject scan-subject.json \
+            --exceptions "security/image-vulnerability-exceptions/${IMAGE_ID}.json" \
+            --evaluated-at "$(date -u +%Y-%m-%dT%H:%M:%SZ)" \
+            --output image-scan-decision.json
+          python3 - <<'PY' >> "$GITHUB_STEP_SUMMARY"
+          import json
+          from pathlib import Path
+
+          result = json.loads(Path("image-scan-decision.json").read_text())
+          counts = result["counts"]
+          print(
+              "Critical: "
+              f"{counts['critical']['available']} fix available, "
+              f"{counts['critical']['unavailable']} no fix available."
+          )
+          print(
+              "High: "
+              f"{counts['high']['available']} fix available, "
+              f"{counts['high']['unavailable']} no fix available."
+          )
+          print(
+              "Decision: "
+              f"{result['decision']['outcome']} (evidence only; not a promotion gate)."
+          )
+          PY
       - name: Retain scanner evidence
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a
         with:
           name: image-scan-${{ matrix.id }}
           path: |
             scan-subject.json
+            image-scan-decision.json
             trivy-results.json
             trivy-version.json
           if-no-files-found: error

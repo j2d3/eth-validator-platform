@@ -10,9 +10,17 @@ workflow publishes one JSON result artifact per scanned image for 14 days.
 
 It is intentionally an **evidence workflow, not yet a promotion gate**. A green
 workflow means inventory and scanner execution succeeded. It does not mean the
-images contain no vulnerabilities, and the scanner uses `exit-code: 0` while
-the exception and promotion policy is still being designed. Findings of every
-severity, including unfixed findings, remain in the retained JSON.
+images contain no vulnerabilities, and the scanner uses `exit-code: 0` because
+promotion policy is not implemented. Findings of every severity, including
+unfixed findings, remain in the retained JSON.
+
+Each verified report is also evaluated into `image-scan-decision.json`. The
+machine-readable document counts Critical and High finding occurrences
+separately, split between findings with and without a non-empty Trivy
+`FixedVersion`. It records the evaluation time, an evidence-only outcome, and
+always states `promotionGate: false`. A successful evaluation means the report
+and any exception metadata are internally valid; it does not mean the image is
+approved for promotion.
 
 ## Run or inspect it
 
@@ -28,7 +36,8 @@ Monday schedule. The inventory job summary lists exact subjects and explicit
 coverage gaps. Download `container-image-inventory` plus the `image-scan-*`
 artifacts from the same run before triage. Each image artifact contains the
 exact subject, Trivy JSON result, structured scanner/database version evidence,
-and workflow source/checkout SHA provenance. Before upload, a separate verifier
+the evidence-only decision, and workflow source/checkout SHA provenance. Before
+upload, a separate verifier
 fails unless Trivy identifies the result as a container image, names the exact
 requested subject, and reports the requested digest in `Metadata.RepoDigests`.
 Treat report creation time and vulnerability-database update time as different
@@ -92,13 +101,25 @@ For each Critical or High result:
 2. distinguish fixed from unfixed findings without hiding either;
 3. check the upstream image release and rebuild history;
 4. prefer a reviewed digest upgrade, rerun the runtime contract, and rescan;
-5. if the risk must be accepted temporarily, do not add an unbounded CVE
-   ignore. The next policy slice will require digest, CVE, rationale, owner, and
-   expiry for every exception.
+5. if the risk must be accepted temporarily, add a per-image exception document
+   under `security/image-vulnerability-exceptions/`. Every entry must name the
+   exact digest, vulnerability ID, rationale, GitHub owner, and UTC expiry. The
+   evaluator rejects malformed, expired, duplicate, wrong-digest, or unused
+   entries rather than silently ignoring them.
 
-The later promotion gate will block fixed Critical/High findings after those
-exception semantics are implemented and tested. Project-owned images will add
-an SBOM and keyless provenance before admission policy is considered. ECR
+An exception for one digest and vulnerability ID covers every occurrence of
+that ID across the report's packages and targets. Raw counts remain
+occurrence-based, and the output retains both total and unexcepted counts.
+Expiry is checked against the current workflow evaluation time, not the older
+report creation time, so retained evidence cannot keep an expired exception
+valid.
+
+These exception records annotate the evidence; they do not suppress the raw
+finding counts or authorize deployment. A later promotion policy still needs a
+reviewed severity/fix-availability threshold, an explicit treatment for
+unfixed findings, approval ownership, and enforcement at the artifact promotion
+boundary. Project-owned images will add an SBOM and keyless provenance before
+admission policy is considered. ECR
 scan-on-push and repository lifecycle controls remain a separate Terraform
 slice; this workflow has no AWS credential, OIDC token, push permission, or
 cluster authority.
