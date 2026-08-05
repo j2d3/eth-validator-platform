@@ -1,11 +1,9 @@
 """Contracts for the declarative EKS application storage adapter.
 
-These assert the shape of a manifest and a values profile. The EKS foundation
-is live, and a server-side dry-run against that cluster accepted this
-StorageClass — but the dry-run did not persist it, nothing reconciles this
-directory, and no PVC or EBS volume has ever been provisioned from the class.
-So these are contract tests, not evidence of provisioning, zonal binding,
-expansion, or cost.
+These assert the desired shape of a live manifest and values profile. Runtime
+evidence separately records a reconciled StorageClass and bound EBS claims;
+these tests do not themselves prove provisioning, attachment, expansion,
+snapshot recovery, or cost.
 """
 
 from __future__ import annotations
@@ -108,11 +106,7 @@ class EksStorageClassTests(unittest.TestCase):
         self.assertIn(STORAGE_CLASS_FILE.name, kustomization["resources"])
 
     def test_offline_validation_covers_the_declared_directory(self) -> None:
-        """The entrypoint is not bootstrapped, so `make check` is its standing guard.
-
-        The one-off server-side dry-run against the live cluster checked this
-        manifest once; it does not re-run and cannot catch a later edit.
-        """
+        """Offline rendering remains the standing guard for later edits."""
 
         makefile = (ROOT / "Makefile").read_text(encoding="utf-8")
         self.assertIn(f"kubectl kustomize {DEV_CONFIGS_PATH}", makefile)
@@ -187,11 +181,7 @@ class EksStorageProfileTests(unittest.TestCase):
 
 class EksAdapterTruthfulnessTests(unittest.TestCase):
     def test_readme_reconciliation_claim_matches_the_flux_entrypoints(self) -> None:
-        """The adapter is registered but not bootstrapped — and says so.
-
-        When someone adds a `clusters/dev` entrypoint that points here, this
-        test fails until the README stops claiming the directory is unreconciled.
-        """
+        """The README must track whether Flux registers this directory."""
 
         readme = DEV_README.read_text(encoding="utf-8")
         registered = any(
@@ -212,25 +202,27 @@ class EksAdapterTruthfulnessTests(unittest.TestCase):
                 "no Flux entrypoint reconciles this directory; the README must say so",
             )
 
-    def test_readme_neither_denies_the_live_cluster_nor_overclaims_the_dry_run(self) -> None:
-        """A server-side dry-run proves schema acceptance, not provisioning.
-
-        Two opposite errors are available now that the EKS foundation is
-        applied. Saying no AWS resource exists is false — the cluster does.
-        Letting "validated against the live cluster" read as "the class is on
-        the cluster" is the more expensive one, because it would imply chain
-        volumes that nothing has actually provisioned.
-        """
-
+    def test_readme_records_live_storage_without_overclaiming_recovery(self) -> None:
         readme = " ".join(DEV_README.read_text(encoding="utf-8").split())
         self.assertNotIn("No AWS resource has been created", readme)
-        self.assertIn("does not exist on the cluster", readme)
-        self.assertIn("no EBS volume has ever been provisioned", readme)
+        self.assertIn("22 bound Ethereum claims", readme)
+        self.assertIn("does not prove online expansion", readme)
+        self.assertIn("snapshot restore", readme)
 
     def test_sizes_are_documented_as_a_hypothesis_not_as_guidance(self) -> None:
         readme = " ".join(DEV_README.read_text(encoding="utf-8").split())
         self.assertIn("hypothesis", readme)
         self.assertIn("not production guidance", readme)
+
+    def test_archive_economics_keep_replaceable_data_separate_from_safety_data(self) -> None:
+        readme = " ".join(DEV_README.read_text(encoding="utf-8").split())
+        self.assertIn("Retain, snapshot, or resync", readme)
+        self.assertIn("650 GiB provisioned", readme)
+        self.assertIn("$52/month", readme)
+        self.assertIn("Snapshot billing follows written blocks", readme)
+        self.assertIn("Validator keys remain in Secrets Manager", readme)
+        self.assertIn("slashing history remains in PostgreSQL", readme)
+        self.assertIn("must be read again when the decision is made", readme)
 
 
 if __name__ == "__main__":

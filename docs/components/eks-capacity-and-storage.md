@@ -12,7 +12,7 @@ Four managed node groups on one EKS 1.35 cluster in `us-west-2`:
 | Group | Purpose | Capacity type | AZs | Instance-type list | Sizing |
 |---|---|---|---|---|---|
 | `system` | Flux, ESO, cert-manager, kube-prometheus-stack, portal | `ON_DEMAND` | All 3 AZs | `m7i.large`, `m6i.large` | min 2 / max 4 / desired 2 |
-| `ethereum-<az>` (one per AZ) | EL + CL client pairs | `var.ethereum_capacity_type` — the module variable defaults to `ON_DEMAND`, but the applied `dev` environment currently sets it to `SPOT` (Spot's interruption resilience is not yet qualified against a real drill) | Single-AZ per group | `r8i.2xlarge`, `r8a.2xlarge`, `r7i.2xlarge`, `r7a.2xlarge`, `r6i.2xlarge`, `r6a.2xlarge` (six x86 memory-optimized pools, three-family minimum enforced by variable validation) | min 0 / max `var.ethereum_max_size_per_az` (bounded 1–3 after #142) / desired 1 in `var.ethereum_initial_active_az_index` at creation, 0 in the other two |
+| `ethereum-<az>` (one per AZ) | EL + CL client pairs | `var.ethereum_capacity_type` — the module variable defaults to `ON_DEMAND`, while the applied `dev` environment uses `SPOT` | Single-AZ per group | `r8i.2xlarge`, `r8a.2xlarge`, `r7i.2xlarge`, `r7a.2xlarge`, `r6i.2xlarge`, `r6a.2xlarge` (six x86 memory-optimized pools, three-family minimum enforced by variable validation) | min 0 / max `var.ethereum_max_size_per_az` (bounded 1–3 after #142) / desired 1 in `var.ethereum_initial_active_az_index` at creation, 0 in the other two |
 
 Two structural choices worth calling out:
 
@@ -27,7 +27,7 @@ Two structural choices worth calling out:
   changes so the operator or a future autoscaler can grow one group in-AZ
   without Terraform fighting it.
 
-## Capacity type: module default is ON_DEMAND; dev is currently SPOT (unqualified)
+## Capacity type: module default is ON_DEMAND; dev is currently SPOT
 
 The Ethereum tier's capacity type is controlled by
 `var.ethereum_capacity_type`. State both facts directly:
@@ -35,40 +35,37 @@ The Ethereum tier's capacity type is controlled by
 - The reusable module variable **defaults to `ON_DEMAND`** — the
   variable's description says "ON_DEMAND remains the default until the
   explicit Spot interruption exercise is qualified."
-- The **applied `dev` environment currently sets it to `SPOT`**.
-  Interruption resilience has not been drilled against a doppelganger
-  event, a mid-flush eviction, or an AZ-level Spot capacity drought. The
-  Spot economics discussion below is the *cost/tradeoff* record for that
-  setting; the pitfalls listed are live concerns for the dev
-  environment, not hypothetical future concerns.
+- The **applied `dev` environment currently sets it to `SPOT`**. Multiple
+  observed replacements reattached retained EBS claims and returned pairs to
+  Ready; one signing validator remained disabled until doppelganger detection
+  cleared. This is useful evidence, but not an FIS drill, an AZ-capacity-drought
+  test, or proof of zero missed duties.
 
-- **Approximate savings.** Spot for `r8i.2xlarge` in `us-west-2` at
-  recent snapshots runs roughly 60–75% under on-demand. At current
-  Ethereum-tier size (one active node in one AZ), that is on the order
-  of $200/month savings vs on-demand — a lab number, not a fleet
-  number.
-- **Live pitfalls (not yet drilled in dev).** Interruption at
-  ~30 seconds from AWS's termination signal; single-AZ groups being
+- **Observed price input.** On 2026-08-05, the diversified allowed pools in
+  `us-west-2` ranged from about $0.157 to $0.247 per worker-hour. The live tier
+  had nine Spot workers; multiply the price of the instance type actually
+  allocated rather than treating the range as a bill. Spot prices and capacity
+  change, so this is an observation rather than a forecast.
+- **Remaining pitfalls.** Interruption timing relative to client flush;
+  single-AZ groups being
   uncoverable during AZ-level Spot capacity droughts (partially
   mitigated by the six-pool instance diversification enforced above,
-  which already validates at ≥3 distinct pools); doppelganger risk on
-  signing pairs that Web3Signer + RDS is expected to catch but has
-  never been drilled against.
-- **What we do not have today that a prod Spot rollout would need.**
+  which already validates at ≥3 distinct pools); and duty impact during
+  replacement gaps.
+- **What a production Spot rollout would still need.**
   A `terminationGracePeriodSeconds` uplift on the client
   StatefulSets — the chart does not currently set one. Consensus-side
   `preStop` hooks — none exist. Capacity-rebalance events routed to
   drain hooks — not wired.
 
-So the honest current answer to "does Spot have a place in a production
-validator stack" is: probably yes, in a mixed on-demand-primary + Spot-
-redundant shape with capacity-rebalance and PDBs, but this repo has
-demonstrated none of those pieces. It is future work.
+The lab has demonstrated replacement and reattachment, not a production
+availability objective. A production design still needs an explicit mixed
+capacity model, interruption handling, and duty-level SLO evidence.
 
 ## Storage: EBS gp3 with a single StorageClass
 
-- Single StorageClass `ephemery-gp3-encrypted` (xfs,
-  `WaitForFirstConsumer`, `reclaimPolicy: Retain`, `encrypted: "true"`)
+- Single StorageClass `ebs-gp3-encrypted` (ext4,
+  `WaitForFirstConsumer`, `reclaimPolicy: Delete`, `encrypted: "true"`)
   is the only StorageClass Ethereum pairs use.
 - Encryption uses the AWS-managed EBS default key at present; a
   customer-managed KMS key is not declared. See
@@ -79,13 +76,24 @@ demonstrated none of those pieces. It is future work.
   `identityFingerprint` truncation. A genesis-reset cycle therefore
   creates new PVCs rather than silently reusing stale genesis chain
   state.
-- `reclaimPolicy: Retain` is deliberate: a Pod eviction must not
-  cascade into PV deletion. The new Pod reattaches by PVC name.
+- A Pod eviction does not delete its PVC, so the new Pod reattaches the same
+  volume. `reclaimPolicy: Delete` applies only when an archive deletes the PVC;
+  this releases replaceable chain data instead of leaving orphaned EBS cost.
 - Prometheus records used bytes, capacity, utilization, six-hour positive
   growth, and projected time to full for every mounted platform PVC. The
   assignment is joined through the PVC's catalog labels rather than inferred
   from its generated name. See the
   [capacity alert procedure](../runbooks/ethereum-alerts.md#persistent-volume-capacity).
+- The current fleet has 22 bound claims totaling 650 GiB: nine 50-GiB
+  execution, nine 20-GiB consensus, and four 5-GiB validator-data claims. At
+  the observed 2026-08-05 `us-west-2` gp3 list input of $0.08/GB-month, retaining
+  all claims is about $52/month before snapshots or other AWS services.
+- Archive policy is measured rather than automatic: retain volumes for a short
+  pause, snapshot/delete only when measured restore time justifies snapshot
+  retention, or delete/resync when regenerating the network state is cheaper.
+  Snapshot cost follows written blocks rather than provisioned GiB, so PVC-used
+  bytes are not presented as a snapshot quote. The detailed operator inputs are
+  in the [development adapter README](../../platform/infrastructure/configs/dev/README.md#retain-snapshot-or-resync).
 
 ## What EKS-specific values live where
 

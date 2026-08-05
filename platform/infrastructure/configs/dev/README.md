@@ -18,12 +18,11 @@ cannot block common infrastructure or a node-only sync.
 
 ## Reconciliation status
 
-**Declared, registered, and not yet bootstrapped.** The
-[`clusters/dev`](../../../../clusters/dev/README.md) entrypoint now names this
-directory and the full fail-closed dependency chain. Nothing in this change
-bootstraps Flux or applies Kubernetes state to the live cluster. The signer
-infrastructure, signer prerequisite, node application, and signer application
-Kustomizations are committed suspended until their separate gates are proven.
+**Flux-managed and observed on EKS.** The
+[`clusters/dev`](../../../../clusters/dev/README.md) entrypoint reconciles this
+directory through the fail-closed dependency chain. The common and signer
+infrastructure layers are active; their former committed-suspended bootstrap
+state is historical rather than current runtime posture.
 
 `make check` renders the entrypoint and every EKS layer. Focused contract tests
 assert that the existing StorageClass is registered rather than duplicated,
@@ -41,23 +40,19 @@ validator keystore from that store; node and validator Pods cannot read it.
 
 ## What is and is not evidence
 
-The EKS foundation is live. A trusted-local apply on 2026-08-02 created the
-`us-west-2` cluster and its add-ons, including the `ebs.csi.aws.com` driver;
-that baseline is recorded in
-[`terraform/environments/dev`](../../../../terraform/environments/dev/README.md).
-This class was checked against it: a **server-side dry-run on that live cluster
-accepted the manifest**. What that proves is real but narrow — a running API
-server and the installed CSI driver accept these fields as a valid StorageClass.
+The trusted-local AWS apply created the EKS foundation and EBS CSI add-on; Flux
+then reconciled this StorageClass. A read-only audit on 2026-08-05 observed:
 
-It proves nothing beyond that, and the gap matters. At the time of that dry-run,
-the command deliberately did not persist the object, so **the StorageClass does
-not exist on the cluster**. The new entrypoint remains only declared until the
-trusted-local bootstrap runbook is executed. No PersistentVolumeClaim has been
-created against it, and no EBS volume has ever been provisioned from it. Every operational claim below —
-zonal binding, expansion, stop/resume reattachment, reclaim behavior, and the
-cost arithmetic — is therefore reasoning from the AWS and Kubernetes contracts,
-not something this repository has observed. A dry-run validates shape against a
-live schema; it does not exercise a driver.
+- one live `ebs-gp3-encrypted` class with the fields documented below;
+- 22 bound Ethereum claims using only that class;
+- nine 50-GiB execution claims, nine 20-GiB consensus claims, and four 5-GiB
+  validator-data claims; and
+- retained-volume reattachment during observed Spot replacements.
+
+That evidence proves provisioning, binding, attachment, and replacement-node
+reattachment for the current Ephemery workload. It does not prove online
+expansion, snapshot restore, AZ-loss recovery, or a funded-mainnet recovery
+objective. Those remain separate exercises.
 
 ## `ebs-gp3-encrypted`
 
@@ -91,7 +86,7 @@ The reset-aware Ephemery sync profile instead uses
 `charts/ethereum-node/values-eks-ephemery.yaml`, which starts at 50 GiB for
 Geth and 20 GiB for Lighthouse so one disposable generation does not inherit
 the permanent-network cost hypothesis.
-`standard` exists in `kind` and not on EKS; `ebs-gp3-encrypted` will exist on
+`standard` exists in `kind` and not on EKS; `ebs-gp3-encrypted` exists on
 EKS and not in `kind`. Neither environment inherits the other's class, and the
 chart's `values.schema.json` rejects an empty `storageClassName` — which
 Kubernetes would otherwise read as "ignore every StorageClass".
@@ -140,9 +135,45 @@ removes the claims, and `Delete` then removes the volumes, so **any snapshot mus
 be taken and confirmed complete before the archive transition, not after**. The
 alternative — `Retain` — would leave released volumes billing indefinitely with
 no controller responsible for them, which is the cost failure mode this class
-exists to avoid. Whether a snapshot is worth taking at all is a
-snapshot-cost-versus-resync-time question that needs a measured Hoodi sync
-duration to answer; it is deliberately not answered here.
+exists to avoid. Whether a snapshot is worth taking is a measured
+cost-versus-recovery decision, not an automatic consequence of archive.
+
+### Retain, snapshot, or resync
+
+This decision applies only to replaceable execution, consensus, and validator
+client data. Validator keys remain in Secrets Manager and slashing history
+remains in PostgreSQL under every option.
+
+| Option | Ongoing storage | Recovery input | Use when |
+|---|---|---|---|
+| Keep bound PVCs (`stopped`) | Provisioned gp3 continues billing | Existing volumes reattach in-zone | The pause is short or measured recovery-time value exceeds retained-volume cost |
+| Snapshot, then archive | Standard-tier snapshot blocks continue billing; volumes are deleted | Restore new volumes, then verify chain identity and sync distance before signing | A measured restore is materially faster than resync and snapshot retention has an owner |
+| Archive without snapshot | No chain-volume or snapshot storage | Recreate empty claims and resync/checkpoint-sync with signing disabled | The network is cheap to resync or the pause is long enough that retained storage is not justified |
+
+AWS bills gp3 by provisioned GB-month. The 2026-08-05 live Ephemery fleet has
+650 GiB provisioned, so the observed `us-west-2` list input of $0.08/GB-month
+is about **$52/month** while all claims remain. Standard EBS snapshots were
+$0.05/GB-month at the same observation. Snapshot billing follows written blocks,
+not provisioned volume size; PVC filesystem-used bytes are therefore not a
+valid snapshot quote. The first snapshot contains all written blocks and later
+snapshots are incremental.
+
+Resync cost is not just an instance-hour multiplication. Record elapsed worker
+time, the Spot price actually paid, NAT/data-processing and transfer charges,
+and missed-duty exposure while the on-chain validator remains active. Current
+Spot prices are variable and must be read again when the decision is made.
+
+The operator records these inputs before archive:
+
+1. provisioned gp3 GiB and monthly retention cost;
+2. snapshot `FullSnapshotSizeInBytes` or an explicitly conservative upper
+   bound, retention period, and restore test time;
+3. measured client resync duration and incremental compute/network cost; and
+4. the recovery-time objective and expected duty impact.
+
+Do not use EBS Snapshot Archive for a short-lived lab pause. It converts an
+incremental snapshot to a full snapshot and has a 90-day minimum retention
+cost. It is a separate long-retention decision.
 
 ## Hoodi storage profile
 
@@ -179,43 +210,46 @@ local default for that reason.
 Storage cost is linear in provisioned size, not in used size — an empty 200Gi
 volume bills as 200Gi.
 
-The validator claim renders only when a validator client is enabled. The active
-Ephemery signing assignment therefore carries all three claims.
+The validator claim renders only when a validator client is enabled. A signing
+assignment therefore carries all three claims.
 
 ```
-200Gi + 50Gi        = 250 GiB   execution + consensus
-        + 5Gi       = 255 GiB   with a validator client
+Hoodi hypothesis: 200Gi + 50Gi + 5Gi = 255 GiB per signing pair
+Live Ephemery: 9 x (50Gi + 20Gi) + 4 x 5Gi = 650 GiB
 
-250 GiB x $0.08 per GiB-month  ~= $20 per pair per month
+650 GiB x $0.08 per GB-month = about $52 per month
 ```
 
-The `$0.08` is the commonly-quoted `us-west-2` gp3 list rate and is an **input to
-this arithmetic, not a fact this repository has verified** — no AWS pricing API
-has been called from here. Confirm it against the AWS pricing page for the
-target region before quoting the total anywhere it matters. Two things about it
-are structural rather than rate-dependent: the same volumes on `gp2` would cost
-about 20% more for worse baseline behavior, and gp3's 3,000 IOPS / 125 MiB/s
-baseline is included at that rate, so the class asks for neither `iops` nor
-`throughput`. Provisioning either is billed on top and belongs behind measured
-queue depth, latency, or sync-rate evidence.
+The rate was read from the AWS Price List API for `us-west-2` on 2026-08-05; it
+is an observation, not a future quote. gp3's 3,000 IOPS / 125 MiB/s baseline is
+included at that rate, so the class asks for neither `iops` nor `throughput`.
+Provisioning either is billed on top and belongs behind measured queue depth,
+latency, or sync-rate evidence.
 
 The pair-level number is not the environment bill. It excludes the EKS control
 plane, EC2, NAT, RDS, node root volumes, snapshots, and logs.
 
 ## Not covered here
 
-This directory declares storage, and a dry-run has confirmed the declaration is
-well-formed against a live cluster. Neither of those is evidence about EBS
-behavior, and the following are explicitly out of its scope:
+This directory declares storage and the current EKS run has exercised basic
+provisioning, binding, and retained-volume reattachment. The following remain
+explicitly out of scope or unqualified:
 
 - **Node root-volume sizing.** Terraform's business; unchanged by this adapter.
 - **RDS storage.** The slashing database is a separate failure domain with its
   own sizing, autoscaling ceiling, and backup posture.
-- **Full EBS performance dashboards** — the Ephemery sync dashboard declares
-  PVC used/capacity evidence, but IOPS, throughput, queue length, latency, and
-  projected-full alerts still require an AWS metrics adapter.
-- **Runtime qualification**: expansion exercised without recreating a claim,
-  stop/resume proving same-volume reattachment, snapshot-versus-resync
-  economics, and whether 200/50/5 survives contact with a real sync.
+- **EBS CloudWatch performance metrics** — PVC capacity, use, growth, and
+  projected-full alerts are live; EBS IOPS, throughput, queue length, and
+  latency still require an AWS metrics adapter.
+- **Runtime qualification**: online expansion without claim recreation,
+  snapshot/restore timing, and whether the 200/50/5 Hoodi hypothesis survives a
+  real sync.
 
 Those are tracked on the storage issue this adapter partially satisfies.
+
+## Pricing references
+
+- [Amazon EBS pricing](https://aws.amazon.com/ebs/pricing/)
+- [How EBS snapshots work](https://docs.aws.amazon.com/ebs/latest/userguide/how_snapshots_work.html)
+- [EBS snapshot archive guidelines](https://docs.aws.amazon.com/ebs/latest/userguide/archiving-guidelines.html)
+- [EC2 Spot pricing](https://aws.amazon.com/ec2/spot/pricing/)
