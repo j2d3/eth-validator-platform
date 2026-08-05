@@ -245,20 +245,18 @@ executionClients:
   # docker.io/nethermind/nethermind:1.39.2 (multi-arch index).
   nethermind:
     image: nethermind/nethermind:1.39.2@sha256:25b9837f3113147eccf0d8bea6f1ae4d4d499301490cc71bd95afcc87b439757
-    # Nethermind's native Prometheus metric names differ from every other
-    # EL. These are the documented Nethermind series but are
-    # configured-but-runtime-unverified until the first live scrape on
-    # this pair — same pattern as the Besu adapter (#137) and the Erigon
-    # `chain_head_block` gap that #148 later fixed by observing `sync`.
-    # The recording rules degrade to empty series for unknown names
-    # (PRD §12.5). `headHeader` deliberately omitted: Nethermind does
-    # not publish a separately-observed downloaded-header frontier gauge
-    # distinct from executed head.
+    # Runtime-observed on the active Ephemery Nethermind 1.39.2 Pod:
+    # `/metrics` publishes both names below. `nethermind_sync_peers` is
+    # also present, but it is partitioned by remote-client type; the
+    # aggregate `ethereum_peer_count` is the correct platform peer gauge.
+    # `nethermind_peers` is absent. `headHeader` is deliberately omitted:
+    # Nethermind does not publish a separately-observed downloaded-header
+    # frontier gauge distinct from executed head.
     metrics:
       # Executed head block number.
       headBlock: nethermind_blocks
       # Connected peer count.
-      peers: nethermind_peers
+      peers: ethereum_peer_count
 consensusClients:
   lighthouse:
     image: sigp/lighthouse:v8.2.1@sha256:9538f53d8e11766e3cb5de1889b292074f8e518e0dabe6df13d9054d504d1d62
