@@ -26,6 +26,7 @@ lives here.
 | How is the local development environment set up? | [runbooks/local-development.md](runbooks/local-development.md) |
 | How does an operator bootstrap EKS + Flux? | [runbooks/eks-flux-bootstrap.md](runbooks/eks-flux-bootstrap.md) |
 | How is one validator key generated, deposited, and onboarded? | [runbooks/validator-key-ceremony.md](runbooks/validator-key-ceremony.md) |
+| How would a private repository supply Flux desired state? | [ADR 0002](adrs/0002-private-flux-source-authentication.md) and [runbook](runbooks/flux-source-authentication.md) |
 | How would slashing history be recovered, and what proves the copy is usable? | [runbooks/rds-slashing-recovery-drill.md](runbooks/rds-slashing-recovery-drill.md) |
 | Where does the code live? | [`README.md`'s repository map](../README.md#repository-map) |
 
@@ -102,6 +103,7 @@ Operator procedures.
 - [ethereum-alerts.md](runbooks/ethereum-alerts.md)
 - [validator-key-ceremony.md](runbooks/validator-key-ceremony.md)
 - [rds-slashing-recovery-drill.md](runbooks/rds-slashing-recovery-drill.md)
+- [flux-source-authentication.md](runbooks/flux-source-authentication.md)
 - [dependabot.md](runbooks/dependabot.md)
 
 ### [Evidence](evidence/)
@@ -124,6 +126,7 @@ The product-requirements-and-architecture contract.
 Accepted architecture decisions.
 
 - [0001-local-first-kind.md](adrs/0001-local-first-kind.md)
+- [0002-private-flux-source-authentication.md](adrs/0002-private-flux-source-authentication.md)
 
 ### [Development](development/)
 

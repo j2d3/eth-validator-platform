@@ -1,0 +1,172 @@
+apiVersion: platform.galaxy-lab/v1
+kind: FluxSourceAuthenticationContract
+metadata:
+  name: flux-source-authentication
+  revision: 1
+  issue: 71
+  adr: docs/adrs/0002-private-flux-source-authentication.md
+  runbook: docs/runbooks/flux-source-authentication.md
+
+# This is a design and readiness record. It creates no GitHub App, AWS
+# resource, credential, workflow authority, or cluster object.
+status:
+  design_only: true
+  github_app_created: false
+  aws_resources_created: false
+  credentials_issued: false
+  workflow_authority_changed: false
+  cluster_changed: false
+  failure_drill_executed: false
+
+current_source:
+  repository_visibility: public
+  anonymous_https:
+    available: true
+    configured: false
+  configured:
+    kind: GitRepository
+    provider: generic
+    url: ssh://git@github.com/j2d3/eth-validator-platform
+    secret_ref: flux-system
+    credential: repository-scoped-read-only-ssh-deploy-key
+    source_manifest: clusters/local/flux-system/gotk-sync.yaml
+    dev_overlay: clusters/dev/flux-system/kustomization.yaml
+
+private_source_options:
+  direct_github_app:
+    disposition: acceptable-intermediate
+    source:
+      kind: GitRepository
+      provider: github
+      url: https://github.com/j2d3/eth-validator-platform
+      secret_ref: flux-system-github-app
+    secret_contract:
+      required_keys:
+        - githubAppID
+        - githubAppPrivateKey
+      exactly_one_of:
+        - githubAppInstallationOwner
+        - githubAppInstallationID
+      optional_github_enterprise_keys:
+        - githubAppBaseURL
+        - ca.crt
+      committed_to_git: false
+      written_to_terraform_state: false
+      printed_in_logs: false
+    app_scope:
+      repository_selection: selected
+      repositories:
+        - j2d3/eth-validator-platform
+      permissions:
+        contents: read
+        metadata: read
+    credentials:
+      app_private_key:
+        long_lived: true
+        expires: false
+        maximum_concurrent_keys: 25
+        source_of_truth: aws-secrets-manager
+        cluster_copy: flux-system/flux-system-github-app
+      installation_token:
+        long_lived: false
+        ttl_seconds: 3600
+        holder: source-controller-process-memory
+    bootstrap:
+      owner: trusted-local-operator
+      depends_on_eso: false
+      reason: >-
+        External Secrets Operator is installed by Flux and cannot supply the
+        credential required for Flux's first private-repository fetch.
+    api_verification:
+      list_app_installations_auth: github-app-jwt
+      create_installation_token_auth: github-app-jwt
+      list_installation_repositories_auth: installation-access-token
+      ordinary_gh_user_token_sufficient: false
+
+  signed_oci_promotion:
+    disposition: preferred-production-target
+    authoring_source: private-github-repository
+    promotion:
+      trigger: protected-main
+      github_repository_token: ephemeral-repository-scoped
+      aws_authentication: github-actions-oidc
+      aws_role_scope: one-ecr-promotion-repository
+      source_root: .
+      forbidden_source_root: clusters/dev
+      required_reference_roots:
+        - clusters/dev
+        - platform/infrastructure/controllers
+        - platform/infrastructure/overlays/dev/controllers
+        - platform/infrastructure/configs/dev
+        - platform/infrastructure/configs/dev/signer
+        - platform/apps/prerequisites/dev
+        - platform/apps/dev
+        - platform/apps/nodes/dev
+        - platform/apps/portal/dev
+        - platform/apps/local/assignments
+        - platform/apps/base
+        - charts/ethereum-node
+      excluded_roots:
+        - .git
+        - .local
+        - control-plane/portal/node_modules
+      requirement: >-
+        The promoted artifact contains the repository-root desired-state
+        reference closure. Publishing only clusters/dev is invalid because its
+        Kustomizations and HelmReleases reference platform and chart paths.
+    artifact:
+      registry: private-ecr
+      kind: OCIRepository
+      provider: aws
+      reference:
+        strategy: mutable-promotion-channel
+        tag: main
+        resolved_identity: status-artifact-digest-and-revision
+        rationale: >-
+          A literal spec.ref.digest would freeze reconciliation until another
+          writer changed the source object. The protected promotion job moves
+          the main channel; source-controller resolves it to a digest and
+          verifies the signature over that immutable subject before publishing
+          a source artifact.
+      verification_provider: cosign
+      match_oidc_identity: required
+    cluster_authentication:
+      mechanism: eks-pod-identity
+      service_account: flux-system/source-controller
+      static_aws_credentials: false
+    keyless_verification:
+      trusted_material:
+        - fulcio-root-ca
+        - rekor-public-key
+      runtime_network_dependencies:
+        - rekor.sigstore.dev
+      runtime_fulcio_issuance_required_by_source_controller: false
+      note: >-
+        CI contacts Fulcio while signing. Flux verifies the certificate chain
+        from trusted material and uses Rekor for transparency-log evidence; it
+        does not request a signing certificate from Fulcio.
+    authority_change:
+      workflow_id_token_write_required: true
+      currently_adopted: false
+      excluded_permissions:
+        - eks:*
+        - secretsmanager:*
+        - rds:*
+        - iam:*
+
+failure_behavior:
+  new_failed_or_unverified_revision_published_as_source_artifact: false
+  last_successful_artifact_may_remain_available: true
+  existing_workloads_may_continue_running: true
+  exact_downstream_readiness_and_drift_reconciliation: unqualified
+  requires_failure_drill_before_stronger_claim: true
+  note: >-
+    A failed fetch or signature verification must not publish the new revision.
+    Flux can retain the last successfully published artifact, so this design
+    does not claim that every dependent Kustomization becomes not-Ready or that
+    all reconciliation stops. Those details require a version-specific drill.
+
+forbidden_credentials:
+  - personal-access-token
+  - developer-ssh-key
+  - static-aws-access-key
