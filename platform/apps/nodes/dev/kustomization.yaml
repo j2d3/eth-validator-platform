@@ -1,13 +1,13 @@
 apiVersion: kustomize.config.k8s.io/v1beta1
 kind: Kustomization
 resources:
-  # Four generation-pinned Ephemery pairs are admitted in this EKS node
-  # slice — Geth+Lighthouse and Reth+Lighthouse (signing), plus Geth+Teku
-  # and Reth+Teku (non-signing). The generated
-  # catalog projection remains the source; the overlay only deletes the
-  # local-only synthetic-01 assignment and injects each pair's EKS-specific
-  # inputs (valuesFiles + telemetry + engineJwt). Every Ephemery release
-  # below must receive the same three patches so its ExternalSecret, PVC
+  # Five generation-pinned Ephemery pairs are admitted in this EKS node
+  # slice — Geth+Lighthouse and Reth+Lighthouse (signing), plus Geth+Teku,
+  # Reth+Teku, and Erigon+Lighthouse (non-signing). The generated catalog
+  # projection remains the source; the overlay only deletes the local-only
+  # synthetic-01 assignment and injects each pair's EKS-specific inputs
+  # (valuesFiles + telemetry + engineJwt). Every Ephemery release below
+  # must receive the same three patches so its ExternalSecret, PVC
   # StorageClass, and telemetry follow the reviewed dev contracts on EKS.
   - ../../local/assignments
   # The same generation-pinned consensus config is rendered separately into
@@ -133,6 +133,38 @@ patches:
       # executionClient=reth and consensusClient=teku from the projection.
       # Same Engine JWT source as the other three Ephemery pairs — per-pair
       # scoped by fullnameOverride (pair-<validator>-engine-jwt).
+      - op: add
+        path: /spec/chart/spec/valuesFiles
+        value:
+          - charts/ethereum-node/values.yaml
+          - charts/ethereum-node/values-eks-ephemery.yaml
+      - op: replace
+        path: /spec/values/telemetry
+        value:
+          cluster: eth-validator-platform-dev
+          environment: dev
+      - op: add
+        path: /spec/values/engineJwt
+        value:
+          secretStoreName: aws-engine-secrets
+          remoteSecretKey: eth-validator-platform-dev/ethereum/engine-jwt
+          remoteSecretProperty: jwt.hex
+  - target:
+      group: helm.toolkit.fluxcd.io
+      version: v2
+      kind: HelmRelease
+      name: assignment-ephemery-162-synthetic-erigon
+    patch: |-
+      # Erigon+Lighthouse pair: Erigon EL adapter landed in #131. Erigon 3.x
+      # uses its own staged-sync pipeline — architecturally distinct from
+      # Reth's staged pipeline and from Geth's snap. On this EKS profile
+      # Geth is deliberately pinned to full sync (values-eks-ephemery.yaml)
+      # to avoid the snap-pivot failure surface seen in the first restart
+      # exercise, so the comparison is against three genuinely different
+      # sync strategies at runtime. Same values-eks-ephemery.yaml profile
+      # (EL/CL-agnostic; the chart dispatches on executionClient=erigon).
+      # Same Engine JWT source — per-pair scoped by fullnameOverride
+      # (pair-<validator>-engine-jwt).
       - op: add
         path: /spec/chart/spec/valuesFiles
         value:

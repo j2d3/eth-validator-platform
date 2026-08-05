@@ -1,0 +1,17 @@
+apiVersion: platform.galaxy-lab/v1alpha1
+kind: ValidatorAssignment
+metadata:
+  name: assignment-ephemery-162-synthetic-erigon
+spec:
+  validatorRef: validator-ephemery-162-synthetic-erigon
+  networkProfileRef: ephemery-162
+  lifecycle: active
+  serviceProfileRef: dedicated-erigon-lighthouse
+  nodePairRef: pair-ephemery-162-synthetic-erigon
+  signerRef: shared-web3signer
+  signingEnabled: false
+  safety:
+    slashingProtectionConfirmed: false
+    doppelgangerProtectionConfirmed: false
+  maintenance:
+    reason: Activate the non-signing Erigon and Lighthouse client pair for live Ephemery sync qualification with a third execution client; keep it running.

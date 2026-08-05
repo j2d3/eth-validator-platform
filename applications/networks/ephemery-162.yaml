@@ -39,6 +39,12 @@ spec:
     # network without a schema-level change.
     reth:
       mode: artifact-bundle
+    # Erigon adapter uses the same digest-verified genesis + bootnode files
+    # as Geth; state lives under /data/chaindata/ (per the chart's
+    # erigonInitCommand). Declaring the adapter here lets a ServiceProfile
+    # choose Erigon for this network without a schema-level change.
+    erigon:
+      mode: artifact-bundle
     lighthouse:
       mode: artifact-bundle
     # Teku adapter uses the same generation-pinned config.yaml as Lighthouse

@@ -52,6 +52,9 @@ spec:
         reth:
           mode: artifact-bundle
           network: null
+        erigon:
+          mode: artifact-bundle
+          network: null
         lighthouse:
           mode: artifact-bundle
           network: null

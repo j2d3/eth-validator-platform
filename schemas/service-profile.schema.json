@@ -21,7 +21,7 @@
       "additionalProperties": false,
       "required": ["executionClient", "consensusClient", "tenancy", "resourceProfile", "signingAllowed"],
       "properties": {
-        "executionClient": {"enum": ["geth", "nethermind", "besu", "reth"]},
+        "executionClient": {"enum": ["geth", "nethermind", "besu", "reth", "erigon"]},
         "consensusClient": {"enum": ["lighthouse", "prysm", "teku", "nimbus"]},
         "tenancy": {"enum": ["dedicated", "shared"]},
         "resourceProfile": {"type": "string", "pattern": "^[a-z][a-z0-9-]{2,62}$"},

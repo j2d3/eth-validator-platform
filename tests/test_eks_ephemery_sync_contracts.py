@@ -404,16 +404,19 @@ class EksEphemeryFluxAndTelemetryTests(unittest.TestCase):
         releases = [
             document for document in documents if document["kind"] == "HelmRelease"
         ]
-        # Four generation-pinned Ephemery pairs are rendered by this overlay:
+        # Five generation-pinned Ephemery pairs are rendered by this overlay:
         # Geth+Lighthouse and Reth+Lighthouse sign with disjoint identities;
-        # Geth+Teku and Reth+Teku stay non-signing. Everything else in this
-        # test asserts on the two signing Lighthouse pairs; the non-signing
-        # pairs are covered in test_chart_reth_adapter_contracts,
-        # test_chart_teku_adapter_contracts, and test_local_assignment_projection.
+        # Geth+Teku, Reth+Teku, and Erigon+Lighthouse stay non-signing.
+        # Everything else in this test asserts on the two signing Lighthouse
+        # pairs; the non-signing pairs are covered in
+        # test_chart_reth_adapter_contracts, test_chart_teku_adapter_contracts,
+        # test_chart_erigon_adapter_contracts, and
+        # test_local_assignment_projection.
         self.assertEqual(
             sorted(release["metadata"]["name"] for release in releases),
             [
                 "assignment-ephemery-162-synthetic",
+                "assignment-ephemery-162-synthetic-erigon",
                 "assignment-ephemery-162-synthetic-reth",
                 "assignment-ephemery-162-synthetic-reth-teku",
                 "assignment-ephemery-162-synthetic-teku",
