@@ -97,6 +97,7 @@ Operator procedures.
 - [network-profiles.md](runbooks/network-profiles.md)
 - [operations-ingress.md](runbooks/operations-ingress.md)
 - [portal-telemetry.md](runbooks/portal-telemetry.md)
+- [ethereum-alerts.md](runbooks/ethereum-alerts.md)
 - [dependabot.md](runbooks/dependabot.md)
 
 ### [Evidence](evidence/)
