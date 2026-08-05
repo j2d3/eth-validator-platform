@@ -118,8 +118,14 @@ spec:
           expr: >-
             {{- $exprs := list -}}
             {{- range $client, $spec := $consClients -}}
+            {{- if hasKey $spec.metrics "presentEpoch" -}}
             {{- $one := printf "clamp_min(max by (%s) (%s{platform=\"ethereum-validator\",component=\"consensus\",consensus_client=\"%s\"}) - max by (%s) (%s{platform=\"ethereum-validator\",component=\"consensus\",consensus_client=\"%s\"}), 0)" $telemetryLabels $spec.metrics.presentEpoch $client $telemetryLabels $spec.metrics.finalizedEpoch $client -}}
             {{- $exprs = append $exprs $one -}}
+            {{- else -}}
+            {{/* Client publishes a slot gauge but no direct present-epoch (e.g. Prysm's beacon_clock_time_slot / no beacon_current_epoch). Derive the current epoch as floor(presentSlot / presentEpochDivisor). */}}
+            {{- $one := printf "clamp_min(floor(max by (%s) (%s{platform=\"ethereum-validator\",component=\"consensus\",consensus_client=\"%s\"}) / %d) - max by (%s) (%s{platform=\"ethereum-validator\",component=\"consensus\",consensus_client=\"%s\"}), 0)" $telemetryLabels $spec.metrics.presentSlot $client (int $spec.metrics.presentEpochDivisor) $telemetryLabels $spec.metrics.finalizedEpoch $client -}}
+            {{- $exprs = append $exprs $one -}}
+            {{- end -}}
             {{- end }}
             {{ join " or " $exprs }}
 

@@ -101,7 +101,8 @@
             "nethermind": {"$ref": "#/$defs/nethermindAdapter"},
             "lighthouse": {"$ref": "#/$defs/lighthouseAdapter"},
             "teku": {"$ref": "#/$defs/tekuAdapter"},
-            "nimbus": {"$ref": "#/$defs/nimbusAdapter"}
+            "nimbus": {"$ref": "#/$defs/nimbusAdapter"},
+            "prysm": {"$ref": "#/$defs/prysmAdapter"}
           }
         },
         "signer": {
@@ -345,6 +346,27 @@
       ]
     },
     "nimbusAdapter": {
+      "oneOf": [
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["mode", "network"],
+          "properties": {
+            "mode": {"const": "builtin"},
+            "network": {"enum": ["sepolia", "hoodi"]}
+          }
+        },
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["mode"],
+          "properties": {
+            "mode": {"const": "artifact-bundle"}
+          }
+        }
+      ]
+    },
+    "prysmAdapter": {
       "oneOf": [
         {
           "type": "object",

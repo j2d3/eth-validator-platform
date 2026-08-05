@@ -63,7 +63,8 @@
             "nethermind": {"$ref": "#/$defs/networkAdapter"},
             "lighthouse": {"$ref": "#/$defs/networkAdapter"},
             "teku": {"$ref": "#/$defs/networkAdapter"},
-            "nimbus": {"$ref": "#/$defs/networkAdapter"}
+            "nimbus": {"$ref": "#/$defs/networkAdapter"},
+            "prysm": {"$ref": "#/$defs/networkAdapter"}
           }
         },
         "signer": {
@@ -182,7 +183,7 @@
       "enum": ["geth", "reth", "erigon", "besu", "nethermind"]
     },
     "consensusClient": {
-      "enum": ["lighthouse", "teku", "nimbus"]
+      "enum": ["lighthouse", "teku", "nimbus", "prysm"]
     },
     "executionClients": {
       "type": "object",
@@ -258,6 +259,15 @@
           }
         },
         "nimbus": {
+          "type": "object",
+          "required": ["image", "metrics"],
+          "additionalProperties": false,
+          "properties": {
+            "image": {"type": "string", "pattern": "@sha256:[0-9a-f]{64}$"},
+            "metrics": {"$ref": "#/$defs/consensusMetricsMap"}
+          }
+        },
+        "prysm": {
           "type": "object",
           "required": ["image", "metrics"],
           "additionalProperties": false,
@@ -535,15 +545,21 @@
     "consensusMetricsMap": {
       "type": "object",
       "additionalProperties": false,
-      "required": ["headSlot", "presentSlot", "presentEpoch", "finalizedEpoch", "peers"],
+      "required": ["headSlot", "presentSlot", "finalizedEpoch", "peers"],
+      "description": "Exactly one of `presentEpoch` (Prometheus metric name -- direct present-epoch gauge, e.g. Lighthouse's slotclock_present_epoch, Nimbus's beacon_current_epoch, Teku's beacon_epoch) or `presentEpochDivisor` (integer slots-per-epoch -- for clients that publish only a slot gauge, e.g. Prysm's beacon_clock_time_slot) MUST be declared. The recording rules dispatch on which is present: the direct-metric branch takes max(presentEpoch); the derived branch computes floor(max(presentSlot) / presentEpochDivisor). Declaring both is ambiguous; declaring neither renders an empty finality-lag series. The oneOf below encodes this invariant at schema-validation time so a client entry cannot slip past.",
       "properties": {
         "headSlot": {"$ref": "#/$defs/prometheusMetricName"},
         "presentSlot": {"$ref": "#/$defs/prometheusMetricName"},
         "presentEpoch": {"$ref": "#/$defs/prometheusMetricName"},
+        "presentEpochDivisor": {"type": "integer", "minimum": 1},
         "finalizedEpoch": {"$ref": "#/$defs/prometheusMetricName"},
         "peers": {"$ref": "#/$defs/prometheusMetricName"},
         "validatorEnabled": {"$ref": "#/$defs/prometheusMetricName"}
-      }
+      },
+      "oneOf": [
+        {"required": ["presentEpoch"], "not": {"required": ["presentEpochDivisor"]}},
+        {"required": ["presentEpochDivisor"], "not": {"required": ["presentEpoch"]}}
+      ]
     },
     "bundlePath": {
       "type": "string",

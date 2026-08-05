@@ -188,6 +188,8 @@ touching node.yaml.
 {{- include "ethereum-node.tekuRunCommand" . -}}
 {{- else if eq $client "nimbus" -}}
 {{- include "ethereum-node.nimbusRunCommand" . -}}
+{{- else if eq $client "prysm" -}}
+{{- include "ethereum-node.prysmRunCommand" . -}}
 {{- else -}}
 {{- fail (printf "no run-command adapter for consensusClient=%q" $client) -}}
 {{- end -}}
@@ -251,6 +253,56 @@ exec /home/user/nimbus_beacon_node \
   --metrics-address=0.0.0.0 \
   --metrics-port=8008 \
   --status-bar=no
+{{- end -}}
+
+{{- define "ethereum-node.prysmRunCommand" -}}
+set -eu
+# Derive /tmp/prysm-config.yaml from the bundle's config.yaml. Prysm rejects
+# EPHEMERY_RESET_PERIOD and NUMBER_OF_COLUMNS (unknown-key fail) and then
+# inherits a mainnet Gloas fork-version collision unless the Ephemery
+# GLOAS_FORK_VERSION/GLOAS_FORK_EPOCH are appended. The generic Ephemery
+# config.yaml is expected to carry the two rejected keys and NO existing
+# GLOAS_FORK_* keys; either shape drift fails closed here so a silently
+# reshaped upstream bundle cannot start Prysm with a config the operator
+# did not review. Written to /tmp (ephemeral tmpfs) rather than /network/
+# because /network/files is a read-only projection of the bundle.
+src={{ printf "/network/files/%s" .Values.networkProfile.artifactBundle.files.consensusConfig | quote }}
+dst=/tmp/prysm-config.yaml
+if grep -Eq "^GLOAS_FORK_(VERSION|EPOCH):" "$src"; then
+  echo "ERROR: source config.yaml already contains GLOAS_FORK_* keys; refusing to append" >&2
+  exit 1
+fi
+grep -Ev "^(EPHEMERY_RESET_PERIOD|NUMBER_OF_COLUMNS):" "$src" > "$dst"
+printf 'GLOAS_FORK_VERSION: 0x8000101b\nGLOAS_FORK_EPOCH: 18446744073709551615\n' >> "$dst"
+# Assemble one --bootstrap-node flag per ENR — Prysm accepts repeated flags,
+# NOT a single CSV value (verified by Codex against v7.1.8 on 2026-08-05).
+bootstrap_args=""
+while IFS= read -r enr; do
+  test -z "$enr" && continue
+  bootstrap_args="$bootstrap_args --bootstrap-node=$enr"
+done < {{ printf "/network/files/%s" .Values.networkProfile.artifactBundle.files.consensusBootnodesText | quote }}
+test -n "$bootstrap_args"
+# Prysm splits the beacon-node HTTP/gRPC surfaces. The chart exposes /metrics
+# and the REST API on the Pod IP (`--http-host=0.0.0.0`, `--monitoring-host=0.0.0.0`)
+# and keeps gRPC on loopback because no in-cluster consumer needs it.
+exec /beacon-chain \
+  {{ printf "--chain-config-file=%s" "/tmp/prysm-config.yaml" | quote }} \
+  {{ printf "--genesis-state=/network/files/%s" .Values.networkProfile.artifactBundle.files.consensusGenesis | quote }} \
+  --datadir=/data/prysm \
+  --execution-endpoint=http://127.0.0.1:8551 \
+  --jwt-secret=/jwt/jwt.hex \
+  {{ printf "--checkpoint-sync-url=%s" .Values.networkProfile.checkpointSync.primaryUrl | quote }} \
+  $bootstrap_args \
+  --p2p-local-ip=0.0.0.0 \
+  --p2p-tcp-port=9000 \
+  --p2p-udp-port=9000 \
+  --p2p-quic-port=9001 \
+  --http-host=0.0.0.0 \
+  --http-port=5052 \
+  --rpc-host=127.0.0.1 \
+  --monitoring-host=0.0.0.0 \
+  --monitoring-port=8008 \
+  --accept-terms-of-use
 {{- end -}}
 
 {{/*

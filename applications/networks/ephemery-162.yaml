@@ -78,6 +78,17 @@ spec:
     # --p2p-discovery-bootnodes.
     teku:
       mode: artifact-bundle
+    # Prysm adapter cannot consume the generic Ephemery config.yaml
+    # directly: Prysm rejects the EPHEMERY_RESET_PERIOD and
+    # NUMBER_OF_COLUMNS keys, then inherits a mainnet Gloas fork-version
+    # collision. The chart's prysm consensus container derives
+    # /tmp/prysm-config.yaml pre-exec from the bundle's config.yaml
+    # (remove the two rejected keys, append GLOAS_FORK_VERSION /
+    # GLOAS_FORK_EPOCH, fail on unexpected source shape) after bundle
+    # SHA verification. Runtime-verified by Codex against Prysm v7.1.8
+    # on 2026-08-05.
+    prysm:
+      mode: artifact-bundle
     # Nimbus adapter reads the network directory (via --network=<dir>) that
     # contains the generation-pinned config.yaml plus the digest-verified
     # bootnode list; --bootstrap-file is pointed at the line-delimited ENR
