@@ -71,6 +71,7 @@ def base_results() -> dict[str, list[dict]]:
         "signingPermittedTotal": 2,
         "signingPreventedTotal": 0,
         "signingMissingIdentifierTotal": 0,
+        "alertEvaluationReady": 1,
         "firingAlertsTotal": 2,
         "firingAlertsCritical": 1,
         "firingAlertsWarning": 1,
@@ -150,7 +151,12 @@ class PortalStatusApiResponseTests(unittest.TestCase):
         )
         self.assertEqual(
             snapshot["alerts"],
-            {"firingTotal": 2, "critical": 1, "warning": 1},
+            {
+                "available": True,
+                "firingTotal": 2,
+                "critical": 1,
+                "warning": 1,
+            },
         )
         for query_name in (
             "firingAlertsTotal",
@@ -161,8 +167,16 @@ class PortalStatusApiResponseTests(unittest.TestCase):
                 'alertname!~"Watchdog|InfoInhibitor"',
                 SERVER.SCALAR_QUERIES[query_name],
             )
-        self.assertIn('severity="critical"', SERVER.SCALAR_QUERIES["firingAlertsCritical"])
-        self.assertIn('severity="warning"', SERVER.SCALAR_QUERIES["firingAlertsWarning"])
+        self.assertIn(
+            'severity="critical"', SERVER.SCALAR_QUERIES["firingAlertsCritical"]
+        )
+        self.assertIn(
+            'severity="warning"', SERVER.SCALAR_QUERIES["firingAlertsWarning"]
+        )
+        self.assertIn(
+            'severity=~"critical|warning"',
+            SERVER.SCALAR_QUERIES["firingAlertsTotal"],
+        )
 
         grafana = urlsplit(pair["grafanaUrl"])
         self.assertEqual((grafana.scheme, grafana.netloc), ("https", "ops.g.j2d3.com"))
@@ -188,6 +202,22 @@ class PortalStatusApiResponseTests(unittest.TestCase):
         self.assertEqual(
             set(client.queries),
             set(SERVER.SCALAR_QUERIES.values()) | set(SERVER.PAIR_QUERIES.values()),
+        )
+
+    def test_alert_counts_fail_closed_without_watchdog(self) -> None:
+        results = base_results()
+        results[SERVER.SCALAR_QUERIES["alertEvaluationReady"]] = []
+
+        snapshot = SERVER.build_snapshot(FakePrometheus(results))
+
+        self.assertEqual(
+            snapshot["alerts"],
+            {
+                "available": False,
+                "firingTotal": None,
+                "critical": None,
+                "warning": None,
+            },
         )
 
     def test_missing_node_group_labels_are_explicitly_unavailable(self) -> None:

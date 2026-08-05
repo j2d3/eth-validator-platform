@@ -28,8 +28,11 @@ instead of the Service ClusterIP.
 - enabled validator count, signer target state, loaded-key count, permitted and
   prevented slashing checks, and unknown-key signing requests;
 - aggregate actionable firing-alert total plus critical/warning counts,
-  excluding the stock `Watchdog` and `InfoInhibitor` meta-alerts; no alert
-  labels or annotations cross the public API;
+  limited to critical/warning severity and excluding the stock `Watchdog` and
+  `InfoInhibitor` meta-alerts; no alert labels or annotations cross the public
+  API. The firing `Watchdog` is the evaluation canary: when it is absent, the
+  API reports alert evaluation unavailable and returns null counts instead of
+  a confident zero;
 - client-pair target state, peers, sync progress, lag, CPU, and memory;
 - the enabled-validator count for each active client pair; and
 - a per-pair Grafana URL only when the configured Grafana base URL passes the

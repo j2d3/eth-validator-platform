@@ -112,8 +112,12 @@ SCALAR_QUERIES = {
     "signingMissingIdentifierTotal": (
         "max(validator_platform_signer_missing_identifier_total)"
     ),
+    "alertEvaluationReady": (
+        'max(ALERTS{alertstate="firing",alertname="Watchdog"})'
+    ),
     "firingAlertsTotal": (
-        'sum(ALERTS{alertstate="firing",alertname!~"Watchdog|InfoInhibitor"}) '
+        'sum(ALERTS{alertstate="firing",alertname!~"Watchdog|InfoInhibitor",'
+        'severity=~"critical|warning"}) '
         "or vector(0)"
     ),
     "firingAlertsCritical": (
@@ -355,6 +359,7 @@ def build_snapshot(client: PrometheusClient | Any) -> dict[str, Any]:
 
     scalars = {name: _scalar(results[name]) for name in SCALAR_QUERIES}
     source_ready = scalars["sourceReady"] == 1
+    alert_evaluation_ready = scalars["alertEvaluationReady"] == 1
     node_group_labels_ready = (scalars["nodeGroupLabels"] or 0) > 0
     pairs = _pair_snapshot(results)
     return {
@@ -412,9 +417,16 @@ def build_snapshot(client: PrometheusClient | Any) -> dict[str, Any]:
             "missingIdentifierTotal": scalars["signingMissingIdentifierTotal"],
         },
         "alerts": {
-            "firingTotal": scalars["firingAlertsTotal"],
-            "critical": scalars["firingAlertsCritical"],
-            "warning": scalars["firingAlertsWarning"],
+            "available": alert_evaluation_ready,
+            "firingTotal": (
+                scalars["firingAlertsTotal"] if alert_evaluation_ready else None
+            ),
+            "critical": (
+                scalars["firingAlertsCritical"] if alert_evaluation_ready else None
+            ),
+            "warning": (
+                scalars["firingAlertsWarning"] if alert_evaluation_ready else None
+            ),
         },
         "pairs": pairs,
     }
