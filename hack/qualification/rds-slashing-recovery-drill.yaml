@@ -1,0 +1,836 @@
+# Declarative contract for the RDS slashing-history recovery drill (issue #180).
+#
+# This file is a plan, not an execution record. Nothing in this repository
+# performs the drill. `tools/verify_rds_recovery_drill_preflight.py` reads this
+# contract, checks it against the recovery guards actually declared under
+# `terraform/environments/dev`, and emits redacted readiness evidence. That tool
+# opens no AWS API call, no PostgreSQL connection, and reads no secret value.
+#
+# Executing the drill requires a separate reviewed change that adds the drill
+# security group, the drill-only connection ExternalSecret, and the drill signer
+# manifests. Those declarations are deliberately absent here so that merging
+# this contract creates no AWS resource.
+apiVersion: platform.galaxy-lab/v1
+kind: SlashingRecoveryDrillContract
+
+metadata:
+  name: rds-slashing-recovery-drill
+  revision: 4
+  environment: dev
+  tracking_issue: 180
+  runbook: docs/runbooks/rds-slashing-recovery-drill.md
+
+status:
+  # Flipped only by a reviewed change that also lands the evidence record.
+  executed: false
+  mutating_actions_authorized: false
+  evidence_record: null
+
+source:
+  terraform_root: terraform/environments/dev
+  terraform_resource: aws_db_instance.web3signer
+  access: read-only
+  mutation_allowed: false
+  # The drill reads the source instance's recovery-point metadata, its schema
+  # digests, and its continuity digests. It never writes to it, never restarts
+  # it, and never changes its parameter group, security group, or backup
+  # configuration.
+  permitted_source_operations:
+    - describe-db-instances
+    - describe-db-instance-automated-backups
+    - aggregate-only schema and continuity digest queries over the
+      slashing-protection schema
+
+restore_target:
+  identifier_template: "{source_identifier}-drill-{utc_date}"
+  must_differ_from_source: true
+  restore_type: point-in-time
+  publicly_accessible: false
+  multi_az: false
+  # A point-in-time restore does not reproduce the source's placement,
+  # networking, or parameters. AWS creates the target in a system-selected
+  # availability zone with the *default* VPC security group, DB subnet group,
+  # and DB parameter group unless each value is supplied on the restore call.
+  # The default parameter group does not carry `rds.force_ssl = 1`, so a restore
+  # that omits it accepts plaintext connections.
+  inherited_from_source:
+    - storage encryption and its KMS key
+    - engine and engine version
+    - the database contents at the recovery point, including every PostgreSQL
+      role and that role's password
+    - backup retention, which the restore reference documents as defaulting to
+      the existing setting, and which the drill therefore overrides to zero
+      rather than leaves alone
+  not_inherited_from_source:
+    - db parameter group, so TLS enforcement is not inherited
+    - VPC security groups
+    - DB subnet group
+    - availability zone
+    - deletion protection, which the restore API documents as off by default
+      rather than copied from the source
+  # Every parameter below must be supplied explicitly on the restore call, and
+  # each is written in the syntax the AWS CLI actually accepts: a boolean is a
+  # flag pair (`--multi-az | --no-multi-az`), never a flag with a `true`/`false`
+  # value argument. The preflight fails if any is missing, so a silently dropped
+  # value fails the drill contract rather than being discovered on a running
+  # restored copy.
+  #
+  # `default_if_omitted` is what the RestoreDBInstanceToPointInTime reference
+  # says AWS does when the parameter is absent. For two of these the documented
+  # default already matches what the drill wants; they are still supplied
+  # explicitly, because the reviewed restore call at the go/no-go gate should
+  # state the posture it produces rather than depend on a default the approver
+  # cannot see in the command.
+  explicit_restore_parameters:
+    - id: db-subnet-group-name
+      value: the same isolated database subnet group the source uses, which has
+        no internet-gateway and no NAT route
+      terraform_reference: module.vpc.database_subnet_group_name
+      default_if_omitted: the account's default DB subnet group
+    - id: vpc-security-group-ids
+      value: the drill-only security group and nothing else
+      note: added by the separate reviewed change
+      default_if_omitted: the VPC's default security group
+    - id: db-parameter-group-name
+      value: the custom Web3Signer parameter group that sets rds.force_ssl = 1
+      terraform_reference: aws_db_parameter_group.web3signer
+      default_if_omitted: the engine default group, which does not force TLS
+    - id: no-publicly-accessible
+      value: public accessibility off
+      note: matches publicly_accessible = false on the source
+      default_if_omitted: derived from the subnet group, not guaranteed
+    - id: no-multi-az
+      value: Single-AZ, supplied as the `--no-multi-az` flag
+      note: matches multi_az = false on the source, and an explicit availability
+        zone cannot be combined with a Multi-AZ deployment
+      default_if_omitted: Single-AZ — the restore command description states that
+        the new instance is created as a single-AZ deployment by default, except
+        for a SQL Server instance carrying a mirroring option group, which this
+        PostgreSQL instance is not
+    - id: availability-zone
+      value: one availability zone of the isolated database subnet group,
+        supplied explicitly rather than system-selected
+      terraform_reference: local.azs[var.rds_availability_zone_index]
+      default_if_omitted: "a random, system-chosen availability zone"
+    - id: no-deletion-protection
+      value: deletion protection off, supplied as the `--no-deletion-protection`
+        flag, so cleanup can delete the copy
+      note: the flag is a CLI boolean pair and takes no value argument;
+        `--deletion-protection false` is not accepted
+      default_if_omitted: off — the restore API documents that deletion
+        protection is not enabled by default, and it is not copied from the
+        source
+    - id: backup-retention-period
+      value: zero days, supplied as `--backup-retention-period 0`, which disables
+        automated backups on the restored copy
+      # An integer option rather than a boolean flag pair, so it takes a value
+      # argument. Declared as a typed number as well as prose, because this is
+      # the one restore value the post-restore describe check compares against.
+      restore_call_value: 0
+      note: RestoreDBInstanceToPointInTime accepts this parameter, but not every
+        installed CLI exposes it — see `cli_capability_preconditions`
+      default_if_omitted: the source's retention period — the restore reference
+        documents the default as "Uses existing setting", so an omitted parameter
+        gives the drill copy the source's 7-day retention and starts taking
+        automated backups of slashing history on a copy that exists for hours
+  # `--backup-retention-period` is in the current RestoreDBInstanceToPointInTime
+  # surface, but it is not exposed by every installed AWS CLI: aws-cli 2.17.62
+  # does not generate it into its help output, and 2.35.19 does. Omitting it is
+  # not a safe fallback, because the documented default is "Uses existing
+  # setting" — a restore that drops the parameter inherits the source's
+  # retention rather than disabling backups. So the drill refuses to start on a
+  # CLI that cannot express the approved call, and the operator upgrades.
+  cli_capability_preconditions:
+    - id: backup-retention-period-supported
+      parameter: backup-retention-period
+      command: aws rds restore-db-instance-to-point-in-time help
+      must_expose: "--backup-retention-period"
+      checked_at: preconditions, before gate 1, so the refusal costs nothing and
+        signing is still on
+      on_missing: abort-before-first-gate
+      omitting_the_parameter_is_an_accepted_fallback: false
+      remediation: upgrade the AWS CLI until
+        `aws rds restore-db-instance-to-point-in-time help` exposes
+        `--backup-retention-period`, then restart the drill from preconditions
+  post_restore_verification:
+    # Read-only describe calls on the restored copy before any query runs.
+    - the restored copy reports the isolated DB subnet group
+    - the restored copy reports the drill security group and no other
+    - the restored copy reports the custom parameter group with rds.force_ssl = 1
+      in effect, and the connection is refused without TLS
+    - the restored copy reports publicly_accessible false and Multi-AZ false
+    - the restored copy reports deletion protection off
+    - the restored copy reports a backup retention period of zero
+    - the restored copy's endpoint address is recorded for the drill endpoint
+      ConfigMap, and nothing else is read from the describe output
+  credentials:
+    # The drill never touches the live credential path.
+    live_secret_mutation: forbidden
+    live_external_secret_repoint: forbidden
+    role: the restored copy's own application role. Roles and their passwords
+      are part of the restored data, so the restored copy accepts exactly the
+      username and password the live application already uses.
+    # The connection is assembled from two objects with disjoint ownership, so
+    # no field is written by two writers and nothing has to win a reconciliation
+    # race. The Secrets Manager connection object holds the *live* host, so an
+    # ExternalSecret that projected the whole object would keep re-asserting the
+    # live endpoint into the drill Secret every refresh interval. The drill
+    # ExternalSecret therefore projects the credential fields only, and the
+    # restored endpoint — which is not a secret — is supplied separately.
+    split_rationale: >-
+      Each key has exactly one writer. External Secrets Operator owns every key
+      of the drill Secret and never learns the restored endpoint; the operator
+      owns the drill ConfigMap and never writes into the drill Secret. An
+      overwrite on refresh is therefore not possible in either direction.
+    drill_secret:
+      target_name: distinct from every live target Secret name
+      namespace: the drill namespace only
+      managed_by: a drill-only ExternalSecret with a distinct target name
+      source_object: the existing Secrets Manager connection object, read
+        without modification
+      projected_keys:
+        - username
+        - password
+        - database
+        - port
+      excluded_keys:
+        - host
+      exclusion_reason: >-
+        The Secrets Manager connection object's host is the live instance. It is
+        excluded from the projection rather than overwritten, because External
+        Secrets Operator re-asserts every projected key on each refresh and would
+        restore the live host under any drill value written over it.
+      deleted_at_cleanup: true
+    drill_endpoint_config_map:
+      name: distinct from every live ConfigMap name
+      namespace: the drill namespace only
+      classification: non-secret — an endpoint hostname is a network address,
+        not a credential, so it does not belong in a Secret
+      key: DB_HOST
+      value_source: the restored copy's endpoint address as reported by
+        describe-db-instances at `restore-isolated-target`
+      created_after: the post-restore verification, so the endpoint is recorded
+        only once the target has been confirmed to be the approved one
+      reconciled_by: nothing — it is created imperatively in the drill namespace
+        and is not part of any Flux Kustomization, so no controller prunes or
+        rewrites it during the drill
+      committed_to_git: false
+      written_back_to_secrets_manager: false
+      deleted_at_cleanup: true
+    consumption:
+      # Every workload that talks to the restored copy reads the host from one
+      # object and the credential fields from the other. Neither object is
+      # complete on its own, which is what makes an accidental connection to the
+      # live instance a missing-value failure rather than a silent success.
+      host_from: drill_endpoint_config_map
+      credential_fields_from: drill_secret
+      mechanism: DB_HOST via configMapKeyRef; username, password, database, and
+        port via secretKeyRef. The connection URL is assembled from those
+        environment variables at container start and is never stored assembled.
+      consumers:
+        # Only the workloads that talk to the *restored copy*. The gate-2
+        # fingerprint runs against the source over the live read-only path and
+        # never sees either drill object.
+        - the Job that runs the schema and continuity queries against the
+          restored copy at `schema-compatibility` and `row-continuity`
+        - the drill Web3Signer instance at `conflicting-duty-rejection`
+    master_credential:
+      read_by_operator: false
+      handling: the restored copy's RDS-managed master credential is never read.
+        The drill uses the restored application role only, so no password value
+        is handled by a human or written to a file.
+  backup:
+    target_backup_retention_days: 0
+    supplied_on_restore_call: true
+    verified_by: describe-db-instances on the restored copy before any query
+    on_mismatch:
+      action: abort-and-cleanup
+      modify_target: false
+      rationale: >-
+        Retention is supplied as zero on the restore call and then read back, so
+        a nonzero value means the approved parameter did not take effect — the
+        call that ran was not the call the approver reviewed. Repairing the
+        target in place would overwrite the evidence of that discrepancy with
+        the intended value and let the drill continue on an instance nobody
+        approved. Cleanup deletes the copy and its automated backups, and the
+        observed value is recorded in the failure record.
+    delete_flags:
+      - skip-final-snapshot
+      - delete-automated-backups
+    retained_after_cleanup: nothing
+  network:
+    subnet_group: the existing isolated database subnet group, which has no
+      internet-gateway and no NAT route, supplied explicitly on the restore call
+    security_group: a dedicated drill security group added by a reviewed change,
+      supplied explicitly on the restore call
+    ingress_from_live_signer_group: forbidden
+    ingress_from_live_migration_group: forbidden
+  lifecycle:
+    deletion_protection_at_create: false
+    max_lifetime_hours: 6
+    delete_after_drill: true
+    skip_final_snapshot_on_delete: true
+
+# Each guard names a Terraform block in this repository and one expectation that
+# must appear in that block's whitespace-compacted body. The preflight tool
+# fails if any expectation is absent, so a change that quietly removes a
+# recovery guard also fails the drill contract.
+required_terraform_guards:
+  - id: backup-retention-wired
+    terraform_file: signer-foundation.tf
+    scope: resource:aws_db_instance.web3signer
+    expect: "backup_retention_period = var.rds_backup_retention_days"
+    rationale: >-
+      The instance takes its point-in-time recovery window from the reviewed
+      variable rather than an inline literal.
+  - id: automated-backups-retained
+    terraform_file: variables.tf
+    scope: variable:rds_backup_retention_days
+    expect: "default = 7"
+    rationale: >-
+      Point-in-time restore is only possible inside the automated-backup
+      retention window. Seven days is the declared default.
+  - id: backups-outlive-the-instance
+    terraform_file: signer-foundation.tf
+    scope: resource:aws_db_instance.web3signer
+    expect: "delete_automated_backups = false"
+    rationale: >-
+      Deleting the instance must not delete the backups the drill restores from.
+  - id: deletion-protection-default-on
+    terraform_file: variables.tf
+    scope: variable:rds_deletion_protection
+    expect: "default = true"
+    rationale: >-
+      The source instance cannot be destroyed by an ordinary apply while the
+      drill is in progress.
+  - id: deletion-protection-wired
+    terraform_file: signer-foundation.tf
+    scope: resource:aws_db_instance.web3signer
+    expect: "deletion_protection = var.rds_deletion_protection"
+    rationale: >-
+      The guard is attached to the source instance, not merely declared.
+  - id: final-snapshot-required-by-default
+    terraform_file: variables.tf
+    scope: variable:rds_skip_final_snapshot
+    expect: "default = false"
+    rationale: >-
+      A destroy path that skips the final snapshot would remove the last
+      recovery point the drill depends on.
+  - id: final-snapshot-identifier-declared
+    terraform_file: signer-foundation.tf
+    scope: resource:aws_db_instance.web3signer
+    expect: "final_snapshot_identifier = var.rds_skip_final_snapshot ? null"
+    rationale: >-
+      The default destroy path names the snapshot it must produce.
+  - id: snapshot-tags-preserved
+    terraform_file: signer-foundation.tf
+    scope: resource:aws_db_instance.web3signer
+    expect: "copy_tags_to_snapshot = true"
+    rationale: >-
+      The slashing-protection data classification must survive onto snapshots so
+      a restored copy is still identifiable as safety-critical.
+  - id: storage-encrypted
+    terraform_file: signer-foundation.tf
+    scope: resource:aws_db_instance.web3signer
+    expect: "storage_encrypted = true"
+    rationale: >-
+      A restore inherits source encryption; an unencrypted source would produce
+      an unencrypted copy of slashing history.
+  - id: source-not-public
+    terraform_file: signer-foundation.tf
+    scope: resource:aws_db_instance.web3signer
+    expect: "publicly_accessible = false"
+    rationale: >-
+      The restore target must supply publicly_accessible false explicitly; the
+      source posture is the baseline it must not regress from.
+  - id: isolated-subnet-group
+    terraform_file: signer-foundation.tf
+    scope: resource:aws_db_instance.web3signer
+    expect: "db_subnet_group_name = module.vpc.database_subnet_group_name"
+    rationale: >-
+      The restore target must name this subnet group explicitly, because a
+      point-in-time restore otherwise lands in the default subnet group.
+  - id: tls-parameter-declared
+    terraform_file: signer-foundation.tf
+    scope: resource:aws_db_parameter_group.web3signer
+    expect: "name = \"rds.force_ssl\""
+    rationale: >-
+      Both the fingerprint query and the drill signer must connect over TLS.
+  - id: tls-parameter-enforced
+    terraform_file: signer-foundation.tf
+    scope: resource:aws_db_parameter_group.web3signer
+    expect: "value = \"1\""
+    rationale: >-
+      Declaring the parameter without enabling it would leave plaintext
+      connections possible on the restored copy.
+  - id: tls-parameter-group-attached
+    terraform_file: signer-foundation.tf
+    scope: resource:aws_db_instance.web3signer
+    expect: "parameter_group_name = aws_db_parameter_group.web3signer.name"
+    rationale: >-
+      The restore call supplies this parameter group by name. If the source
+      stopped using it, the value the drill supplies would be stale.
+  - id: source-single-az
+    terraform_file: signer-foundation.tf
+    scope: resource:aws_db_instance.web3signer
+    expect: "multi_az = false"
+    rationale: >-
+      The restore target is Single-AZ by explicit parameter, matching the shape
+      the drill costs and the source it is compared against.
+  - id: master-password-not-in-state
+    terraform_file: signer-foundation.tf
+    scope: resource:aws_db_instance.web3signer
+    expect: "manage_master_user_password = true"
+    rationale: >-
+      The master credential is managed by RDS on both the source and the
+      restored copy, and the drill reads neither: it connects as the restored
+      application role.
+
+# Ordered. The preflight tool enforces this exact relative order, enforces that
+# no gate before `human-go-no-go` mutates AWS or bills, and enforces that
+# `signing-disabled` precedes any restore.
+#
+# `mutates_aws` and `mutates_cluster_state` are separate on purpose. Stopping
+# signing changes Git and removes running workloads — that is a real mutation,
+# and the contract says so — but it creates, modifies, and bills no AWS
+# resource. The ordering rule that matters is about AWS mutation and cost.
+gates:
+  - id: signing-disabled
+    title: Signing is off and observed to be off
+    mutates_aws: false
+    mutates_cluster_state: true
+    incurs_aws_cost: false
+    requires_human_approval: false
+    summary: >-
+      Suspend the signer and node application layers in Git, confirm zero
+      Web3Signer and validator-client Pods, and confirm the signer's permitted
+      and prevented counters are static before any recovery action. This merges
+      two reviewed changes and removes running workloads; it creates and
+      modifies no AWS resource.
+  - id: source-fingerprint
+    title: Non-sensitive source fingerprint and recovery point recorded
+    mutates_aws: false
+    mutates_cluster_state: false
+    incurs_aws_cost: false
+    requires_human_approval: false
+    summary: >-
+      Record the latest restorable time, the source schema digests, and the
+      source continuity digests for every safety-bearing table. No public key,
+      signing root, or row value leaves the query session.
+  - id: human-go-no-go
+    title: Explicit human go/no-go on exact targets and estimated cost
+    mutates_aws: false
+    mutates_cluster_state: false
+    incurs_aws_cost: false
+    requires_human_approval: true
+    summary: >-
+      A named operator reviews the exact restore identifier, the exact recovery
+      point, every explicit restore parameter, the estimated cost, and the
+      cleanup plan, then records an explicit go or no-go. No AWS mutation
+      happens before this gate passes.
+  - id: restore-isolated-target
+    title: Restore into a separate isolated target only
+    mutates_aws: true
+    mutates_cluster_state: false
+    incurs_aws_cost: true
+    requires_human_approval: false
+    summary: >-
+      Point-in-time restore to a new instance whose identifier differs from the
+      source, with every explicit restore parameter supplied and then verified
+      by describe calls. Any disagreement between the approved call and the
+      describe output aborts the drill rather than being corrected in place.
+      The source instance is untouched.
+  - id: schema-compatibility
+    title: Web3Signer schema compatibility proven on the restored copy
+    mutates_aws: false
+    mutates_cluster_state: false
+    incurs_aws_cost: false
+    requires_human_approval: false
+    summary: >-
+      Prove the restored copy carries the exact table inventory, the exact
+      slashing-critical schema objects, a successful twelve-migration Flyway
+      history, and Web3Signer's own database_version of 12, without running a
+      migration against it.
+  - id: row-continuity
+    title: Slashing-record continuity proven by exact digest equality
+    mutates_aws: false
+    mutates_cluster_state: false
+    incurs_aws_cost: false
+    requires_human_approval: false
+    summary: >-
+      Compare the restored copy's per-table digests with the source digests
+      recorded at `source-fingerprint`. Signing was frozen before that
+      fingerprint, so every count and digest must be exactly equal; any
+      difference at all fails the drill.
+  - id: conflicting-duty-rejection
+    title: Conflicting-duty rejection proven with a drill-only key
+    mutates_aws: true
+    mutates_cluster_state: true
+    incurs_aws_cost: true
+    requires_human_approval: false
+    summary: >-
+      A drill-only Web3Signer instance bound to the restored copy signs one
+      attestation for a drill-only key, then must refuse a deliberately
+      conflicting attestation for the same key. No fleet key is loaded and no
+      message is published.
+  - id: cleanup
+    title: Drill resources deleted and cost accounted
+    mutates_aws: true
+    mutates_cluster_state: true
+    incurs_aws_cost: false
+    requires_human_approval: false
+    summary: >-
+      Delete the drill signer, the drill connection ExternalSecret and the
+      Secret it created, the drill endpoint ConfigMap, the drill instance
+      without a final snapshot and without retained automated backups, and the
+      drill security group. Record observed cost against the estimate.
+  - id: evidence
+    title: Redacted evidence record published
+    mutates_aws: false
+    mutates_cluster_state: false
+    incurs_aws_cost: false
+    requires_human_approval: false
+    summary: >-
+      Publish a record under `docs/evidence/` that states what passed, what
+      failed, and what remains unproven, carrying no identifier, endpoint,
+      public key, or account reference.
+
+verification:
+  # Every query is read-only, uses PostgreSQL core functions only, and projects
+  # aggregates or digests only. `pgcrypto` is not created by the pinned
+  # migrations, so `hmac` and `digest` are unavailable on this database and
+  # installing an extension would be a mutation the drill is not permitted to
+  # make. `md5` is core and is what the digests use.
+  schema:
+    migration_source: >-
+      consensys/web3signer:26.4.2, /opt/web3signer/migrations/postgresql,
+      versions V00001 through V00012, applied by the Flyway Job
+    # The pinned image ships twelve migrations and stamps Web3Signer's own
+    # schema-version row with 12. Both are re-derived from the image if it is
+    # bumped; the preflight requires them to agree with each other.
+    expected_migration_count: 12
+    # Web3Signer reads this row at startup to decide whether the database is one
+    # it will accept. It is an integer column, so the comparison is exact rather
+    # than a lexical maximum over Flyway's version strings.
+    expected_database_version: 12
+    expected_tables:
+      - database_version
+      - flyway_schema_history
+      - low_watermarks
+      - metadata
+      - signed_attestations
+      - signed_blocks
+      - validators
+    # md5 of the expected base-table names, sorted ascending under the C
+    # collation and joined with a single comma. The preflight recomputes this
+    # from `expected_tables`, so the declared digest and the declared list
+    # cannot drift apart, and `table-inventory-digest` must return exactly this
+    # value on the restored copy. A count alone would accept seven arbitrary
+    # tables; this does not.
+    table_digest_definition: >-
+      md5(string_agg(table_name, ',' ORDER BY table_name COLLATE "C")) over the
+      base tables of schema public
+    expected_table_digest: "4a6113238e3e735cce7731399919842f"
+    # Declared expectations, to be re-derived from the pinned image's migration
+    # files at drill time. Constraint and index *names* are deliberately not
+    # asserted here; identity is proven by digest equality with the source, and
+    # a difference from the migrations is an abort rather than an edit to this
+    # list.
+    slashing_critical_objects:
+      - table: validators
+        unique_keys:
+          - columns: [public_key]
+            enforces: one row per validator public key, so a validator cannot be
+              silently duplicated with a shorter history
+      - table: signed_blocks
+        unique_keys:
+          - columns: [validator_id, slot]
+            enforces: at most one signed block per validator per slot
+      - table: signed_attestations
+        unique_keys:
+          - columns: [validator_id, target_epoch]
+            enforces: at most one signed attestation per validator per target
+              epoch
+      - table: low_watermarks
+        unique_keys:
+          - columns: [validator_id]
+            enforces: exactly one watermark row per validator, which is what
+              makes a lowered watermark detectable rather than additive
+      - table: metadata
+        unique_keys:
+          - columns: [id]
+            enforces: a single metadata row, including the genesis validators
+              root and any high-watermark columns the pinned migrations define
+      - table: database_version
+        unique_keys:
+          - columns: [id]
+            enforces: a single schema-version row
+    queries:
+      # `version` is a Flyway-owned string column, so a maximum over it would
+      # be a lexical comparison. The count, the highest installed rank, the
+      # success flag, and a digest of the version set are all order-safe.
+      - id: applied-migration-history
+        sql: >-
+          SELECT count(*) AS applied_count,
+                 max(installed_rank) AS applied_rank_max,
+                 bool_and(success) AS all_successful,
+                 md5(coalesce(string_agg(version, ','
+                      ORDER BY version COLLATE "C"), '')) AS applied_version_digest
+          FROM flyway_schema_history
+      - id: database-version-row
+        sql: >-
+          SELECT count(*) AS database_version_rows,
+                 max(version) AS database_version_value
+          FROM database_version
+      - id: table-inventory-digest
+        sql: >-
+          SELECT count(*) AS table_count,
+                 md5(coalesce(string_agg(table_name::text, ','
+                      ORDER BY table_name::text COLLATE "C"), '')) AS table_inventory_digest
+          FROM information_schema.tables
+          WHERE table_schema = 'public' AND table_type = 'BASE TABLE'
+      - id: constraint-digest
+        sql: >-
+          SELECT count(*) AS constraint_count,
+                 md5(coalesce(string_agg(object_text, ','
+                      ORDER BY object_text COLLATE "C"), '')) AS constraint_digest
+          FROM (
+            SELECT c.conrelid::regclass::text || '|' || c.contype::text
+                   || '|' || pg_get_constraintdef(c.oid) AS object_text
+            FROM pg_constraint c
+            JOIN pg_namespace n ON n.oid = c.connamespace
+            WHERE n.nspname = 'public'
+          ) AS covered
+      - id: index-digest
+        sql: >-
+          SELECT count(*) AS index_count,
+                 md5(coalesce(string_agg(object_text, ','
+                      ORDER BY object_text COLLATE "C"), '')) AS index_digest
+          FROM (
+            SELECT tablename || '|' || indexdef AS object_text
+            FROM pg_indexes WHERE schemaname = 'public'
+          ) AS covered
+      - id: routine-and-trigger-digest
+        sql: >-
+          SELECT count(*) AS routine_count,
+                 md5(coalesce(string_agg(object_text, ','
+                      ORDER BY object_text COLLATE "C"), '')) AS routine_digest
+          FROM (
+            SELECT p.proname || '|' || md5(coalesce(p.prosrc, '')) AS object_text
+            FROM pg_proc p
+            JOIN pg_namespace n ON n.oid = p.pronamespace
+            WHERE n.nspname = 'public'
+            UNION ALL
+            SELECT t.tgname || '|' || pg_get_triggerdef(t.oid) AS object_text
+            FROM pg_trigger t
+            JOIN pg_class r ON r.oid = t.tgrelid
+            JOIN pg_namespace n ON n.oid = r.relnamespace
+            WHERE n.nspname = 'public' AND NOT t.tgisinternal
+          ) AS covered
+    pass_conditions:
+      - applied_count equals 12, applied_rank_max equals 12, all_successful is
+        true, and applied_version_digest is exactly equal to the source value
+      - database_version_rows equals 1 and database_version_value equals 12
+      - table_count equals 7 and table_inventory_digest equals the declared
+        expected_table_digest
+      - constraint_digest, index_digest, and routine_digest are each exactly
+        equal to the value the same query returns against the source
+      - the constraint and index definitions carry every declared
+        slashing_critical_objects unique key, re-derived from the pinned image's
+        migration files
+  continuity:
+    # Signing is frozen at `signing-disabled`, before the source fingerprint is
+    # taken, and the recovery point is chosen at or after that freeze. No row
+    # may therefore legitimately differ between the source and the restored
+    # copy. Counts and minima cannot see a replaced or missing interior row, so
+    # the comparison is exact equality of a per-row digest over every
+    # safety-bearing table.
+    comparison: exact-equality
+    covered_tables:
+      - validators
+      - signed_blocks
+      - signed_attestations
+      - low_watermarks
+      - metadata
+    # Each row is reduced to md5(salt || the row's full text form), so every
+    # column participates — including public keys, signing roots, and any column
+    # a future migration adds — while no raw value is ever projected.
+    row_digest_definition: md5(:drill_salt || row::text) per row, aggregated as
+      md5 over the sorted per-row digests
+    salt_handling: per-drill, session-only, never committed, never logged
+    salt_parameter: ":drill_salt"
+    queries:
+      - id: validators-digest
+        sql: >-
+          SELECT count(*) AS validators_rows,
+                 md5(coalesce(string_agg(row_digest, ','
+                      ORDER BY row_digest COLLATE "C"), '')) AS validators_digest
+          FROM (
+            SELECT md5(:drill_salt || t::text) AS row_digest FROM validators t
+          ) AS covered
+      - id: signed-blocks-digest
+        sql: >-
+          SELECT count(*) AS signed_blocks_rows,
+                 md5(coalesce(string_agg(row_digest, ','
+                      ORDER BY row_digest COLLATE "C"), '')) AS signed_blocks_digest
+          FROM (
+            SELECT md5(:drill_salt || t::text) AS row_digest FROM signed_blocks t
+          ) AS covered
+      - id: signed-attestations-digest
+        sql: >-
+          SELECT count(*) AS signed_attestations_rows,
+                 md5(coalesce(string_agg(row_digest, ','
+                      ORDER BY row_digest COLLATE "C"), '')) AS signed_attestations_digest
+          FROM (
+            SELECT md5(:drill_salt || t::text) AS row_digest FROM signed_attestations t
+          ) AS covered
+      - id: low-watermarks-digest
+        sql: >-
+          SELECT count(*) AS low_watermarks_rows,
+                 md5(coalesce(string_agg(row_digest, ','
+                      ORDER BY row_digest COLLATE "C"), '')) AS low_watermarks_digest
+          FROM (
+            SELECT md5(:drill_salt || t::text) AS row_digest FROM low_watermarks t
+          ) AS covered
+      - id: metadata-digest
+        sql: >-
+          SELECT count(*) AS metadata_rows,
+                 md5(coalesce(string_agg(row_digest, ','
+                      ORDER BY row_digest COLLATE "C"), '')) AS metadata_digest
+          FROM (
+            SELECT md5(:drill_salt || t::text) AS row_digest FROM metadata t
+          ) AS covered
+      # Diagnostic only, and also required to be exactly equal. A digest
+      # mismatch says something changed; this says whether a watermark moved,
+      # which is the specific corruption that would let a recovered signer
+      # re-sign history.
+      - id: low-watermark-extent
+        sql: >-
+          SELECT count(*) AS low_watermarks_rows,
+                 min(slot) AS min_slot,
+                 max(slot) AS max_slot,
+                 min(source_epoch) AS min_source_epoch,
+                 max(source_epoch) AS max_source_epoch,
+                 min(target_epoch) AS min_target_epoch,
+                 max(target_epoch) AS max_target_epoch
+          FROM low_watermarks
+    forbidden_result_columns:
+      - public_key
+      - pubkey
+      - signing_root
+      - genesis_validators_root
+      - validator_id
+    pass_conditions:
+      - the same per-drill salt is used for the source session and the restored
+        session, and is discarded afterwards
+      - restored validators_rows and validators_digest are exactly equal to the
+        source values
+      - restored signed_blocks_rows and signed_blocks_digest are exactly equal
+        to the source values
+      - restored signed_attestations_rows and signed_attestations_digest are
+        exactly equal to the source values
+      - restored low_watermarks_rows and low_watermarks_digest are exactly equal
+        to the source values
+      - restored metadata_rows and metadata_digest are exactly equal to the
+        source values
+      - every low-watermark minimum and maximum is exactly equal to the source
+        value, so no watermark moved in either direction
+
+rejection_test:
+  key_class: drill-only
+  live_fleet_key_use: forbidden
+  # Signing with a fleet key against a restored copy would write a slashing
+  # record the live database never sees. That divergence is precisely the risk
+  # the drill exists to rule out, so the rejection test uses a key with no live
+  # history and no funds.
+  key_requirements:
+    - generated offline for this drill
+    - never deposited and holding no funds
+    - absent from `applications/validators/` and from Secrets Manager signing
+      containers
+    - destroyed at cleanup
+  signer:
+    instance: drill-only Web3Signer, separate from the live signer
+    database: the restored copy only
+    connection_secret: the drill-only connection Secret, never the live one
+    endpoint_config_map: the drill endpoint ConfigMap, which is the only place
+      the restored host is written; the drill signer cannot resolve the live
+      instance, because no object it mounts names it
+    beacon_connection: forbidden
+    validator_client_connection: forbidden
+    publication: forbidden
+  procedure:
+    - load only the drill-only key into the drill signer
+    - request one attestation signature over a chosen source and target epoch
+      through the signer's HTTP API and expect success
+    - request a second attestation signature for the same key and the same
+      target epoch with a different signing root
+  expected_result:
+    second_request_http_status: 412
+    permitted_counter_delta: 1
+    prevented_counter_delta: 1
+  failure_meaning: >-
+    If the second request succeeds, the restored copy is not a usable signing
+    authority. Stop, keep signing disabled, and treat the restore as failed.
+
+cost:
+  # Indicative list prices for the declared lab shape, not a quote. Re-check the
+  # current regional prices at the go/no-go gate.
+  estimate_basis: one db.t4g.micro Single-AZ instance with 20 GiB gp3 storage,
+    restored for at most six hours in the same region and VPC
+  estimated_total_usd_max: 1.00
+  billable_items:
+    - restored DB instance hours
+    - restored DB storage, prorated
+  not_billable:
+    - the source instance, which is neither stopped nor modified
+    - backup storage for the restored copy, which must report zero retention to
+      proceed at all and whose automated backups are deleted at cleanup
+    - cross-AZ or internet data transfer, since the drill stays in-VPC
+  cost_control: the six-hour maximum lifetime and the mandatory cleanup gate
+
+failure_handling:
+  abort_conditions:
+    - the installed AWS CLI's `restore-db-instance-to-point-in-time help` does
+      not expose `--backup-retention-period`, so the approved call cannot be
+      expressed; this one is checked at preconditions, before signing stops
+    - any live signer or validator-client Pod is running at `signing-disabled`
+    - the recorded recovery point is outside the automated-backup retention window
+    - the restore identifier would collide with the source identifier or an
+      existing instance
+    - any explicit restore parameter was not supplied, or the restored copy's
+      describe output disagrees with it
+    - the restored copy reports a backup retention period other than zero, which
+      means the supplied `--backup-retention-period 0` did not take effect and
+      the call that ran was not the call that was approved
+    - the restored copy's table inventory digest differs from the declared
+      expected digest, or database_version is not 12, or the Flyway history is
+      not twelve successful migrations
+    - any schema-object digest on the restored copy differs from the source
+    - any continuity count or digest differs from the source
+    - the conflicting attestation is signed rather than refused
+    - the drill exceeds its six-hour lifetime for any reason
+  on_abort:
+    - leave signing disabled
+    - run the cleanup gate anyway
+    - publish a redacted failure record under `docs/evidence/`
+    - open a follow-up issue before any signing is re-enabled
+  signing_restoration: >-
+    Re-enabling signing is a separate reviewed change made after evidence is
+    published. It is never part of the drill session.
+
+evidence:
+  destination: docs/evidence/
+  content_rules:
+    - name the tested repository commit and the UTC window
+    - separate pass/fail assertions from operator interpretation
+    - state explicitly what the drill does not establish
+  redaction:
+    forbidden_classes:
+      - aws-account-id
+      - aws-arn
+      - rds-endpoint-hostname
+      - jdbc-connection-string
+      - ip-address
+      - bls-public-key
+      - secret-value

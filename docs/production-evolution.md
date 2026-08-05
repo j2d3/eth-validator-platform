@@ -136,7 +136,7 @@ Derived from PRD §8.7, §14.2, and §17. The AWS lab has exercised parts of
 items 4, 8, and 9, but none is complete as a production qualification:
 
 1. RDS Multi-AZ (or equivalent HA), with failover exercised and record continuity proven, signing disabled throughout.
-2. Point-in-time restore drill verifying Web3Signer compatibility — a successful database restore is not sufficient until a safe signing/rejection test passes.
+2. Point-in-time restore drill verifying Web3Signer compatibility — a successful database restore is not sufficient until a safe signing/rejection test passes. The procedure is designed and machine-checked in [the recovery-drill runbook](runbooks/rds-slashing-recovery-drill.md); it has not been run, so nothing in item 2 is yet satisfied.
 3. Slashing-history export/restore proven before any cluster holding a funded key is deleted.
 4. Repeatable workload-identity qualification per responsibility, including attempted over-reach, rotation, and revocation.
 5. Autoscaler behavior under active duties, including proof that validator scale-down cannot evict system-pool safety services.
