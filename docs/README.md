@@ -133,6 +133,12 @@ Accepted architecture decisions.
 
 - [agentic-workflow.md](development/agentic-workflow.md) — narrative
   companion to [COLLABORATION.md](../COLLABORATION.md)
+- [two-claude-collaboration.md](development/two-claude-collaboration.md) —
+  one-page setup guide for adapting the two-agent model to two Claude
+  instances on any repository
+- [two-claude-agent-prompt.md](development/two-claude-agent-prompt.md) —
+  bootstrapping prompt to paste into a fresh Claude Code session so it
+  joins the collaboration in the correct persona
 
 ## Legacy content
 
