@@ -541,9 +541,9 @@ class EksEphemeryFluxAndTelemetryTests(unittest.TestCase):
         self.assertNotIn("public_key", text)
         # Signing-lane panels intentionally reference Web3Signer.
         self.assertIn("web3signer", text)
-        # Slashing-prevented panel is a safety signal and must be labelled as
-        # such; a green-on-increase misconfiguration is a review defect.
-        self.assertIn("slashing signings prevented", text)
+        # Prevented signing requests remain explicitly labelled; a
+        # green-on-increase misconfiguration is a review defect.
+        self.assertIn("signing requests prevented", text)
 
     def test_runbook_requires_generation_capacity_p2p_and_sustained_sync_evidence(
         self,
