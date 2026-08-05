@@ -546,7 +546,7 @@
       "type": "object",
       "additionalProperties": false,
       "required": ["headSlot", "presentSlot", "finalizedEpoch", "peers"],
-      "description": "presentEpoch is optional: clients whose Prometheus surface exposes it directly (Lighthouse/Teku/Nimbus's beacon_current_epoch) declare presentEpoch; clients that do not (Prysm, which publishes only beacon_clock_time_slot) instead declare presentEpochDivisor and let the recording rules compute epoch = floor(presentSlot / presentEpochDivisor). Exactly one of the two is required per client; enforced by the helpers, not the schema.",
+      "description": "Exactly one of `presentEpoch` (Prometheus metric name -- direct present-epoch gauge, e.g. Lighthouse's slotclock_present_epoch, Nimbus's beacon_current_epoch, Teku's beacon_epoch) or `presentEpochDivisor` (integer slots-per-epoch -- for clients that publish only a slot gauge, e.g. Prysm's beacon_clock_time_slot) MUST be declared. The recording rules dispatch on which is present: the direct-metric branch takes max(presentEpoch); the derived branch computes floor(max(presentSlot) / presentEpochDivisor). Declaring both is ambiguous; declaring neither renders an empty finality-lag series. The oneOf below encodes this invariant at schema-validation time so a client entry cannot slip past.",
       "properties": {
         "headSlot": {"$ref": "#/$defs/prometheusMetricName"},
         "presentSlot": {"$ref": "#/$defs/prometheusMetricName"},
@@ -555,7 +555,11 @@
         "finalizedEpoch": {"$ref": "#/$defs/prometheusMetricName"},
         "peers": {"$ref": "#/$defs/prometheusMetricName"},
         "validatorEnabled": {"$ref": "#/$defs/prometheusMetricName"}
-      }
+      },
+      "oneOf": [
+        {"required": ["presentEpoch"], "not": {"required": ["presentEpochDivisor"]}},
+        {"required": ["presentEpochDivisor"], "not": {"required": ["presentEpoch"]}}
+      ]
     },
     "bundlePath": {
       "type": "string",

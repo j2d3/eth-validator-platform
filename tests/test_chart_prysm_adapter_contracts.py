@@ -101,6 +101,65 @@ def prysm_ephemery_values() -> dict:
     }
 
 
+class ConsensusMetricsMapInvariantTests(unittest.TestCase):
+    """The consensusMetricsMap schema requires exactly one of `presentEpoch`
+    or `presentEpochDivisor`. Encoded as a oneOf on $defs.consensusMetricsMap
+    in values.schema.json. Validate the schema fragment directly (via
+    jsonschema) so the tests exercise the invariant on isolated metric maps
+    without helm's deep-merge folding chart-default keys back in.
+    """
+
+    @classmethod
+    def setUpClass(cls) -> None:
+        try:
+            import jsonschema
+        except ImportError:  # pragma: no cover
+            raise unittest.SkipTest("jsonschema not installed")
+        cls.jsonschema = jsonschema
+        import json
+        schema_path = ROOT / "charts" / "ethereum-node" / "values.schema.json"
+        full = json.loads(schema_path.read_text(encoding="utf-8"))
+        # Wrap the target $def as the root so the `$ref` pointers inside it
+        # (e.g. `#/$defs/prometheusMetricName`) still resolve against the
+        # original $defs bag.
+        cls.metrics_schema = {
+            "$ref": "#/$defs/consensusMetricsMap",
+            "$defs": full["$defs"],
+        }
+
+    def _valid_base(self) -> dict:
+        return {
+            "headSlot": "beacon_head_slot",
+            "presentSlot": "beacon_clock_time_slot",
+            "finalizedEpoch": "beacon_finalized_epoch",
+            "peers": "connected_libp2p_peers",
+        }
+
+    def test_map_with_only_present_epoch_is_accepted(self) -> None:
+        m = self._valid_base()
+        m["presentEpoch"] = "beacon_current_epoch"
+        self.jsonschema.validate(m, self.metrics_schema)
+
+    def test_map_with_only_divisor_is_accepted(self) -> None:
+        m = self._valid_base()
+        m["presentEpochDivisor"] = 32
+        self.jsonschema.validate(m, self.metrics_schema)
+
+    def test_map_with_both_present_epoch_and_divisor_is_rejected(self) -> None:
+        m = self._valid_base()
+        m["presentEpoch"] = "beacon_current_epoch"
+        m["presentEpochDivisor"] = 32
+        with self.assertRaises(self.jsonschema.ValidationError):
+            self.jsonschema.validate(m, self.metrics_schema)
+
+    def test_map_with_neither_present_epoch_nor_divisor_is_rejected(self) -> None:
+        # Deliberately declare neither -- would otherwise render an empty
+        # finality-lag series for this client. Schema must fail-closed.
+        m = self._valid_base()
+        with self.assertRaises(self.jsonschema.ValidationError):
+            self.jsonschema.validate(m, self.metrics_schema)
+
+
 class PrysmAdapterRenderTests(unittest.TestCase):
     def setUp(self) -> None:
         self.documents = helm_template(prysm_ephemery_values())
