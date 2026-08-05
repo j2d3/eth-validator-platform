@@ -1,15 +1,16 @@
 apiVersion: kustomize.config.k8s.io/v1beta1
 kind: Kustomization
 resources:
-  # Eight generation-pinned Ephemery pairs are admitted in this EKS node
+  # Nine generation-pinned Ephemery pairs are admitted in this EKS node
   # slice — Geth+Lighthouse, Reth+Lighthouse, Geth+Teku, and Reth+Teku
-  # (signing), plus Erigon+Lighthouse, Geth+Nimbus, Besu+Teku, and
-  # Nethermind+Lighthouse (non-signing). The generated catalog projection
-  # remains the source; the overlay only deletes the local-only
-  # synthetic-01 assignment and injects each pair's EKS-specific inputs
-  # (valuesFiles + telemetry + engineJwt). Every Ephemery release below
-  # must receive the same three patches so its ExternalSecret, PVC
-  # StorageClass, and telemetry follow the reviewed dev contracts on EKS.
+  # (signing), plus Erigon+Lighthouse, Geth+Nimbus, Besu+Teku,
+  # Nethermind+Lighthouse, and Nethermind+Prysm (non-signing). The
+  # generated catalog projection remains the source; the overlay only
+  # deletes the local-only synthetic-01 assignment and injects each pair's
+  # EKS-specific inputs (valuesFiles + telemetry + engineJwt). Every
+  # Ephemery release below must receive the same three patches so its
+  # ExternalSecret, PVC StorageClass, and telemetry follow the reviewed
+  # dev contracts on EKS.
   - ../../local/assignments
   # The same generation-pinned consensus config is rendered separately into
   # the ethereum namespace for Lighthouse validator duties.
@@ -288,6 +289,42 @@ patches:
       # dispatches on executionClient=nethermind from the projection).
       # Same Engine JWT source — per-pair scoped by fullnameOverride
       # (pair-<validator>-engine-jwt).
+      - op: add
+        path: /spec/chart/spec/valuesFiles
+        value:
+          - charts/ethereum-node/values.yaml
+          - charts/ethereum-node/values-eks-ephemery.yaml
+      - op: replace
+        path: /spec/values/telemetry
+        value:
+          cluster: eth-validator-platform-dev
+          environment: dev
+      - op: add
+        path: /spec/values/engineJwt
+        value:
+          secretStoreName: aws-engine-secrets
+          remoteSecretKey: eth-validator-platform-dev/ethereum/engine-jwt
+          remoteSecretProperty: jwt.hex
+  - target:
+      group: helm.toolkit.fluxcd.io
+      version: v2
+      kind: HelmRelease
+      name: assignment-ephemery-162-synthetic-nethermind-prysm
+    patch: |-
+      # Nethermind+Prysm pair: the composition #130 originally named.
+      # Nethermind EL adapter landed in #156 (already exercised live by the
+      # Nethermind+Lighthouse pair); Prysm CL adapter landed in #163 and
+      # gets its first rendered release here. Prysm cannot consume the
+      # generic Ephemery `config.yaml` directly, so its consensus container
+      # derives `/tmp/prysm-config.yaml` pre-exec (strip
+      # EPHEMERY_RESET_PERIOD + NUMBER_OF_COLUMNS, append GLOAS_FORK_VERSION
+      # / GLOAS_FORK_EPOCH, fail closed on unexpected source shape) after
+      # the network-artifact-loader init container has verified the bundle
+      # SHA. Bootnodes are passed as one repeated --bootstrap-node flag per
+      # ENR, not a CSV value. Same values-eks-ephemery.yaml profile (EL/CL-
+      # agnostic; the chart dispatches on executionClient=nethermind and
+      # consensusClient=prysm from the projection). Same Engine JWT source —
+      # per-pair scoped by fullnameOverride (pair-<validator>-engine-jwt).
       - op: add
         path: /spec/chart/spec/valuesFiles
         value:

@@ -104,6 +104,52 @@ class LocalAssignmentProjectionTests(unittest.TestCase):
         with self.assertRaisesRegex(render_local_assignments.ProjectionError, "no local adapter"):
             self.release(catalog)
 
+    def test_nethermind_prysm_pair_projects_active_and_non_signing(self) -> None:
+        # The ninth active pair is the first rendered release to exercise the
+        # Prysm CL adapter (#163), and the only one whose CL has no
+        # validator-client adapter *and* whose ServiceProfile is new. The
+        # catalog trio is three separate files joined by name references, so
+        # a typo in serviceProfileRef would silently project a different
+        # client combination rather than fail. Pin the projected result.
+        release = render_local_assignments.build_release(
+            "assignment-ephemery-162-synthetic-nethermind-prysm",
+            self.catalog,
+        )
+        values = release["spec"]["values"]
+
+        self.assertEqual(values["lifecycleState"], "active")
+        self.assertEqual(values["executionClient"], "nethermind")
+        self.assertEqual(values["consensusClient"], "prysm")
+        self.assertEqual(
+            values["fullnameOverride"],
+            "pair-ephemery-162-synthetic-nethermind-prysm",
+        )
+        self.assertFalse(values["validator"]["enabled"])
+        self.assertFalse(values["validator"]["slashingProtectionConfirmed"])
+        self.assertNotIn("publicKey", values["validator"])
+        self.assertNotIn("signingSecretRef", yaml.safe_dump(release))
+
+    def test_prysm_service_profile_may_not_authorize_signing(self) -> None:
+        # Prysm has no validator-client chart adapter. If the ServiceProfile
+        # were flipped to signingAllowed: true, the catalog validator would
+        # accept a signing assignment on an unrenderable path; assert the
+        # projection also refuses it rather than relying on the profile flag
+        # alone.
+        catalog = copy.deepcopy(self.catalog)
+        assignment = catalog["ValidatorAssignment"][
+            "assignment-ephemery-162-synthetic-nethermind-prysm"
+        ]
+        assignment["spec"]["signingEnabled"] = True
+
+        with self.assertRaisesRegex(
+            render_local_assignments.ProjectionError,
+            "synthetic identity may not sign",
+        ):
+            render_local_assignments.build_release(
+                "assignment-ephemery-162-synthetic-nethermind-prysm",
+                catalog,
+            )
+
 
 class NodePairLifecycleTransitionTests(unittest.TestCase):
     def setUp(self) -> None:
