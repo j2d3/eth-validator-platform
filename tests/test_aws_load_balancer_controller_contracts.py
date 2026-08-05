@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import json
 import subprocess
+import tempfile
 import unittest
 from pathlib import Path
 
@@ -20,6 +21,8 @@ NODE_APPS = ROOT / "platform" / "apps" / "nodes" / "dev"
 EKS_VALUES = ROOT / "charts" / "ethereum-node" / "values-eks-ephemery.yaml"
 TERRAFORM = ROOT / "terraform" / "environments" / "dev"
 BOOTSTRAP = ROOT / "docs" / "runbooks" / "eks-flux-bootstrap.md"
+CHART = ROOT / "charts" / "ethereum-node"
+SYNC_RUNBOOK = ROOT / "docs" / "runbooks" / "eks-ephemery-sync.md"
 
 
 def load_documents(text: str) -> list[dict]:
@@ -108,6 +111,21 @@ class AwsLoadBalancerControllerTests(unittest.TestCase):
             "ec2:CreateSecurityGroup",
         ):
             self.assertIn(required, actions)
+        self.assertNotIn("*", actions)
+        for action in actions:
+            self.assertFalse(
+                action.startswith(("eks:", "rds:", "secretsmanager:")),
+                f"controller role crossed into unrelated authority: {action}",
+            )
+
+    def test_node_apps_waits_directly_for_the_controller_layer(self) -> None:
+        node_apps = yaml.safe_load(
+            (ROOT / "clusters" / "dev" / "node-apps.yaml").read_text()
+        )
+        dependencies = {
+            dependency["name"] for dependency in node_apps["spec"]["dependsOn"]
+        }
+        self.assertEqual(dependencies, {"apps", "infrastructure-controllers"})
 
     def test_exactly_one_pair_requests_one_mixed_protocol_nlb(self) -> None:
         rendered = subprocess.run(
@@ -153,6 +171,70 @@ class AwsLoadBalancerControllerTests(unittest.TestCase):
         default_profile = yaml.safe_load(EKS_VALUES.read_text(encoding="utf-8"))
         self.assertEqual(default_profile["p2p"]["service"]["type"], "ClusterIP")
 
+    def test_chart_rejects_incomplete_or_legacy_aws_lbc_contracts(self) -> None:
+        valid_annotations = {
+            "service.beta.kubernetes.io/aws-load-balancer-nlb-target-type": "ip",
+            "service.beta.kubernetes.io/aws-load-balancer-enable-tcp-udp-listener": "true",
+        }
+        cases = {
+            "missing mixed-protocol opt-in": (
+                {
+                    key: value
+                    for key, value in valid_annotations.items()
+                    if not key.endswith("enable-tcp-udp-listener")
+                },
+                "requires aws-load-balancer-enable-tcp-udp-listener=true",
+            ),
+            "instance targets": (
+                {
+                    **valid_annotations,
+                    "service.beta.kubernetes.io/aws-load-balancer-nlb-target-type": "instance",
+                },
+                "requires aws-load-balancer-nlb-target-type=ip",
+            ),
+            "legacy controller annotation": (
+                {
+                    **valid_annotations,
+                    "service.beta.kubernetes.io/aws-load-balancer-type": "nlb",
+                },
+                "must use loadBalancerClass",
+            ),
+        }
+
+        for name, (annotations, expected_error) in cases.items():
+            with (
+                self.subTest(name=name),
+                tempfile.TemporaryDirectory() as directory,
+            ):
+                values = yaml.safe_load((CHART / "values.yaml").read_text())
+                values["lifecycleState"] = "active"
+                values["p2p"]["service"].update(
+                    {
+                        "type": "LoadBalancer",
+                        "loadBalancerClass": "service.k8s.aws/nlb",
+                        "annotations": annotations,
+                    }
+                )
+                values_path = Path(directory) / "values.yaml"
+                values_path.write_text(yaml.safe_dump(values), encoding="utf-8")
+                result = subprocess.run(
+                    [
+                        "helm",
+                        "template",
+                        "unsafe-p2p",
+                        str(CHART),
+                        "--namespace",
+                        "ethereum",
+                        "--values",
+                        str(values_path),
+                    ],
+                    check=False,
+                    capture_output=True,
+                    text=True,
+                )
+                self.assertNotEqual(result.returncode, 0)
+                self.assertIn(expected_error, result.stderr)
+
     def test_flux_inputs_do_not_depend_on_node_metadata(self) -> None:
         runbook = BOOTSTRAP.read_text(encoding="utf-8")
         for key in (
@@ -163,6 +245,12 @@ class AwsLoadBalancerControllerTests(unittest.TestCase):
         ):
             self.assertIn(key, runbook)
         self.assertIn("load_balancer_controller_role_arn", runbook)
+
+    def test_runbook_names_the_render_time_topology_guard(self) -> None:
+        runbook = SYNC_RUNBOOK.read_text(encoding="utf-8")
+        self.assertIn("fails Helm rendering", runbook)
+        self.assertIn("aws-load-balancer-enable-tcp-udp-listener=true", runbook)
+        self.assertIn("direct Flux dependency", runbook)
 
 
 if __name__ == "__main__":

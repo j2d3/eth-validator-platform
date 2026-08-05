@@ -1,3 +1,19 @@
+{{- $p2pService := .Values.p2p.service -}}
+{{- $p2pAnnotations := $p2pService.annotations -}}
+{{- if and $p2pService.enabled (hasKey $p2pAnnotations "service.beta.kubernetes.io/aws-load-balancer-type") -}}
+  {{- fail "AWS P2P Service must use loadBalancerClass, not the legacy aws-load-balancer-type annotation" -}}
+{{- end -}}
+{{- if and $p2pService.enabled (eq $p2pService.loadBalancerClass "service.k8s.aws/nlb") -}}
+  {{- if ne $p2pService.type "LoadBalancer" -}}
+    {{- fail "p2p.service.loadBalancerClass=service.k8s.aws/nlb requires type=LoadBalancer" -}}
+  {{- end -}}
+  {{- if ne (default "" (index $p2pAnnotations "service.beta.kubernetes.io/aws-load-balancer-nlb-target-type")) "ip" -}}
+    {{- fail "AWS LBC P2P Service requires aws-load-balancer-nlb-target-type=ip" -}}
+  {{- end -}}
+  {{- if ne (default "" (index $p2pAnnotations "service.beta.kubernetes.io/aws-load-balancer-enable-tcp-udp-listener")) "true" -}}
+    {{- fail "AWS LBC P2P Service requires aws-load-balancer-enable-tcp-udp-listener=true" -}}
+  {{- end -}}
+{{- end -}}
 {{- if eq .Values.lifecycleState "active" }}
 apiVersion: v1
 kind: Service
@@ -15,28 +31,28 @@ spec:
     - {name: el-metrics, port: 6060, targetPort: el-metrics}
     - {name: cl-metrics, port: 8008, targetPort: cl-metrics}
 ---
-{{- if .Values.p2p.service.enabled }}
+{{- if $p2pService.enabled }}
 apiVersion: v1
 kind: Service
 metadata:
-  name: {{ include "ethereum-node.fullname" . }}-{{ .Values.p2p.service.nameSuffix }}
+  name: {{ include "ethereum-node.fullname" . }}-{{ $p2pService.nameSuffix }}
   labels:
     {{- include "ethereum-node.labels" . | nindent 4 }}
-  {{- with .Values.p2p.service.annotations }}
+  {{- with $p2pAnnotations }}
   annotations:
     {{- toYaml . | nindent 4 }}
   {{- end }}
 spec:
-  type: {{ .Values.p2p.service.type }}
-  {{- if and (eq .Values.p2p.service.type "LoadBalancer") .Values.p2p.service.loadBalancerClass }}
-  loadBalancerClass: {{ .Values.p2p.service.loadBalancerClass | quote }}
+  type: {{ $p2pService.type }}
+  {{- if and (eq $p2pService.type "LoadBalancer") $p2pService.loadBalancerClass }}
+  loadBalancerClass: {{ $p2pService.loadBalancerClass | quote }}
   {{- end }}
-  {{- if ne .Values.p2p.service.type "ClusterIP" }}
-  externalTrafficPolicy: {{ .Values.p2p.service.externalTrafficPolicy }}
+  {{- if ne $p2pService.type "ClusterIP" }}
+  externalTrafficPolicy: {{ $p2pService.externalTrafficPolicy }}
   {{- end }}
-  {{- if and (eq .Values.p2p.service.type "LoadBalancer") .Values.p2p.service.loadBalancerSourceRanges }}
+  {{- if and (eq $p2pService.type "LoadBalancer") $p2pService.loadBalancerSourceRanges }}
   loadBalancerSourceRanges:
-    {{- toYaml .Values.p2p.service.loadBalancerSourceRanges | nindent 4 }}
+    {{- toYaml $p2pService.loadBalancerSourceRanges | nindent 4 }}
   {{- end }}
   selector:
     {{- include "ethereum-node.selectorLabels" . | nindent 4 }}

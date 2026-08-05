@@ -424,10 +424,11 @@ class EksEphemeryFluxAndTelemetryTests(unittest.TestCase):
     def test_signing_node_layer_waits_for_signer_application(self) -> None:
         layer = yaml.safe_load((CLUSTER / "node-apps.yaml").read_text(encoding="utf-8"))
         self.assertEqual(
-            layer["spec"]["dependsOn"], [{"name": "apps"}]
+            layer["spec"]["dependsOn"],
+            [{"name": "infrastructure-controllers"}, {"name": "apps"}],
         )
-        # The layer remains reconciled; its dependency now orders the validator
-        # behind the Ready shared-signer application.
+        # The layer remains reconciled; its dependencies order the validator
+        # behind both the Ready AWS LBC and shared-signer application.
         self.assertIn("suspend", layer["spec"])
         self.assertFalse(layer["spec"]["suspend"])
 

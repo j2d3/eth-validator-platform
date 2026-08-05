@@ -114,7 +114,10 @@ class EksFluxEntrypointTests(unittest.TestCase):
         self.assertEqual(dependencies["infrastructure-controllers"], [])
         self.assertEqual(dependencies["infrastructure-configs"], ["infrastructure-controllers"])
         self.assertEqual(dependencies["portal-observability"], ["infrastructure-configs"])
-        self.assertEqual(dependencies["node-apps"], ["apps"])
+        self.assertEqual(
+            dependencies["node-apps"],
+            ["infrastructure-controllers", "apps"],
+        )
         self.assertEqual(
             dependencies["signer-infrastructure-configs"],
             ["infrastructure-configs"],
