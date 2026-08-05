@@ -115,6 +115,7 @@ Sanitized runtime observations at a specific commit and time. Immutable.
 - [2026-08-04-eks-network-policy.md](evidence/2026-08-04-eks-network-policy.md)
 - [2026-08-04-first-signing-validator.md](evidence/2026-08-04-first-signing-validator.md)
 - [2026-08-05-eks-spot-rebalance.md](evidence/2026-08-05-eks-spot-rebalance.md)
+- [2026-08-05-two-agent-experiment-retrospective.md](evidence/2026-08-05-two-agent-experiment-retrospective.md)
 
 ### [PRD](prd/)
 
