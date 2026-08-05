@@ -217,6 +217,31 @@ class NethermindAdapterRenderTests(unittest.TestCase):
         )
         self.assertEqual(execution["path"], "/metrics")
 
+    def test_prometheusrule_uses_runtime_observed_nethermind_metrics(self) -> None:
+        rule = self.by_kind["PrometheusRule"][0]
+        records = {
+            item["record"]: item["expr"]
+            for item in rule["spec"]["groups"][0]["rules"]
+            if "record" in item
+        }
+        head = records["validator_platform_execution_head_block"]
+        changes = records["validator_platform_execution_head_changes_15m"]
+        peers = records["validator_platform_execution_peers"]
+
+        self.assertIn(
+            'nethermind_blocks{platform="ethereum-validator",component="execution",execution_client="nethermind"}',
+            head,
+        )
+        self.assertIn(
+            'changes(nethermind_blocks{platform="ethereum-validator",component="execution",execution_client="nethermind"}[15m])',
+            changes,
+        )
+        self.assertIn(
+            'ethereum_peer_count{platform="ethereum-validator",component="execution",execution_client="nethermind"}',
+            peers,
+        )
+        self.assertNotIn("nethermind_peers", peers)
+
     def test_init_container_uses_nethermind_naming_and_data_marker(self) -> None:
         sts = self.by_kind["StatefulSet"][0]
         init_containers = sts["spec"]["template"]["spec"]["initContainers"]

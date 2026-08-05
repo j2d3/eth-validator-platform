@@ -105,9 +105,10 @@ enodes, opened JSON-RPC and Engine API, and formed peers.
 
 ## Metric normalization
 
-**Status: `nethermind_blocks` and `nethermind_peers` names are
-runtime-verified by Codex on the pinned 1.39.2 image** (via
-`docker buildx imagetools inspect` + live scrape probe). The
+**Status: `nethermind_blocks` and `ethereum_peer_count` are observed on the
+active Ephemery Pod running the pinned 1.39.2 image.** `nethermind_peers` is
+absent. `nethermind_sync_peers` is present but partitioned by remote-client
+type, so the chart uses the aggregate `ethereum_peer_count` gauge. The
 `executionMetricsPath` chart dispatcher (from #158) sends Prometheus
 to `/metrics` (same as Besu, different from Geth/Reth/Erigon's
 `/debug/metrics/prometheus`).
@@ -131,11 +132,10 @@ after Flux reconciles it should record observable evidence for each of:
 - **Head movement**: `validator_platform_execution_head_block{
   execution_client="nethermind"}` advances over a 15-minute window
   (aggregated as the existing `changes()` rule).
-- **Actual metric names present**: negative-space observation — if
-  `nethermind_blocks` or `nethermind_peers` are absent from the live
-  scrape, that's a runtime-observation gap to fix in the same pattern
-  #148 fixed Erigon's `chain_head_block` gap (observe the real name,
-  edit the chart values, add a runtime-observed comment).
+- **Actual metric names present**: the live scrape exposes
+  `nethermind_blocks` and `ethereum_peer_count`; it does not expose the
+  originally configured `nethermind_peers` name. The chart contract uses
+  only the observed aggregate names.
 
 Test contract asserts that this release, plus the other seven Ephemery
 pairs, all render with the same EKS-required patches (`valuesFiles`,
