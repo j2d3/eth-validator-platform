@@ -7,6 +7,9 @@ to `main` also run the full matrix. Pull requests always build the inventory;
 they skip the matrix only when the exact image/digest set and coverage
 boundaries match the base commit and none of the evidence tooling changed. The
 workflow publishes one JSON result artifact per scanned image for 14 days.
+That artifact also carries a CycloneDX SBOM generated from the verified Trivy
+report and a public-safe record binding it to the same image digest, scanner
+version, and workflow provenance.
 
 It is intentionally an **evidence workflow, not yet a promotion gate**. A green
 workflow means inventory and scanner execution succeeded. It does not mean the
@@ -28,8 +31,10 @@ artifact retained by the same run and binds itself to it: the scanned
 `(image, digest)` subjects must equal the discovered exact subjects. A discovered
 subject with no decision, a decision for an undiscovered subject, and a duplicate
 on either side all fail the job rather than producing a quietly smaller count.
+Verified SBOM subjects must independently equal the same inventory; missing,
+extra, duplicate, wrong-digest, or wrong-scanner SBOM evidence fails the job.
 
-The workflow then publishes exact-subject coverage, the unresolved
+The workflow then publishes exact-subject and SBOM coverage, the unresolved
 coverage-gap count, and raw Critical/High occurrence totals, including the
 subset with a non-empty `FixedVersion`, in a successful check name bound to the
 same workflow run and source SHA. GitHub exposes that check metadata through its
@@ -58,10 +63,13 @@ Monday schedule. The inventory job summary lists exact subjects and explicit
 coverage gaps. Download `container-image-inventory` plus the `image-scan-*`
 artifacts from the same run before triage. Each image artifact contains the
 exact subject, Trivy JSON result, structured scanner/database version evidence,
-the evidence-only decision, and workflow source/checkout SHA provenance. Before
+the evidence-only decision, a CycloneDX SBOM, its verified subject record, and
+workflow source/checkout SHA provenance. Before
 upload, a separate verifier
 fails unless Trivy identifies the result as a container image, names the exact
 requested subject, and reports the requested digest in `Metadata.RepoDigests`.
+The SBOM verifier separately requires matching CycloneDX container name, purl,
+repository digest, Trivy version, and timestamp before that SBOM counts.
 Treat report creation time and vulnerability-database update time as different
 fields; a new report backed by a stale database is stale evidence. Do not report
 zero findings when the workflow did not run, verification failed, a scan or
@@ -73,9 +81,8 @@ successful, its head SHA matches the latest completed `main` image-security run,
 and its job URL is part of that exact run. It also rejects impossible values,
 such as more scanned subjects than were discovered or an inventory with no
 subject at all. Missing or malformed evidence renders as unavailable; it never
-renders as zero. The portal shows the scanned/discovered subject ratio next to
-the unresolved coverage-gap count so that partial coverage is visible rather
-than implied to be complete.
+renders as zero. The portal shows scanned/discovered and SBOM/discovered ratios
+next to the unresolved coverage-gap count so partial coverage remains visible.
 
 For an unchanged-inventory pull request, the `Container image evidence
 decision` check records that no new Trivy execution occurred. That result reuses

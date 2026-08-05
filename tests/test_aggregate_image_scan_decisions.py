@@ -30,9 +30,12 @@ def decision(image: str, critical: tuple[int, int], high: tuple[int, int]):
 
     return {
         "schemaVersion": 1,
-        # ``verify_image_scan_evidence`` records the bare 64-character digest,
-        # while the inventory carries the ``sha256:``-prefixed form.
-        "subject": {"image": image, "digest": image.rpartition("@sha256:")[2]},
+        # Match the production verifier: both evidence and inventory retain
+        # the explicit algorithm prefix.
+        "subject": {
+            "image": image,
+            "digest": "sha256:" + image.rpartition("@sha256:")[2],
+        },
         "evaluatedAt": "2026-08-05T13:42:11Z",
         "counts": {"critical": block(critical), "high": block(high)},
         "unexceptedCounts": {"critical": block(critical), "high": block(high)},
@@ -66,6 +69,20 @@ def inventory(images: list[str], gaps: int = 0):
     }
 
 
+def sbom_subject(image: str):
+    return {
+        "schemaVersion": 1,
+        "image": image,
+        "digest": "sha256:" + image.rpartition("@sha256:")[2],
+        "format": "CycloneDX",
+        "specVersion": "1.7",
+        "generatedAt": "2026-08-05T13:42:11Z",
+        "componentCount": 3,
+        "scannerVersion": "0.73.0",
+        "provenance": {"sourceSha": "c" * 40},
+    }
+
+
 class AggregateImageScanDecisionTests(unittest.TestCase):
     def setUp(self) -> None:
         self._directory = tempfile.TemporaryDirectory()
@@ -79,6 +96,9 @@ class AggregateImageScanDecisionTests(unittest.TestCase):
         directory.mkdir()
         (directory / "image-scan-decision.json").write_text(
             json.dumps(value), encoding="utf-8"
+        )
+        (directory / "sbom-subject.json").write_text(
+            json.dumps(sbom_subject(value["subject"]["image"])), encoding="utf-8"
         )
 
     def write_inventory(self, value: dict) -> Path:
@@ -97,6 +117,7 @@ class AggregateImageScanDecisionTests(unittest.TestCase):
 
         self.assertEqual(result["exactSubjects"], 2)
         self.assertEqual(result["scannedSubjects"], 2)
+        self.assertEqual(result["sbomSubjects"], 2)
         self.assertEqual(result["coverageGaps"], 11)
         self.assertEqual(
             result["counts"]["critical"], {"available": 6, "total": 14, "unavailable": 8}
@@ -111,6 +132,7 @@ class AggregateImageScanDecisionTests(unittest.TestCase):
             "available=true\n",
             "exact_subjects=2\n",
             "scanned_subjects=2\n",
+            "sbom_subjects=2\n",
             "coverage_gaps=11\n",
             "critical_total=14\n",
             "high_available=10\n",
@@ -162,7 +184,7 @@ class AggregateImageScanDecisionTests(unittest.TestCase):
     def test_rejects_a_decision_digest_that_contradicts_its_image(self) -> None:
         self.write_inventory(inventory([image_ref("a")]))
         value = decision(image_ref("a"), (0, 0), (0, 0))
-        value["subject"]["digest"] = "b" * 64
+        value["subject"]["digest"] = "sha256:" + "b" * 64
         self.write_decision("one", value)
 
         with self.assertRaisesRegex(
@@ -199,6 +221,24 @@ class AggregateImageScanDecisionTests(unittest.TestCase):
     def test_rejects_a_missing_inventory_artifact(self) -> None:
         self.write_decision("one", decision(image_ref("a"), (0, 0), (0, 0)))
         with self.assertRaisesRegex(aggregate_module.AggregateError, "cannot read"):
+            self.aggregate()
+
+    def test_rejects_missing_or_wrong_sbom_subject_evidence(self) -> None:
+        self.write_inventory(inventory([image_ref("a")]))
+        self.write_decision("one", decision(image_ref("a"), (0, 0), (0, 0)))
+        sbom_path = self.root / "image-scan-one" / "sbom-subject.json"
+        sbom_path.unlink()
+        with self.assertRaisesRegex(
+            aggregate_module.AggregateError, "no verified SBOM subject"
+        ):
+            self.aggregate()
+
+        sbom_path.write_text(
+            json.dumps(sbom_subject(image_ref("b"))), encoding="utf-8"
+        )
+        with self.assertRaisesRegex(
+            aggregate_module.AggregateError, "no verified SBOM"
+        ):
             self.aggregate()
 
     def test_rejects_an_enabled_promotion_gate(self) -> None:

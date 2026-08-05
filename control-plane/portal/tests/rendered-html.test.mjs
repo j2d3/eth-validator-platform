@@ -249,14 +249,15 @@ test("live status uses the exact public adapter and polls without controls", asy
   assert.doesNotMatch(component, /customer|validatorPublicKey|secretRef|keystore/i);
 });
 
-test("image coverage renders exact subjects and gaps without a false zero", async () => {
+test("image coverage renders exact subjects, SBOMs, and gaps without a false zero", async () => {
   const component = await readFile(
     new URL("../components/repository-security.tsx", import.meta.url),
     "utf8",
   );
 
   assert.match(component, /exactSubjects\.scanned\}\/\$\{[^}]+exactSubjects\.expected\} exact subjects scanned/);
-  assert.match(component, /coverageGaps\} coverage gaps · unresolved image sources remain unknown/);
+  assert.match(component, /sbomSubjects\.generated\}\/\$\{[^}]+sbomSubjects\.expected\} verified SBOMs/);
+  assert.match(component, /coverageGaps\} coverage gaps/);
   assert.match(component, /Exact subjects only ·/);
   assert.match(component, /: "Unavailable"/);
   assert.match(component, /"Latest coverage unavailable"/);

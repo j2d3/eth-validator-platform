@@ -39,13 +39,15 @@ def load_object(path: Path) -> dict[str, Any]:
     return value
 
 
-def parse_timestamp(value: object, *, path: Path) -> dt.datetime:
+def parse_timestamp(
+    value: object, *, path: Path, field: str = "evaluatedAt"
+) -> dt.datetime:
     if not isinstance(value, str) or not value.endswith("Z"):
-        raise AggregateError(f"{path} evaluatedAt must be a UTC timestamp")
+        raise AggregateError(f"{path} {field} must be a UTC timestamp")
     try:
         parsed = dt.datetime.fromisoformat(value[:-1] + "+00:00")
     except ValueError as error:
-        raise AggregateError(f"{path} evaluatedAt is invalid") from error
+        raise AggregateError(f"{path} {field} is invalid") from error
     return parsed
 
 
@@ -112,6 +114,9 @@ def aggregate(root: Path, inventory_path: Path) -> dict[str, Any]:
     paths = sorted(root.glob("image-scan-*/image-scan-decision.json"))
     if not paths:
         raise AggregateError("no image-scan decision artifacts were found")
+    sbom_paths = sorted(root.glob("image-scan-*/sbom-subject.json"))
+    if not sbom_paths:
+        raise AggregateError("no verified SBOM subject artifacts were found")
 
     counts = {
         severity: {"available": 0, "total": 0, "unavailable": 0}
@@ -166,12 +171,38 @@ def aggregate(root: Path, inventory_path: Path) -> dict[str, Any]:
             "evidence decisions are not in the discovered inventory: " + ", ".join(extra)
         )
 
+    sbom_subjects: set[tuple[str, str]] = set()
+    for path in sbom_paths:
+        sbom = load_object(path)
+        if sbom.get("schemaVersion") != 1 or sbom.get("format") != "CycloneDX":
+            raise AggregateError(f"{path} is not verified CycloneDX SBOM evidence")
+        key = subject_key(sbom.get("image"), sbom.get("digest"), origin=str(path))
+        if key in sbom_subjects:
+            raise AggregateError(f"duplicate SBOM subject in {path}: {key[0]}")
+        sbom_subjects.add(key)
+        if type(sbom.get("componentCount")) is not int or sbom["componentCount"] < 0:
+            raise AggregateError(f"{path} componentCount must be a non-negative integer")
+        parse_timestamp(sbom.get("generatedAt"), path=path, field="generatedAt")
+
+    missing_sboms = sorted(image for image, _ in expected_subjects - sbom_subjects)
+    if missing_sboms:
+        raise AggregateError(
+            "discovered subjects have no verified SBOM: " + ", ".join(missing_sboms)
+        )
+    extra_sboms = sorted(image for image, _ in sbom_subjects - expected_subjects)
+    if extra_sboms:
+        raise AggregateError(
+            "verified SBOMs are not in the discovered inventory: "
+            + ", ".join(extra_sboms)
+        )
+
     latest = max(evaluated_at).astimezone(dt.timezone.utc)
     return {
-        "schemaVersion": 2,
+        "schemaVersion": 3,
         "evaluatedAt": latest.isoformat(timespec="seconds").replace("+00:00", "Z"),
         "exactSubjects": len(expected_subjects),
         "scannedSubjects": len(subjects),
+        "sbomSubjects": len(sbom_subjects),
         "coverageGaps": coverage_gaps,
         "counts": counts,
         "unexceptedCounts": unexcepted_counts,
@@ -186,6 +217,7 @@ def github_outputs(summary: dict[str, Any]) -> str:
             "available=true",
             f"exact_subjects={summary['exactSubjects']}",
             f"scanned_subjects={summary['scannedSubjects']}",
+            f"sbom_subjects={summary['sbomSubjects']}",
             f"coverage_gaps={summary['coverageGaps']}",
             f"critical_total={counts['critical']['total']}",
             f"critical_available={counts['critical']['available']}",

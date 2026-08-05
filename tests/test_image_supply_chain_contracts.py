@@ -169,6 +169,9 @@ class ImageSecurityWorkflowTests(unittest.TestCase):
         self.assertIn("trivy-results.json", self.text)
         self.assertIn("trivy-version.json", self.text)
         self.assertIn("image-scan-decision.json", self.text)
+        self.assertIn("image-sbom.cdx.json", self.text)
+        self.assertIn("sbom-subject.json", self.text)
+        self.assertIn("tools/verify_image_sbom.py", self.text)
         self.assertIn("trivy version --cache-dir .cache/trivy --format json", self.text)
         self.assertIn("image-inventory.json", self.text)
         self.assertIn("retention-days: 14", self.text)
@@ -185,7 +188,12 @@ class ImageSecurityWorkflowTests(unittest.TestCase):
 
     def test_public_check_publishes_exact_coverage_and_gaps(self) -> None:
         decision = self.workflow["jobs"]["evidence-decision"]
-        for output in ("exact_subjects", "scanned_subjects", "coverage_gaps"):
+        for output in (
+            "exact_subjects",
+            "scanned_subjects",
+            "sbom_subjects",
+            "coverage_gaps",
+        ):
             self.assertIn(output, decision["outputs"])
 
         name = self.workflow["jobs"]["public-finding-counts"]["name"]
@@ -196,6 +204,11 @@ class ImageSecurityWorkflowTests(unittest.TestCase):
         )
         self.assertIn(
             "${{ needs.evidence-decision.outputs.coverage_gaps }} coverage gaps", name
+        )
+        self.assertIn(
+            "SBOM ${{ needs.evidence-decision.outputs.sbom_subjects }}/"
+            "${{ needs.evidence-decision.outputs.exact_subjects }}",
+            name,
         )
         self.assertEqual(self.workflow["permissions"], {"contents": "read"})
 
@@ -643,12 +656,28 @@ class ImageCoverageClosureTests(unittest.TestCase):
                     "schemaVersion": 1,
                     "subject": {
                         "image": record.image,
-                        "digest": record.digest.removeprefix("sha256:"),
+                        "digest": record.digest,
                     },
                     "evaluatedAt": "2026-08-05T13:42:11Z",
                     "counts": {"critical": empty, "high": empty},
                     "unexceptedCounts": {"critical": empty, "high": empty},
                     "decision": {"mode": "evidence-only", "promotionGate": False},
+                }
+            ),
+            encoding="utf-8",
+        )
+        (directory / "sbom-subject.json").write_text(
+            json.dumps(
+                {
+                    "schemaVersion": 1,
+                    "image": record.image,
+                    "digest": record.digest,
+                    "format": "CycloneDX",
+                    "specVersion": "1.7",
+                    "generatedAt": "2026-08-05T13:42:11Z",
+                    "componentCount": 0,
+                    "scannerVersion": "0.73.0",
+                    "provenance": {"sourceSha": "a" * 40},
                 }
             ),
             encoding="utf-8",
@@ -670,6 +699,7 @@ class ImageCoverageClosureTests(unittest.TestCase):
 
         self.assertEqual(summary["exactSubjects"], len(self.inventory.images))
         self.assertEqual(summary["scannedSubjects"], len(self.inventory.images))
+        self.assertEqual(summary["sbomSubjects"], len(self.inventory.images))
         self.assertEqual(summary["coverageGaps"], len(self.inventory.gaps))
 
     def test_one_unscanned_discovered_subject_fails_closed(self) -> None:

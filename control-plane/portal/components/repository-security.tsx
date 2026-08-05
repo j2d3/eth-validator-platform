@@ -31,6 +31,7 @@ type SecurityStatus = {
 
 type ImageSecurityEvidence = {
   exactSubjects: { scanned: number; expected: number };
+  sbomSubjects: { generated: number; expected: number };
   coverageGaps: number;
   critical: { total: number; available: number };
   high: { total: number; available: number };
@@ -150,7 +151,7 @@ export default function RepositorySecurity() {
           </strong>
           <span className="detail">
             {status.imageEvidence
-              ? `${status.imageEvidence.coverageGaps} coverage gaps · unresolved image sources remain unknown`
+              ? `${status.imageEvidence.sbomSubjects.generated}/${status.imageEvidence.sbomSubjects.expected} verified SBOMs · ${status.imageEvidence.coverageGaps} coverage gaps`
               : "Latest coverage unavailable"}
           </span>
           <a href={status.imageEvidence?.htmlUrl ?? imageSecurityWorkflowRuns}>
