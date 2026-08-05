@@ -9,7 +9,11 @@ from pathlib import Path
 
 import yaml
 
-from tools import discover_container_images, verify_image_scan_evidence
+from tools import (
+    compare_image_inventories,
+    discover_container_images,
+    verify_image_scan_evidence,
+)
 
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -178,6 +182,7 @@ class ImageSecurityWorkflowTests(unittest.TestCase):
             '"**/*.sh"',
             '"**/Dockerfile*"',
             "requirements-dev.txt",
+            "tools/compare_image_inventories.py",
             "tools/verify_image_scan_evidence.py",
         ):
             self.assertIn(path_filter, self.text)
@@ -194,6 +199,87 @@ class ImageSecurityWorkflowTests(unittest.TestCase):
                     encoding="utf-8"
                 ),
             )
+
+    def test_unchanged_pull_request_inventory_skips_only_the_scan_matrix(self) -> None:
+        inventory = self.workflow["jobs"]["inventory"]
+        checkout = inventory["steps"][0]
+        self.assertEqual(checkout["with"]["fetch-depth"], 0)
+        self.assertIn("scan_required", inventory["outputs"])
+
+        scan = self.workflow["jobs"]["scan"]
+        self.assertEqual(
+            scan["if"], "needs.inventory.outputs.scan_required == 'true'"
+        )
+        decision = self.workflow["jobs"]["evidence-decision"]
+        self.assertEqual(decision["if"], "always()")
+        self.assertEqual(decision["needs"], ["inventory", "scan"])
+
+        self.assertIn("base-image-inventory.json", self.text)
+        self.assertIn("tools/compare_image_inventories.py", self.text)
+        self.assertIn('GITHUB_EVENT_NAME" != "pull_request', self.text)
+        self.assertIn('SCAN_RESULT" == "skipped', self.text)
+        self.assertIn("Existing evidence applies only to the unchanged exact digests", self.text)
+
+
+class ImageInventoryComparisonTests(unittest.TestCase):
+    def inventory(
+        self,
+        *,
+        image: str = "example.invalid/client:v1@sha256:" + "a" * 64,
+        sources: list[str] | None = None,
+        gaps: list[dict] | None = None,
+    ) -> dict:
+        return {
+            "schemaVersion": 1,
+            "images": [
+                {
+                    "id": "example-client",
+                    "image": image,
+                    "repository": "example.invalid/client:v1",
+                    "digest": "sha256:" + "a" * 64,
+                    "sources": sources or ["charts/example/values.yaml"],
+                }
+            ],
+            "coverageGaps": gaps or [],
+            "scopeExclusions": [
+                {"paths": ["docs/**"], "reason": "not a runtime source"}
+            ],
+        }
+
+    def test_same_exact_subjects_reuse_evidence_when_only_sources_change(self) -> None:
+        base = self.inventory()
+        current = self.inventory(sources=["platform/example/release.yaml"])
+        result = compare_image_inventories.compare(base, current)
+        self.assertFalse(result["scanRequired"])
+
+    def test_digest_or_coverage_boundary_change_requires_a_scan(self) -> None:
+        base = self.inventory()
+        digest_change = self.inventory(
+            image="example.invalid/client:v1@sha256:" + "b" * 64
+        )
+        gap_change = self.inventory(
+            gaps=[
+                {
+                    "kind": "helm-chart",
+                    "subject": "example/chart@1.0.0",
+                    "source": "platform/example.yaml",
+                    "reason": "transitive image unresolved",
+                }
+            ]
+        )
+
+        self.assertTrue(
+            compare_image_inventories.compare(base, digest_change)["scanRequired"]
+        )
+        self.assertTrue(
+            compare_image_inventories.compare(base, gap_change)["scanRequired"]
+        )
+
+    def test_malformed_inventory_fails_closed(self) -> None:
+        malformed = self.inventory()
+        malformed["images"] = [{"id": "missing-image"}]
+        with self.assertRaises(compare_image_inventories.InventoryComparisonError):
+            compare_image_inventories.compare(self.inventory(), malformed)
 
 
 class ImageScanEvidenceTests(unittest.TestCase):

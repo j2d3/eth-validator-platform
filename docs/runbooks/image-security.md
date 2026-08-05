@@ -2,8 +2,11 @@
 
 This runbook covers the first supply-chain scanning slice tracked by issue #43.
 It inventories every in-scope image-bearing repository source and runs a weekly
-or manually dispatched Trivy vulnerability scan for each exact digest. The
-workflow publishes one JSON result artifact per image for 14 days.
+or manually dispatched Trivy vulnerability scan for each exact digest. Pushes
+to `main` also run the full matrix. Pull requests always build the inventory;
+they skip the matrix only when the exact image/digest set and coverage
+boundaries match the base commit and none of the evidence tooling changed. The
+workflow publishes one JSON result artifact per scanned image for 14 days.
 
 It is intentionally an **evidence workflow, not yet a promotion gate**. A green
 workflow means inventory and scanner execution succeeded. It does not mean the
@@ -33,6 +36,14 @@ fields; a new report backed by a stale database is stale evidence. Do not report
 zero findings when the workflow did not run, verification failed, a scan or
 version artifact is absent, or registry access failed; those states are
 **unknown/unavailable**.
+
+For an unchanged-inventory pull request, the `Container image evidence
+decision` check records that no new Trivy execution occurred. That result reuses
+only the identity-level fact that the reviewed source still names the same
+exact digests; it does not manufacture a fresh scan timestamp or new finding
+set. Scheduled, manual, evidence-tooling, and `main` runs never take this reuse
+path, so the public portal's latest-`main` workflow result continues to refer to
+a full scan.
 
 ## Current coverage boundary
 
