@@ -8,10 +8,12 @@ from copy import deepcopy
 from pathlib import Path
 
 import yaml
+from jsonschema import Draft202012Validator
 
 from tools import (
     compare_image_inventories,
     discover_container_images,
+    evaluate_image_scan,
     verify_image_scan_evidence,
 )
 
@@ -164,6 +166,7 @@ class ImageSecurityWorkflowTests(unittest.TestCase):
             self.assertRegex(action, r"@[0-9a-f]{40}$")
         self.assertIn("trivy-results.json", self.text)
         self.assertIn("trivy-version.json", self.text)
+        self.assertIn("image-scan-decision.json", self.text)
         self.assertIn("trivy version --cache-dir .cache/trivy --format json", self.text)
         self.assertIn("image-inventory.json", self.text)
         self.assertIn("retention-days: 14", self.text)
@@ -183,6 +186,7 @@ class ImageSecurityWorkflowTests(unittest.TestCase):
             '"**/Dockerfile*"',
             "requirements-dev.txt",
             "tools/compare_image_inventories.py",
+            "tools/evaluate_image_scan.py",
             "tools/verify_image_scan_evidence.py",
         ):
             self.assertIn(path_filter, self.text)
@@ -219,6 +223,18 @@ class ImageSecurityWorkflowTests(unittest.TestCase):
         self.assertIn('GITHUB_EVENT_NAME" != "pull_request', self.text)
         self.assertIn('SCAN_RESULT" == "skipped', self.text)
         self.assertIn("Existing evidence applies only to the unchanged exact digests", self.text)
+
+    def test_evaluator_runs_after_binding_and_before_evidence_upload(self) -> None:
+        verifier = "python3 tools/verify_image_scan_evidence.py"
+        evaluator = "python3 tools/evaluate_image_scan.py"
+        upload = "name: Retain scanner evidence"
+        self.assertLess(self.text.index(verifier), self.text.index(evaluator))
+        self.assertLess(self.text.index(evaluator), self.text.index(upload))
+        self.assertIn(
+            "security/image-vulnerability-exceptions/${IMAGE_ID}.json", self.text
+        )
+        self.assertIn("--evaluated-at", self.text)
+        self.assertIn("evidence only; not a promotion gate", self.text)
 
 
 class ImageInventoryComparisonTests(unittest.TestCase):
@@ -346,6 +362,207 @@ class ImageScanEvidenceTests(unittest.TestCase):
             verify_image_scan_evidence.verify_scan_evidence(
                 self.image, report, self.version
             )
+
+
+class ImageScanDecisionTests(unittest.TestCase):
+    def setUp(self) -> None:
+        self.digest = "sha256:" + "1" * 64
+        self.image = f"example.invalid/client:v1@{self.digest}"
+        self.report = {
+            "ArtifactType": "container_image",
+            "ArtifactName": self.image,
+            "CreatedAt": "2026-08-05T12:00:00.240725762Z",
+            "Results": [
+                {
+                    "Target": "example",
+                    "Vulnerabilities": [
+                        {
+                            "VulnerabilityID": "CVE-2026-0001",
+                            "Severity": "CRITICAL",
+                            "FixedVersion": "2.0.0",
+                        },
+                        {
+                            "VulnerabilityID": "CVE-2026-0002",
+                            "Severity": "CRITICAL",
+                            "FixedVersion": "",
+                        },
+                        {
+                            "VulnerabilityID": "GHSA-abcd-1234-5678",
+                            "Severity": "HIGH",
+                        },
+                        {
+                            "VulnerabilityID": "CVE-2026-0003",
+                            "Severity": "MEDIUM",
+                            "FixedVersion": "2.0.0",
+                        },
+                    ],
+                }
+            ],
+        }
+        self.subject = {
+            "schemaVersion": 1,
+            "image": self.image,
+            "verifiedReport": {
+                "digest": self.digest,
+                "reportCreatedAt": "2026-08-05T12:00:00.240725762Z",
+            },
+        }
+        self.evaluated_at = "2026-08-05T13:00:00Z"
+
+    def exception(
+        self,
+        vulnerability_id: str = "CVE-2026-0002",
+        **changes: str,
+    ) -> dict[str, str]:
+        entry = {
+            "imageDigest": self.digest,
+            "vulnerabilityId": vulnerability_id,
+            "rationale": "Upstream has not published a corrected build yet.",
+            "owner": "@j2d3",
+            "expiresAt": "2026-08-12T12:00:00Z",
+        }
+        entry.update(changes)
+        return entry
+
+    def evaluate(self, exception_path: Path | None = None) -> dict:
+        return evaluate_image_scan.evaluate(
+            expected_image=self.image,
+            report=self.report,
+            subject=self.subject,
+            exception_path=exception_path,
+            evaluated_at=self.evaluated_at,
+        )
+
+    def write_exceptions(self, directory: Path, entries: list[dict]) -> Path:
+        path = directory / "example-client.json"
+        path.write_text(
+            json.dumps({"schemaVersion": 1, "exceptions": entries}),
+            encoding="utf-8",
+        )
+        return path
+
+    def test_counts_are_split_by_severity_and_fix_availability(self) -> None:
+        result = self.evaluate()
+        self.assertEqual(
+            result["counts"],
+            {
+                "critical": {"available": 1, "total": 2, "unavailable": 1},
+                "high": {"available": 0, "total": 1, "unavailable": 1},
+            },
+        )
+        self.assertEqual(result["evaluatedAt"], self.evaluated_at)
+        self.assertEqual(
+            result["decision"],
+            {
+                "mode": "evidence-only",
+                "outcome": "critical-high-findings-require-review",
+                "promotionGate": False,
+            },
+        )
+
+    def test_active_exact_exception_is_reported_but_not_a_gate(self) -> None:
+        import tempfile
+
+        with tempfile.TemporaryDirectory() as directory:
+            path = self.write_exceptions(Path(directory), [self.exception()])
+            result = self.evaluate(path)
+        self.assertEqual(result["exceptions"]["count"], 1)
+        self.assertEqual(result["unexceptedCounts"]["critical"]["total"], 1)
+        self.assertFalse(result["decision"]["promotionGate"])
+
+    def test_expiry_is_compared_to_evaluation_not_old_report_time(self) -> None:
+        import tempfile
+
+        with tempfile.TemporaryDirectory() as directory:
+            path = self.write_exceptions(
+                Path(directory),
+                [self.exception(expiresAt="2026-08-05T12:30:00Z")],
+            )
+            with self.assertRaisesRegex(evaluate_image_scan.EvaluationError, "expired"):
+                self.evaluate(path)
+
+    def test_evaluation_time_cannot_predate_report(self) -> None:
+        self.evaluated_at = "2026-08-05T11:59:59Z"
+        with self.assertRaisesRegex(evaluate_image_scan.EvaluationError, "precede"):
+            self.evaluate()
+
+    def test_same_second_evaluation_accepts_nanosecond_report(self) -> None:
+        self.evaluated_at = "2026-08-05T12:00:00Z"
+        self.assertEqual(self.evaluate()["evaluatedAt"], self.evaluated_at)
+
+    def test_malformed_exception_is_rejected(self) -> None:
+        import tempfile
+
+        with tempfile.TemporaryDirectory() as directory:
+            malformed = self.exception()
+            malformed["owner"] = "not a handle with spaces"
+            path = self.write_exceptions(Path(directory), [malformed])
+            with self.assertRaisesRegex(evaluate_image_scan.EvaluationError, "owner"):
+                self.evaluate(path)
+
+    def test_wrong_digest_exception_is_rejected(self) -> None:
+        import tempfile
+
+        with tempfile.TemporaryDirectory() as directory:
+            path = self.write_exceptions(
+                Path(directory),
+                [self.exception(imageDigest="sha256:" + "2" * 64)],
+            )
+            with self.assertRaisesRegex(
+                evaluate_image_scan.EvaluationError, "not sha256"
+            ):
+                self.evaluate(path)
+
+    def test_duplicate_exception_is_rejected(self) -> None:
+        import tempfile
+
+        with tempfile.TemporaryDirectory() as directory:
+            path = self.write_exceptions(
+                Path(directory), [self.exception(), self.exception()]
+            )
+            with self.assertRaisesRegex(
+                evaluate_image_scan.EvaluationError, "duplicate"
+            ):
+                self.evaluate(path)
+
+    def test_unused_exception_is_rejected(self) -> None:
+        import tempfile
+
+        with tempfile.TemporaryDirectory() as directory:
+            path = self.write_exceptions(
+                Path(directory), [self.exception("CVE-2026-9999")]
+            )
+            with self.assertRaisesRegex(evaluate_image_scan.EvaluationError, "unused"):
+                self.evaluate(path)
+
+    def test_one_exception_covers_all_vulnerability_id_occurrences(self) -> None:
+        import tempfile
+
+        duplicate_target = deepcopy(self.report["Results"][0])
+        duplicate_target["Target"] = "second-package-db"
+        self.report["Results"].append(duplicate_target)
+        with tempfile.TemporaryDirectory() as directory:
+            path = self.write_exceptions(Path(directory), [self.exception()])
+            result = self.evaluate(path)
+        self.assertEqual(result["counts"]["critical"]["unavailable"], 2)
+        self.assertEqual(result["unexceptedCounts"]["critical"]["unavailable"], 0)
+
+    def test_exception_schema_matches_runtime_contract(self) -> None:
+        schema = json.loads(
+            (ROOT / "schemas" / "image-vulnerability-exceptions.schema.json").read_text(
+                encoding="utf-8"
+            )
+        )
+        Draft202012Validator.check_schema(schema)
+        Draft202012Validator(schema).validate(
+            {"schemaVersion": 1, "exceptions": [self.exception()]}
+        )
+        self.assertEqual(schema["properties"]["schemaVersion"]["const"], 1)
+        required = set(schema["properties"]["exceptions"]["items"]["required"])
+        self.assertEqual(
+            required,
+            {"imageDigest", "vulnerabilityId", "rationale", "owner", "expiresAt"},
+        )
 
 
 if __name__ == "__main__":
