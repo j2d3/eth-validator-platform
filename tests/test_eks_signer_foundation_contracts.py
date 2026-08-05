@@ -269,6 +269,9 @@ class EksSignerFoundationContractTests(unittest.TestCase):
             'validator-ephemery-162-04 = "validator-keystore-04"', SIGNER
         )
         self.assertIn(
+            'validator-ephemery-162-05 = "validator-keystore-05"', SIGNER
+        )
+        self.assertIn(
             'to = aws_secretsmanager_secret.web3signer_signing_key["validator-ephemery-162-01"]',
             compact_signer,
         )
