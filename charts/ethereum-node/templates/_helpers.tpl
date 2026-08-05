@@ -223,7 +223,7 @@ exec /home/user/nimbus_beacon_node \
   {{ printf "--network=/network/files" | quote }} \
   {{ printf "--external-beacon-api-url=%s" .Values.networkProfile.checkpointSync.primaryUrl | quote }} \
   {{ printf "--bootstrap-file=/network/files/%s" .Values.networkProfile.artifactBundle.files.consensusBootnodesText | quote }} \
-  --data-dir=/data \
+  --data-dir=/data/nimbus \
   --el=http://127.0.0.1:8551 \
   --jwt-secret=/jwt/jwt.hex \
   --rest \
