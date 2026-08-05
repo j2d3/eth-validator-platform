@@ -55,6 +55,9 @@ spec:
         erigon:
           mode: artifact-bundle
           network: null
+        besu:
+          mode: artifact-bundle
+          network: null
         lighthouse:
           mode: artifact-bundle
           network: null

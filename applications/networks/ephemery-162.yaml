@@ -45,6 +45,14 @@ spec:
     # choose Erigon for this network without a schema-level change.
     erigon:
       mode: artifact-bundle
+    # Besu adapter uses the same digest-verified genesis + bootnode files
+    # as Geth; unlike Geth there is no separate genesis-import step (Besu
+    # reads the chain data on first start). State lives under
+    # /data/database/ (per the chart's besuRunCommand). Declaring the
+    # adapter here lets a ServiceProfile choose Besu for this network
+    # without a schema-level change.
+    besu:
+      mode: artifact-bundle
     lighthouse:
       mode: artifact-bundle
     # Teku adapter uses the same generation-pinned config.yaml as Lighthouse

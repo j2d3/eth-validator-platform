@@ -95,6 +95,7 @@
             "geth": {"$ref": "#/$defs/gethAdapter"},
             "reth": {"$ref": "#/$defs/rethAdapter"},
             "erigon": {"$ref": "#/$defs/erigonAdapter"},
+            "besu": {"$ref": "#/$defs/besuAdapter"},
             "lighthouse": {"$ref": "#/$defs/lighthouseAdapter"},
             "teku": {"$ref": "#/$defs/tekuAdapter"},
             "nimbus": {"$ref": "#/$defs/nimbusAdapter"}
@@ -236,6 +237,27 @@
       ]
     },
     "erigonAdapter": {
+      "oneOf": [
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["mode", "network"],
+          "properties": {
+            "mode": {"const": "builtin"},
+            "network": {"enum": ["sepolia", "hoodi"]}
+          }
+        },
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["mode"],
+          "properties": {
+            "mode": {"const": "artifact-bundle"}
+          }
+        }
+      ]
+    },
+    "besuAdapter": {
       "oneOf": [
         {
           "type": "object",

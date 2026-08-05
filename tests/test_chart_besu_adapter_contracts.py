@@ -182,5 +182,77 @@ class BesuAdapterRenderTests(unittest.TestCase):
         self.assertEqual(init["name"], "initialize-geth-genesis")
 
 
+class BesuTekuCompositionRenderTests(unittest.TestCase):
+    """Renders the actual Besu + Teku composition end-to-end.
+
+    Neither the Besu-only nor the Teku-only adapter tests exercise
+    dispatch when both adapters fire simultaneously. This test builds
+    the composed values, renders through helm, and asserts the resulting
+    StatefulSet contains both the Besu execution command/image and the
+    Teku consensus command/image — the layer where the catalog #149
+    activation actually depends on the chart doing the right thing.
+    """
+
+    @classmethod
+    def setUpClass(cls) -> None:
+        values = besu_ephemery_values()
+        values["consensusClient"] = "teku"
+        values["networkProfile"]["clients"]["teku"] = {
+            "mode": "artifact-bundle",
+            "network": None,
+        }
+        cls.documents = helm_template(values)
+        cls.by_kind: dict[str, list[dict]] = {}
+        for d in cls.documents:
+            cls.by_kind.setdefault(d["kind"], []).append(d)
+
+    def test_stateful_set_contains_both_besu_and_teku_containers(self) -> None:
+        sts = self.by_kind["StatefulSet"][0]
+        containers = {
+            c["name"]: c for c in sts["spec"]["template"]["spec"]["containers"]
+        }
+        self.assertIn("execution", containers)
+        self.assertIn("consensus", containers)
+
+        execution = containers["execution"]
+        self.assertIn("hyperledger/besu", execution["image"])
+        self.assertIn("@sha256:", execution["image"])
+        exec_script = execution["args"][0]
+        self.assertIn("exec besu", exec_script)
+        self.assertIn("--engine-jwt-secret=/jwt/jwt.hex", exec_script)
+
+        consensus = containers["consensus"]
+        self.assertIn("consensys/teku", consensus["image"])
+        self.assertIn("@sha256:", consensus["image"])
+        cons_script = consensus["args"][0]
+        self.assertIn("exec /opt/teku/bin/teku", cons_script)
+        # Teku connects to Besu's Engine API via the shared JWT and the
+        # same intra-Pod localhost endpoint the Geth+Teku pair uses.
+        self.assertIn("--ee-endpoint=http://127.0.0.1:8551", cons_script)
+        self.assertIn("--ee-jwt-secret-file=/jwt/jwt.hex", cons_script)
+
+    def test_composition_does_not_leak_other_client_signatures(self) -> None:
+        sts = self.by_kind["StatefulSet"][0]
+        containers = {
+            c["name"]: c for c in sts["spec"]["template"]["spec"]["containers"]
+        }
+        exec_script = containers["execution"]["args"][0]
+        cons_script = containers["consensus"]["args"][0]
+        # Execution container is Besu, not any other EL.
+        for other_el in ("exec geth", "exec reth", "exec erigon"):
+            self.assertNotIn(other_el, exec_script)
+        # Consensus container is Teku, not Lighthouse or Nimbus.
+        self.assertNotIn("exec lighthouse", cons_script)
+        self.assertNotIn("exec /home/user/nimbus_beacon_node", cons_script)
+
+    def test_besu_teku_init_container_uses_besu_marker(self) -> None:
+        sts = self.by_kind["StatefulSet"][0]
+        init = next(
+            ic for ic in sts["spec"]["template"]["spec"]["initContainers"]
+            if "initialize-" in ic["name"]
+        )
+        self.assertEqual(init["name"], "initialize-besu-genesis")
+
+
 if __name__ == "__main__":
     unittest.main()
