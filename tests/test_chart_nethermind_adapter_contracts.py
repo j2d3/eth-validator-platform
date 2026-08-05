@@ -149,6 +149,12 @@ class NethermindAdapterRenderTests(unittest.TestCase):
         # fails under the chart's read-only-root Pod contract.
         self.assertIn("--Init.BaseDbPath=/data", script)
         self.assertIn("--KeyStore.KeyStoreDirectory=/data/keystore", script)
+        # The exact 1.39.2 image creates these files at process startup. Its
+        # defaults resolve beneath read-only /nethermind, so every mutable
+        # path must be redirected to a writable chart mount.
+        self.assertIn("--Init.StaticNodesPath=/tmp/static-nodes.json", script)
+        self.assertIn("--Init.TrustedNodesPath=/tmp/trusted-nodes.json", script)
+        self.assertIn("--Init.LogDirectory=/tmp/logs", script)
         # JSON-RPC + Engine API + metrics wiring.
         self.assertIn("--JsonRpc.Enabled=true", script)
         self.assertIn("--JsonRpc.Port=8545", script)
@@ -161,6 +167,42 @@ class NethermindAdapterRenderTests(unittest.TestCase):
         self.assertNotIn("exec reth", script)
         self.assertNotIn("exec erigon", script)
         self.assertNotIn("exec besu", script)
+
+    def test_bootnode_lines_are_normalized_to_one_nethermind_argument(self) -> None:
+        sts = self.by_kind["StatefulSet"][0]
+        execution = next(
+            c
+            for c in sts["spec"]["template"]["spec"]["containers"]
+            if c["name"] == "execution"
+        )
+        script = execution["args"][0]
+        prefix, separator, _ = script.partition("exec ./Nethermind.Runner")
+        self.assertTrue(separator)
+
+        with tempfile.TemporaryDirectory() as directory:
+            bootnodes = Path(directory) / "enodes.txt"
+            bootnodes.write_text("enode://first\nenode://second\n", encoding="utf-8")
+            probe = prefix.replace(
+                "/network/files/enodes.txt", str(bootnodes)
+            ) + "printf '%s\\n' \"$bootnodes\"\n"
+            result = subprocess.run(
+                ["/bin/sh", "-ec", probe],
+                check=False,
+                capture_output=True,
+                text=True,
+            )
+
+        self.assertEqual(result.returncode, 0, msg=result.stderr)
+        self.assertEqual(result.stdout, "enode://first,enode://second\n")
+        self.assertIn('--Network.Bootnodes="$bootnodes"', script)
+        self.assertNotIn("executionBootnode", script)
+
+        # Reconstructible peer files stay off the durable PVC. Otherwise a
+        # first-start interruption after Nethermind creates one of these files
+        # but before /data/nethermind_db exists would make the init state
+        # machine classify its own partial start as foreign data.
+        self.assertNotIn("--Init.StaticNodesPath=/data/", script)
+        self.assertNotIn("--Init.TrustedNodesPath=/data/", script)
 
     def test_podmonitor_uses_nethermind_metrics_path(self) -> None:
         # Nethermind exposes Prometheus at `/metrics`, not Geth's
