@@ -12,6 +12,19 @@ resources:
 patches:
   - path: monitoring-patch.yaml
   - target:
+      group: helm.toolkit.fluxcd.io
+      version: v2
+      kind: HelmRelease
+      name: kube-prometheus-stack
+      namespace: observability
+    patch: |-
+      - op: replace
+        path: /spec/values/additionalPrometheusRulesMap/ethereum-pvc-capacity/groups/0/rules/0/labels/cluster
+        value: eth-validator-platform-dev
+      - op: replace
+        path: /spec/values/additionalPrometheusRulesMap/ethereum-pvc-capacity/groups/0/rules/0/labels/environment
+        value: dev
+  - target:
       kind: Namespace
       name: cnpg-system
     patch: |-

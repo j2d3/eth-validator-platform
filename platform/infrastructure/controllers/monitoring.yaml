@@ -84,6 +84,210 @@ spec:
                 for: 15m
                 labels:
                   severity: warning
+      ethereum-pvc-capacity:
+        groups:
+          - name: ethereum-pvc-capacity
+            interval: 30s
+            rules:
+              # kubelet volume metrics identify claims only by namespace and
+              # PVC name. Normalize the allowlisted catalog labels from
+              # kube-state-metrics once, then join every storage signal to the
+              # platform assignment without relying on generated name
+              # substrings.
+              - record: validator_platform_pvc_identity
+                expr: |-
+                  max by (
+                    namespace,
+                    persistentvolumeclaim,
+                    network,
+                    network_profile,
+                    network_generation,
+                    customer_id,
+                    validator_id,
+                    assignment_id,
+                    execution_client,
+                    consensus_client,
+                    lifecycle_state
+                  ) (
+                    label_replace(
+                      label_replace(
+                        label_replace(
+                          label_replace(
+                            label_replace(
+                              label_replace(
+                                label_replace(
+                                  label_replace(
+                                    label_replace(
+                                      kube_persistentvolumeclaim_labels{
+                                        namespace="ethereum",
+                                        label_platform_galaxy_lab_assignment_id!=""
+                                      },
+                                      "network", "$1",
+                                      "label_platform_galaxy_lab_network", "(.+)"
+                                    ),
+                                    "execution_client", "$1",
+                                    "label_platform_galaxy_lab_execution_client", "(.+)"
+                                  ),
+                                  "consensus_client", "$1",
+                                  "label_platform_galaxy_lab_consensus_client", "(.+)"
+                                ),
+                                "lifecycle_state", "$1",
+                                "label_platform_galaxy_lab_lifecycle", "(.+)"
+                              ),
+                              "network_profile", "$1",
+                              "label_platform_galaxy_lab_network_profile", "(.+)"
+                            ),
+                            "network_generation", "$1",
+                            "label_platform_galaxy_lab_network_generation", "(.+)"
+                          ),
+                          "customer_id", "$1",
+                          "label_platform_galaxy_lab_customer_id", "(.+)"
+                        ),
+                        "validator_id", "$1",
+                        "label_platform_galaxy_lab_validator_id", "(.+)"
+                      ),
+                      "assignment_id", "$1",
+                      "label_platform_galaxy_lab_assignment_id", "(.+)"
+                    )
+                  )
+                labels:
+                  cluster: kind-eth-validator-local
+                  environment: local
+              - record: validator_platform_pvc_used_bytes
+                expr: |-
+                  max by (namespace, persistentvolumeclaim) (
+                    kubelet_volume_stats_used_bytes{namespace="ethereum"}
+                  )
+                  * on (namespace, persistentvolumeclaim)
+                    group_left(
+                      cluster,
+                      environment,
+                      network,
+                      network_profile,
+                      network_generation,
+                      customer_id,
+                      validator_id,
+                      assignment_id,
+                      execution_client,
+                      consensus_client,
+                      lifecycle_state
+                    )
+                    validator_platform_pvc_identity
+              - record: validator_platform_pvc_capacity_bytes
+                expr: |-
+                  max by (namespace, persistentvolumeclaim) (
+                    kubelet_volume_stats_capacity_bytes{namespace="ethereum"}
+                  )
+                  * on (namespace, persistentvolumeclaim)
+                    group_left(
+                      cluster,
+                      environment,
+                      network,
+                      network_profile,
+                      network_generation,
+                      customer_id,
+                      validator_id,
+                      assignment_id,
+                      execution_client,
+                      consensus_client,
+                      lifecycle_state
+                    )
+                    validator_platform_pvc_identity
+              - record: validator_platform_pvc_utilization_ratio
+                expr: |-
+                  validator_platform_pvc_used_bytes
+                  /
+                  clamp_min(validator_platform_pvc_capacity_bytes, 1)
+              # A projection is withheld until the recording rule existed
+              # five hours ago. This keeps a handful of startup samples from
+              # becoming a confident-looking forecast. Negative slopes are
+              # clamped to zero.
+              - record: validator_platform_pvc_growth_bytes_per_second
+                expr: |-
+                  clamp_min(
+                    deriv(validator_platform_pvc_used_bytes[6h]),
+                    0
+                  )
+                  and on (
+                    cluster,
+                    environment,
+                    namespace,
+                    persistentvolumeclaim,
+                    network,
+                    network_profile,
+                    network_generation,
+                    customer_id,
+                    validator_id,
+                    assignment_id,
+                    execution_client,
+                    consensus_client,
+                    lifecycle_state
+                  )
+                  (
+                    present_over_time(
+                      validator_platform_pvc_used_bytes[5m] offset 5h
+                    ) == 1
+                  )
+              - record: validator_platform_pvc_projected_seconds_to_full
+                expr: |-
+                  clamp_min(
+                    validator_platform_pvc_capacity_bytes
+                    - validator_platform_pvc_used_bytes,
+                    0
+                  )
+                  /
+                  clamp_min(
+                    validator_platform_pvc_growth_bytes_per_second,
+                    1
+                  )
+                  and on (
+                    cluster,
+                    environment,
+                    namespace,
+                    persistentvolumeclaim,
+                    network,
+                    network_profile,
+                    network_generation,
+                    customer_id,
+                    validator_id,
+                    assignment_id,
+                    execution_client,
+                    consensus_client,
+                    lifecycle_state
+                  )
+                  (
+                    validator_platform_pvc_growth_bytes_per_second > 1024
+                  )
+              - alert: EthereumPersistentVolumeUtilizationHigh
+                annotations:
+                  description: >-
+                    PersistentVolumeClaim {{ $labels.namespace }}/{{
+                    $labels.persistentvolumeclaim }} for assignment {{
+                    $labels.assignment_id }} has exceeded 85% utilization for
+                    30 minutes.
+                  runbook_url: >-
+                    https://github.com/j2d3/eth-validator-platform/blob/main/docs/runbooks/ethereum-alerts.md#persistent-volume-capacity
+                  summary: Ethereum client persistent volume utilization is high.
+                expr: validator_platform_pvc_utilization_ratio > 0.85
+                for: 30m
+                labels:
+                  category: storage
+                  severity: warning
+              - alert: EthereumPersistentVolumeProjectedFull
+                annotations:
+                  description: >-
+                    PersistentVolumeClaim {{ $labels.namespace }}/{{
+                    $labels.persistentvolumeclaim }} for assignment {{
+                    $labels.assignment_id }} is projected to fill within seven
+                    days after at least five hours of recorded history.
+                  runbook_url: >-
+                    https://github.com/j2d3/eth-validator-platform/blob/main/docs/runbooks/ethereum-alerts.md#persistent-volume-capacity
+                  summary: Ethereum client persistent volume is projected to fill.
+                expr: validator_platform_pvc_projected_seconds_to_full < 604800
+                for: 30m
+                labels:
+                  category: storage
+                  severity: warning
     grafana:
       enabled: true
       defaultDashboardsEnabled: true
@@ -147,4 +351,4 @@ spec:
       metricLabelsAllowlist:
         - nodes=[eks.amazonaws.com/nodegroup]
         - pods=[platform.galaxy-lab/network,platform.galaxy-lab/network-profile,platform.galaxy-lab/network-generation,platform.galaxy-lab/customer-id,platform.galaxy-lab/validator-id,platform.galaxy-lab/assignment-id,platform.galaxy-lab/execution-client,platform.galaxy-lab/consensus-client,platform.galaxy-lab/component]
-        - persistentvolumeclaims=[platform.galaxy-lab/network,platform.galaxy-lab/network-profile,platform.galaxy-lab/network-generation,platform.galaxy-lab/customer-id,platform.galaxy-lab/validator-id,platform.galaxy-lab/assignment-id]
+        - persistentvolumeclaims=[platform.galaxy-lab/network,platform.galaxy-lab/network-profile,platform.galaxy-lab/network-generation,platform.galaxy-lab/customer-id,platform.galaxy-lab/validator-id,platform.galaxy-lab/assignment-id,platform.galaxy-lab/execution-client,platform.galaxy-lab/consensus-client,platform.galaxy-lab/lifecycle]

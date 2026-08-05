@@ -75,6 +75,39 @@ an identity absent from Web3Signer. Compare the Git catalog, projected
 ExternalSecret descriptors, signer key count, and validator-client assignment.
 Do not rotate or replace a validator key merely to clear the alert.
 
+## Persistent volume capacity
+
+`EthereumPersistentVolumeUtilizationHigh` means a mounted execution,
+consensus, or validator claim remained above 85% filesystem utilization for
+30 minutes. `EthereumPersistentVolumeProjectedFull` means the same claim is
+projected to fill within seven days for 30 minutes. The projection uses the
+positive slope of six hours of used-byte samples, is withheld until the rule
+existed at least five hours ago, and ignores growth at or below 1 KiB/s. A
+missing projection therefore means insufficient history or no material
+positive growth; it does not mean the claim has unlimited capacity.
+
+1. Select the `assignment_id` and `persistentvolumeclaim` from the alert, then
+   open the validator-detail dashboard's storage panels. The claim suffix
+   identifies the execution, consensus, or validator data role.
+2. Compare utilization, recent growth, client sync phase, and the configured
+   claim size. Initial sync can grow faster than steady state; do not treat one
+   extrapolation as a stable long-term forecast.
+3. Verify the StorageClass permits expansion and that the EBS volume and
+   filesystem can be expanded through the reviewed storage procedure. EBS
+   `gp3` claims can expand but cannot shrink.
+4. Do not delete, replace, or recreate a claim merely to clear the alert.
+   Validator-client data is not the RDS slashing-protection record, but
+   deleting it can still disrupt doppelganger state and duties. Execution and
+   consensus data replacement must remain generation- and client-aware.
+5. After expansion or other remediation, require both alert resolution and
+   continuing client head/duty evidence. A cleared capacity expression alone
+   does not establish validator health.
+
+The recording rules scope kubelet volume statistics by joining
+`(namespace, persistentvolumeclaim)` to allowlisted platform labels on
+`kube_persistentvolumeclaim_labels`. They do not infer assignment identity
+from generated PVC names and do not emit validator public keys.
+
 ## Resolution evidence
 
 Record when the alert fired and resolved, the desired-state commit, the

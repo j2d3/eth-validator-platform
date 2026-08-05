@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+import subprocess
 import unittest
 from pathlib import Path
 
@@ -20,6 +21,144 @@ def load_yaml(path: Path) -> dict:
 
 
 class ObservabilityContractTests(unittest.TestCase):
+    def test_ethereum_pvc_capacity_rules_are_assignment_scoped_and_conservative(self) -> None:
+        monitoring = load_yaml(CONTROLLERS / "monitoring.yaml")
+        values = monitoring["spec"]["values"]
+        groups = values["additionalPrometheusRulesMap"]["ethereum-pvc-capacity"][
+            "groups"
+        ]
+        self.assertEqual(len(groups), 1)
+        self.assertEqual(groups[0]["name"], "ethereum-pvc-capacity")
+        self.assertEqual(groups[0]["interval"], "30s")
+
+        rules = groups[0]["rules"]
+        records = {rule["record"]: rule for rule in rules if "record" in rule}
+        alerts = {rule["alert"]: rule for rule in rules if "alert" in rule}
+
+        self.assertEqual(
+            set(records),
+            {
+                "validator_platform_pvc_identity",
+                "validator_platform_pvc_used_bytes",
+                "validator_platform_pvc_capacity_bytes",
+                "validator_platform_pvc_utilization_ratio",
+                "validator_platform_pvc_growth_bytes_per_second",
+                "validator_platform_pvc_projected_seconds_to_full",
+            },
+        )
+
+        identity = records["validator_platform_pvc_identity"]
+        self.assertIn("kube_persistentvolumeclaim_labels", identity["expr"])
+        self.assertIn(
+            'label_platform_galaxy_lab_assignment_id!=""', identity["expr"]
+        )
+        self.assertNotIn("persistentvolumeclaim=~", identity["expr"])
+        self.assertEqual(identity["labels"]["cluster"], "kind-eth-validator-local")
+        self.assertEqual(identity["labels"]["environment"], "local")
+        for label in (
+            "network",
+            "network_profile",
+            "network_generation",
+            "customer_id",
+            "validator_id",
+            "assignment_id",
+            "execution_client",
+            "consensus_client",
+            "lifecycle_state",
+        ):
+            self.assertIn(label, identity["expr"])
+
+        for record in (
+            "validator_platform_pvc_used_bytes",
+            "validator_platform_pvc_capacity_bytes",
+        ):
+            expression = records[record]["expr"]
+            self.assertIn("on (namespace, persistentvolumeclaim)", expression)
+            self.assertIn("group_left(", expression)
+            self.assertIn("validator_platform_pvc_identity", expression)
+
+        growth = records["validator_platform_pvc_growth_bytes_per_second"]["expr"]
+        self.assertIn("deriv(validator_platform_pvc_used_bytes[6h])", growth)
+        self.assertIn("clamp_min(", growth)
+        self.assertIn("offset 5h", growth)
+        self.assertIn("present_over_time(", growth)
+
+        projection = records["validator_platform_pvc_projected_seconds_to_full"][
+            "expr"
+        ]
+        self.assertIn("clamp_min(", projection)
+        self.assertIn("validator_platform_pvc_growth_bytes_per_second > 1024", projection)
+
+        self.assertEqual(
+            set(alerts),
+            {
+                "EthereumPersistentVolumeUtilizationHigh",
+                "EthereumPersistentVolumeProjectedFull",
+            },
+        )
+        utilization = alerts["EthereumPersistentVolumeUtilizationHigh"]
+        self.assertEqual(utilization["expr"], "validator_platform_pvc_utilization_ratio > 0.85")
+        self.assertEqual(utilization["for"], "30m")
+        projection_alert = alerts["EthereumPersistentVolumeProjectedFull"]
+        self.assertEqual(
+            projection_alert["expr"],
+            "validator_platform_pvc_projected_seconds_to_full < 604800",
+        )
+        self.assertEqual(projection_alert["for"], "30m")
+        for alert in alerts.values():
+            self.assertEqual(alert["labels"]["severity"], "warning")
+            self.assertEqual(alert["labels"]["category"], "storage")
+            self.assertIn("#persistent-volume-capacity", alert["annotations"]["runbook_url"])
+
+        allowlist = values["kube-state-metrics"]["metricLabelsAllowlist"]
+        pvc_allowlist = next(
+            entry for entry in allowlist if entry.startswith("persistentvolumeclaims=")
+        )
+        for label in (
+            "platform.galaxy-lab/assignment-id",
+            "platform.galaxy-lab/execution-client",
+            "platform.galaxy-lab/consensus-client",
+            "platform.galaxy-lab/lifecycle",
+        ):
+            self.assertIn(label, pvc_allowlist)
+
+    def test_dev_render_overrides_pvc_rule_environment_identity(self) -> None:
+        result = subprocess.run(
+            [
+                "kubectl",
+                "kustomize",
+                str(
+                    REPOSITORY_ROOT
+                    / "platform"
+                    / "infrastructure"
+                    / "overlays"
+                    / "dev"
+                    / "controllers"
+                ),
+            ],
+            check=True,
+            capture_output=True,
+            text=True,
+        )
+        release = next(
+            document
+            for document in yaml.safe_load_all(result.stdout)
+            if document
+            and document.get("kind") == "HelmRelease"
+            and document["metadata"]["name"] == "kube-prometheus-stack"
+        )
+        groups = release["spec"]["values"]["additionalPrometheusRulesMap"][
+            "ethereum-pvc-capacity"
+        ]["groups"]
+        identity = next(
+            rule
+            for group in groups
+            for rule in group["rules"]
+            if rule.get("record") == "validator_platform_pvc_identity"
+        )
+        self.assertEqual(identity["labels"]["cluster"], "eth-validator-platform-dev")
+        self.assertEqual(identity["labels"]["environment"], "dev")
+
     def test_loki_is_bounded_persistent_single_binary(self) -> None:
         release = load_yaml(CONTROLLERS / "logging-loki.yaml")
         chart = release["spec"]["chart"]["spec"]

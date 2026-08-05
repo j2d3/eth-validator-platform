@@ -66,6 +66,9 @@ EXPECTED_ALLOWLIST = {
         "platform.galaxy-lab/customer-id",
         "platform.galaxy-lab/validator-id",
         "platform.galaxy-lab/assignment-id",
+        "platform.galaxy-lab/execution-client",
+        "platform.galaxy-lab/consensus-client",
+        "platform.galaxy-lab/lifecycle",
     },
 }
 
@@ -317,10 +320,23 @@ class DashboardJoinContractTests(unittest.TestCase):
                         f"{series} must be joined {key}, not on another resource's key",
                     )
                     self.assertIn("group_left()", expression)
+
+        # PVC identity is normalized once by the shared recording rules, then
+        # dashboards consume the bounded validator_platform_pvc_* series. The
+        # source metric and join therefore live in the same rule group rather
+        # than in every dashboard query.
+        monitoring = (CONTROLLERS / "monitoring.yaml").read_text(encoding="utf-8")
+        pvc_series = "kube_persistentvolumeclaim_labels"
+        pvc_key = JOIN_KEYS[pvc_series]
+        self.assertIn(pvc_series, monitoring)
+        self.assertIn(pvc_key, monitoring)
+        self.assertIn("group_left(", monitoring)
+        seen.add(pvc_series)
+
         self.assertEqual(
             seen,
             set(JOIN_KEYS),
-            "both label joins must be exercised by a dashboard panel",
+            "both label joins must be exercised by a dashboard or shared recording rule",
         )
 
     def test_joined_panels_select_the_assignment_by_label(self) -> None:
