@@ -131,8 +131,17 @@ class ScrapeRelabelContractTests(unittest.TestCase):
         )
         for clause in aggregations:
             with self.subTest(clause=clause.strip()[:60]):
+                labels = {label.strip() for label in clause.split(",")}
+                resource_join_stage = labels in (
+                    {"namespace", "pod", "assignment_id", "component"},
+                    {
+                        "namespace",
+                        "pod",
+                        "label_platform_galaxy_lab_assignment_id",
+                    },
+                )
                 self.assertTrue(
-                    any(marker in clause for marker in accepted),
+                    resource_join_stage or any(marker in clause for marker in accepted),
                     "aggregations must retain the shared telemetry label set",
                 )
         # Belt-and-braces: the template must set $telemetryLabels from the
@@ -141,6 +150,59 @@ class ScrapeRelabelContractTests(unittest.TestCase):
         self.assertRegex(
             self.rules,
             r'\$telemetryLabels\s*:=\s*include\s+"ethereum-node\.telemetryLabels"',
+        )
+
+    def test_container_resource_rules_use_cadvisor_and_controlled_identity_joins(
+        self,
+    ) -> None:
+        """Every pair component gets resource data without client-specific metrics."""
+        expected = {
+            "validator_platform_container_cpu_cores": (
+                "container_cpu_usage_seconds_total",
+                "rate(",
+            ),
+            "validator_platform_container_memory_working_set_bytes": (
+                "container_memory_working_set_bytes",
+                None,
+            ),
+        }
+        for record, (source, wrapper) in expected.items():
+            with self.subTest(record=record):
+                self.assertIn(f"- record: {record}", self.rules)
+                section = self.rules.split(f"- record: {record}", 1)[1]
+                section = section.split("- record:", 1)[0]
+                self.assertIn(source, section)
+                if wrapper:
+                    self.assertIn(wrapper, section)
+                self.assertIn(
+                    "on (namespace, pod) "
+                    "group_left(label_platform_galaxy_lab_assignment_id)",
+                    section,
+                )
+                self.assertIn("kube_pod_labels", section)
+                self.assertIn(
+                    "max by (namespace, pod, "
+                    "label_platform_galaxy_lab_assignment_id)",
+                    section,
+                )
+                self.assertIn(
+                    '"assignment_id", "$1", '
+                    '"label_platform_galaxy_lab_assignment_id", "(.+)"',
+                    section,
+                )
+                self.assertIn(
+                    '"component", "$1", "container", '
+                    '"(execution|consensus|validator)"',
+                    section,
+                )
+                self.assertIn("* on (assignment_id, component)", section)
+                self.assertIn("validator_platform_pair_target_up", section)
+                self.assertIn("0 * max by ({{ $telemetryLabels }}, component)", section)
+                self.assertIn("sum by ({{ $telemetryLabels }}, component)", section)
+
+        self.assertNotIn("- record: validator_platform_process_cpu_cores", self.rules)
+        self.assertNotIn(
+            "- record: validator_platform_process_resident_memory_bytes", self.rules
         )
 
     def test_telemetry_label_helper_lists_every_label(self) -> None:
