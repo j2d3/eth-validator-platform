@@ -1,9 +1,10 @@
 apiVersion: kustomize.config.k8s.io/v1beta1
 kind: Kustomization
 resources:
-  # Six generation-pinned Ephemery pairs are admitted in this EKS node
+  # Seven generation-pinned Ephemery pairs are admitted in this EKS node
   # slice — Geth+Lighthouse, Reth+Lighthouse, Geth+Teku, and Reth+Teku
-  # (signing), plus Erigon+Lighthouse and Geth+Nimbus (non-signing). The
+  # (signing), plus Erigon+Lighthouse, Geth+Nimbus, and Besu+Teku
+  # (non-signing). The
   # generated catalog projection remains the source; the overlay only
   # deletes the local-only synthetic-01 assignment and injects each pair's
   # EKS-specific inputs (valuesFiles + telemetry + engineJwt). Every
@@ -164,6 +165,37 @@ patches:
       # consensusClient=nimbus from the projection). Same Engine JWT
       # source as the other Ephemery pairs — per-pair scoped by
       # fullnameOverride (pair-<validator>-engine-jwt).
+      - op: add
+        path: /spec/chart/spec/valuesFiles
+        value:
+          - charts/ethereum-node/values.yaml
+          - charts/ethereum-node/values-eks-ephemery.yaml
+      - op: replace
+        path: /spec/values/telemetry
+        value:
+          cluster: eth-validator-platform-dev
+          environment: dev
+      - op: add
+        path: /spec/values/engineJwt
+        value:
+          secretStoreName: aws-engine-secrets
+          remoteSecretKey: eth-validator-platform-dev/ethereum/engine-jwt
+          remoteSecretProperty: jwt.hex
+  - target:
+      group: helm.toolkit.fluxcd.io
+      version: v2
+      kind: HelmRelease
+      name: assignment-ephemery-162-synthetic-besu-teku
+    patch: |-
+      # Besu+Teku pair: Besu EL adapter landed in #137, Teku CL adapter in
+      # #109. Both were already chart-supported; this is a catalog-only
+      # activation of the composition. First rendered release with two
+      # JVM clients co-scheduled in one Pod (heap-sensitive process
+      # colocation). Same values-eks-ephemery.yaml profile (EL/CL-agnostic;
+      # the chart dispatches on both executionClient=besu and
+      # consensusClient=teku from the projection). Same Engine JWT source
+      # as the other Ephemery pairs — per-pair scoped by fullnameOverride
+      # (pair-<validator>-engine-jwt).
       - op: add
         path: /spec/chart/spec/valuesFiles
         value:
