@@ -27,9 +27,9 @@ instead of the Service ClusterIP.
 - aggregate Ethereum Pod CPU, memory, restart, and persistent-volume usage;
 - enabled validator count, signer target state, loaded-key count, permitted and
   prevented slashing checks, and unknown-key signing requests;
-- aggregate firing-alert total plus critical/warning counts, excluding the
-  always-firing Prometheus `Watchdog`; no alert labels or annotations cross the
-  public API;
+- aggregate actionable firing-alert total plus critical/warning counts,
+  excluding the stock `Watchdog` and `InfoInhibitor` meta-alerts; no alert
+  labels or annotations cross the public API;
 - client-pair target state, peers, sync progress, lag, CPU, and memory;
 - the enabled-validator count for each active client pair; and
 - a per-pair Grafana URL only when the configured Grafana base URL passes the

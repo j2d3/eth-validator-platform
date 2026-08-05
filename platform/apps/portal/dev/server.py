@@ -113,14 +113,17 @@ SCALAR_QUERIES = {
         "max(validator_platform_signer_missing_identifier_total)"
     ),
     "firingAlertsTotal": (
-        'sum(ALERTS{alertstate="firing",alertname!="Watchdog"}) or vector(0)'
+        'sum(ALERTS{alertstate="firing",alertname!~"Watchdog|InfoInhibitor"}) '
+        "or vector(0)"
     ),
     "firingAlertsCritical": (
-        'sum(ALERTS{alertstate="firing",alertname!="Watchdog",severity="critical"}) '
+        'sum(ALERTS{alertstate="firing",alertname!~"Watchdog|InfoInhibitor",'
+        'severity="critical"}) '
         "or vector(0)"
     ),
     "firingAlertsWarning": (
-        'sum(ALERTS{alertstate="firing",alertname!="Watchdog",severity="warning"}) '
+        'sum(ALERTS{alertstate="firing",alertname!~"Watchdog|InfoInhibitor",'
+        'severity="warning"}) '
         "or vector(0)"
     ),
 }
