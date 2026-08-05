@@ -302,43 +302,163 @@ class RestoreTargetTests(unittest.TestCase):
         self.assertIn("not enabled by default", default)
         self.assertIn("not copied from the source", default)
 
-    def test_backup_retention_is_not_claimed_as_a_restore_parameter(self) -> None:
-        # RestoreDBInstanceToPointInTime has no BackupRetentionPeriod member, so
-        # a contract that supplied one would describe a call that cannot be made.
-        declared = {
-            parameter["id"]
+    def test_the_multi_az_default_is_the_documented_one(self) -> None:
+        # The restore command description documents a new instance as single-AZ
+        # by default, except for SQL Server with a mirroring option group. The
+        # flag is still supplied so the reviewed call states its own posture.
+        parameter = next(
+            parameter
             for parameter in self.contract["restore_target"]["explicit_restore_parameters"]
-        }
+            if parameter["id"] == "no-multi-az"
+        )
+        default = " ".join(parameter["default_if_omitted"].split())
 
-        target = self.contract["restore_target"]
+        self.assertIn("single-AZ deployment by default", default)
+        self.assertIn("SQL Server", default)
 
-        self.assertEqual(declared & preflight.UNSUPPORTED_RESTORE_PARAMETERS, set())
-        self.assertIs(target["backup"]["supplied_on_restore_call"], False)
-        # Absent is not enough: the contract has to say why, and what covers it.
-        explained = {entry["id"] for entry in target["not_supplied_on_restore_call"]}
-        self.assertEqual(preflight.UNSUPPORTED_RESTORE_PARAMETERS - explained, set())
+    def test_backup_retention_is_supplied_as_zero_on_the_restore_call(self) -> None:
+        # The restore API does accept the parameter. Leaving it out is not
+        # neutral: the documented default is the source's existing setting, so
+        # the drill copy would keep its own backups of slashing history.
+        parameter = next(
+            parameter
+            for parameter in self.contract["restore_target"]["explicit_restore_parameters"]
+            if parameter["id"] == "backup-retention-period"
+        )
+        backup = self.contract["restore_target"]["backup"]
 
-    def test_dropping_an_unsupported_parameter_explanation_is_rejected(self) -> None:
+        self.assertIn("backup-retention-period", preflight.REQUIRED_RESTORE_PARAMETERS)
+        self.assertEqual(parameter["restore_call_value"], 0)
+        self.assertIs(backup["supplied_on_restore_call"], True)
+        # Supplied and expected have to be the same number, or reading it back
+        # afterwards compares against something nobody asked for.
+        self.assertEqual(
+            parameter["restore_call_value"], backup["target_backup_retention_days"]
+        )
+
+    def test_omitting_backup_retention_from_the_restore_call_is_rejected(self) -> None:
         contract = self.mutated()
-        contract["restore_target"]["not_supplied_on_restore_call"] = []
+        target = contract["restore_target"]
+        target["explicit_restore_parameters"] = [
+            parameter
+            for parameter in target["explicit_restore_parameters"]
+            if parameter["id"] != "backup-retention-period"
+        ]
 
         self.assertIn(
             "targets/restore-parameters-are-explicit",
             failed(preflight.run_checks(contract, ROOT)),
         )
 
-    def test_supplying_backup_retention_on_the_restore_call_is_rejected(self) -> None:
+    def test_observing_retention_instead_of_supplying_it_is_rejected(self) -> None:
         contract = self.mutated()
-        contract["restore_target"]["explicit_restore_parameters"].append(
-            {
-                "id": "backup-retention-period",
-                "value": "0",
-                "default_if_omitted": "the source's retention period",
-            }
+        contract["restore_target"]["backup"]["supplied_on_restore_call"] = False
+
+        self.assertIn(
+            "targets/backup-retention-mismatch-fails-closed",
+            failed(preflight.run_checks(contract, ROOT)),
         )
+
+    def test_supplying_a_retention_the_check_does_not_expect_is_rejected(self) -> None:
+        # Supplying 7 while verifying against 0 would make the post-restore read
+        # a comparison against a value the approved call never contained.
+        contract = self.mutated()
+        for parameter in contract["restore_target"]["explicit_restore_parameters"]:
+            if parameter["id"] == "backup-retention-period":
+                parameter["restore_call_value"] = 7
+
+        self.assertIn(
+            "targets/backup-retention-mismatch-fails-closed",
+            failed(preflight.run_checks(contract, ROOT)),
+        )
+
+    def test_an_untyped_retention_value_is_rejected(self) -> None:
+        # `--backup-retention-period` is an integer option, so prose alone is not
+        # a value a check can compare.
+        contract = self.mutated()
+        for parameter in contract["restore_target"]["explicit_restore_parameters"]:
+            if parameter["id"] == "backup-retention-period":
+                del parameter["restore_call_value"]
 
         self.assertIn(
             "targets/restore-parameters-are-explicit",
+            failed(preflight.run_checks(contract, ROOT)),
+        )
+
+    def test_the_cli_capability_gate_refuses_before_the_first_gate(self) -> None:
+        # The parameter is in the current API but not in every installed CLI.
+        # The drill refuses at preconditions rather than silently omitting it.
+        gate = next(
+            gate
+            for gate in self.contract["restore_target"]["cli_capability_preconditions"]
+            if gate["parameter"] == "backup-retention-period"
+        )
+
+        self.assertEqual(gate["must_expose"], "--backup-retention-period")
+        self.assertTrue(gate["command"].endswith("help"))
+        self.assertIn("restore-db-instance-to-point-in-time", gate["command"])
+        self.assertEqual(gate["on_missing"], preflight.ABORT_BEFORE_FIRST_GATE)
+        self.assertIs(gate["omitting_the_parameter_is_an_accepted_fallback"], False)
+        self.assertTrue(gate["remediation"].strip())
+
+    def test_dropping_the_cli_capability_gate_is_rejected(self) -> None:
+        # Another gate remains, so this is a version-dependent parameter left
+        # ungated rather than a structurally absent section.
+        contract = self.mutated()
+        contract["restore_target"]["cli_capability_preconditions"] = [
+            {
+                "id": "unrelated",
+                "parameter": "db-subnet-group-name",
+                "command": "aws rds restore-db-instance-to-point-in-time help",
+                "must_expose": "--db-subnet-group-name",
+                "on_missing": preflight.ABORT_BEFORE_FIRST_GATE,
+                "omitting_the_parameter_is_an_accepted_fallback": False,
+                "remediation": "upgrade the AWS CLI",
+            }
+        ]
+
+        self.assertIn(
+            "targets/cli-capability-gate-is-fail-closed",
+            failed(preflight.run_checks(contract, ROOT)),
+        )
+
+    def test_a_contract_without_any_capability_gate_is_a_hard_error(self) -> None:
+        contract = self.mutated()
+        contract["restore_target"]["cli_capability_preconditions"] = []
+
+        with self.assertRaises(preflight.DrillContractError):
+            preflight.run_checks(contract, ROOT)
+
+    def test_accepting_an_omitted_parameter_as_a_fallback_is_rejected(self) -> None:
+        contract = self.mutated()
+        for gate in contract["restore_target"]["cli_capability_preconditions"]:
+            gate["omitting_the_parameter_is_an_accepted_fallback"] = True
+
+        self.assertIn(
+            "targets/cli-capability-gate-is-fail-closed",
+            failed(preflight.run_checks(contract, ROOT)),
+        )
+
+    def test_a_capability_gate_that_continues_on_a_missing_flag_is_rejected(self) -> None:
+        contract = self.mutated()
+        for gate in contract["restore_target"]["cli_capability_preconditions"]:
+            gate["on_missing"] = "warn-and-continue"
+
+        self.assertIn(
+            "targets/cli-capability-gate-is-fail-closed",
+            failed(preflight.run_checks(contract, ROOT)),
+        )
+
+    def test_checking_a_cli_version_instead_of_the_installed_help_is_rejected(self) -> None:
+        # A version number is not the capability. The gap between the published
+        # reference and the installed command is exactly what this gate covers,
+        # so it has to interrogate the installed command's own help.
+        contract = self.mutated()
+        for gate in contract["restore_target"]["cli_capability_preconditions"]:
+            gate["command"] = "aws --version"
+
+        self.assertIn(
+            "targets/cli-capability-gate-is-fail-closed",
             failed(preflight.run_checks(contract, ROOT)),
         )
 
@@ -1070,10 +1190,31 @@ class DrillSourceCodeTests(unittest.TestCase):
 
         self.assertIn("`--no-deletion-protection`", runbook)
         self.assertNotIn("--deletion-protection false` | off", runbook)
-        # The restore API has no retention parameter, so the runbook must not
-        # instruct an operator to pass one.
-        self.assertNotIn("--backup-retention-period 0", runbook)
-        self.assertIn("has no `--backup-retention-period` parameter", runbook)
+        # The restore API does accept the parameter, and omitting it inherits the
+        # source's retention, so the runbook must instruct an operator to pass it.
+        self.assertIn("`--backup-retention-period 0`", runbook)
+        self.assertNotIn("has no `--backup-retention-period` parameter", runbook)
+
+    def test_the_runbook_gates_the_drill_on_the_installed_cli(self) -> None:
+        runbook = " ".join(RUNBOOK_PATH.read_text(encoding="utf-8").split())
+
+        # The operator-facing check is the installed command's own help, and the
+        # documented response to a missing flag is upgrading, never omitting.
+        self.assertIn(
+            "aws rds restore-db-instance-to-point-in-time help "
+            "| grep -- --backup-retention-period",
+            runbook,
+        )
+        self.assertIn("stop here and upgrade the AWS CLI", runbook)
+        self.assertIn("Do not drop the parameter to make the command run.", runbook)
+
+    def test_the_runbook_states_the_documented_single_az_default(self) -> None:
+        runbook = " ".join(RUNBOOK_PATH.read_text(encoding="utf-8").split())
+
+        self.assertIn("single-AZ deployment by default", runbook)
+        self.assertNotIn("the restore API states no default for Multi-AZ", runbook)
+        # Documented default or not, the flag stays in the reviewed call.
+        self.assertIn("`--no-multi-az`", runbook)
 
     def test_the_runbook_aborts_on_a_backup_retention_mismatch(self) -> None:
         runbook = " ".join(RUNBOOK_PATH.read_text(encoding="utf-8").split())

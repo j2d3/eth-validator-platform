@@ -73,14 +73,27 @@ REQUIRED_RESTORE_PARAMETERS = frozenset(
         "no-multi-az",
         "availability-zone",
         "no-deletion-protection",
+        "backup-retention-period",
     }
 )
 
-# `RestoreDBInstanceToPointInTime` has no `BackupRetentionPeriod` member, so the
-# restored copy's retention cannot be chosen on the restore call. A contract that
-# claimed to supply it would describe a command that fails, and the failure would
-# be discovered with signing already off and a restore already billing.
-UNSUPPORTED_RESTORE_PARAMETERS = frozenset({"backup-retention-period"})
+# `--backup-retention-period` takes a value argument rather than being a boolean
+# flag pair, so the boolean-syntax rule below does not apply to it and its value
+# is checked as a number instead.
+INTEGER_RESTORE_PARAMETERS = frozenset({"backup-retention-period"})
+
+# The parameter is in the current restore API surface, but an older installed CLI
+# does not generate it into its help output — aws-cli 2.17.62 does not, 2.35.19
+# does. Omitting it is not a safe fallback: the documented default is "Uses
+# existing setting", so a restore without it inherits the source's retention and
+# the drill copy starts taking automated backups of slashing history. Each of
+# these must therefore be gated on the installed command's own help.
+CAPABILITY_GATED_PARAMETERS = frozenset({"backup-retention-period"})
+
+# The gate runs at preconditions, before signing stops, so refusing costs
+# nothing. Declared as an enum rather than prose so a check reads it rather than
+# interpreting it.
+ABORT_BEFORE_FIRST_GATE = "abort-before-first-gate"
 
 # The AWS CLI expresses a boolean as a flag pair — `--multi-az | --no-multi-az`
 # — and rejects a value argument. `--deletion-protection false` does not turn
@@ -457,48 +470,30 @@ def check_restore_parameters(target: dict[str, Any]) -> list[CheckResult]:
         ):
             incomplete.append(parameter_id)
         # A boolean written as `--deletion-protection false` is a parse error,
-        # not a setting, and a parameter the restore API does not accept is a
-        # call that cannot be made.
+        # not a setting. An integer option is the other way round: it takes a
+        # value argument, so the boolean-syntax rule does not apply to it.
         value = str(parameter.get("value", "")).strip().lower()
-        if (
-            parameter_id in DISABLED_BY_NO_PREFIX
-            or parameter_id in UNSUPPORTED_RESTORE_PARAMETERS
-            or value in BOOLEAN_VALUE_TOKENS
-        ):
+        if parameter_id in INTEGER_RESTORE_PARAMETERS:
+            if not isinstance(parameter.get("restore_call_value"), int) or isinstance(
+                parameter.get("restore_call_value"), bool
+            ):
+                unrunnable.append(parameter_id)
+        elif parameter_id in DISABLED_BY_NO_PREFIX or value in BOOLEAN_VALUE_TOKENS:
             unrunnable.append(parameter_id)
 
     missing = sorted(REQUIRED_RESTORE_PARAMETERS - declared)
     verification = target.get("post_restore_verification")
     verified = isinstance(verification, list) and len(verification) >= 4
 
-    # A parameter the API does not accept has to be accounted for, not merely
-    # left out. Requiring the contract to say why it is absent, and what handles
-    # it instead, is what keeps a later edit from quietly reinstating it.
-    absences = target.get("not_supplied_on_restore_call")
-    documented_absences = {
-        entry["id"]
-        for entry in (absences if isinstance(absences, list) else [])
-        if isinstance(entry, dict)
-        and isinstance(entry.get("id"), str)
-        and str(entry.get("reason") or "").strip()
-        and str(entry.get("handled_by") or "").strip()
-    }
-    unexplained = sorted(UNSUPPORTED_RESTORE_PARAMETERS - documented_absences)
-
     if missing:
         detail = f"restore parameters not supplied explicitly: {missing}"
-    elif unexplained:
-        detail = (
-            "parameters the restore API does not accept are neither supplied nor "
-            f"explained: {unexplained}"
-        )
     elif unrunnable:
         detail = (
             "restore parameters that AWS would not accept as written: "
             f"{sorted(unrunnable)}. A CLI boolean is a flag pair such as "
             "`--no-deletion-protection`, never a flag with a true/false value, "
-            "and RestoreDBInstanceToPointInTime accepts no backup retention "
-            "parameter"
+            "and an integer option such as `--backup-retention-period` needs a "
+            "typed `restore_call_value`"
         )
     elif incomplete:
         detail = f"restore parameters without a value and stated AWS default: {sorted(incomplete)}"
@@ -514,11 +509,80 @@ def check_restore_parameters(target: dict[str, Any]) -> list[CheckResult]:
     return [
         CheckResult(
             check_id="targets/restore-parameters-are-explicit",
-            passed=not missing
-            and not unexplained
-            and not unrunnable
-            and not incomplete
-            and verified,
+            passed=not missing and not unrunnable and not incomplete and verified,
+            detail=detail,
+        ),
+        *check_cli_capability_gate(target),
+    ]
+
+
+def check_cli_capability_gate(target: dict[str, Any]) -> list[CheckResult]:
+    """Require a version-boundary parameter to be gated on the installed CLI's help.
+
+    The restore API accepts `--backup-retention-period`, but an older installed
+    CLI does not offer it. The dangerous outcome is not a failed command — it is
+    an operator quietly dropping the parameter to make the command run, which
+    silently restores the source's retention onto the drill copy. So the contract
+    has to refuse, before signing stops, rather than fall back.
+    """
+
+    gates = target.get("cli_capability_preconditions")
+    if not isinstance(gates, list) or not gates:
+        raise DrillContractError(
+            "restore_target needs a non-empty cli_capability_preconditions list"
+        )
+
+    fail_closed: set[str] = set()
+    weak: list[str] = []
+    for gate in gates:
+        if not isinstance(gate, dict):
+            raise DrillContractError("each CLI capability precondition must be a mapping")
+        parameter = gate.get("parameter")
+        if not isinstance(parameter, str) or not parameter:
+            raise DrillContractError("each CLI capability precondition needs a parameter")
+        # The check has to interrogate the *installed* command's own help, not a
+        # version number and not the published reference, because the version
+        # boundary is exactly the gap between the two.
+        command = " ".join(str(gate.get("command") or "").split())
+        probes_installed_help = (
+            command.startswith("aws rds restore-db-instance-to-point-in-time")
+            and command.split()[-1] == "help"
+        )
+        exposes = str(gate.get("must_expose") or "").strip() == f"--{parameter}"
+        aborts = gate.get("on_missing") == ABORT_BEFORE_FIRST_GATE
+        refuses_fallback = (
+            gate.get("omitting_the_parameter_is_an_accepted_fallback") is False
+        )
+        remediated = bool(str(gate.get("remediation") or "").strip())
+
+        if probes_installed_help and exposes and aborts and refuses_fallback and remediated:
+            fail_closed.add(parameter)
+        else:
+            weak.append(parameter)
+
+    ungated = sorted(CAPABILITY_GATED_PARAMETERS - fail_closed)
+
+    if ungated:
+        detail = (
+            "version-dependent restore parameters are not gated fail-closed on "
+            f"the installed CLI's help: {ungated}"
+        )
+    elif weak:
+        detail = (
+            "CLI capability preconditions that do not refuse before the first "
+            f"gate, or that accept omitting the parameter: {sorted(set(weak))}"
+        )
+    else:
+        detail = (
+            "a CLI that cannot express `--backup-retention-period` stops the "
+            "drill at preconditions, before signing stops, and the operator "
+            "upgrades rather than dropping the parameter"
+        )
+
+    return [
+        CheckResult(
+            check_id="targets/cli-capability-gate-is-fail-closed",
+            passed=not ungated and not weak,
             detail=detail,
         )
     ]
@@ -689,19 +753,22 @@ def check_target_backups(target: dict[str, Any]) -> list[CheckResult]:
             passed=retention_zero and deletes_backups and accounted,
             detail=detail,
         ),
-        *check_backup_mismatch_fails_closed(backup),
+        *check_backup_mismatch_fails_closed(backup, target),
     ]
 
 
-# Retention is not a parameter of the restore call, so it is observed rather than
-# chosen. Observing something other than zero means the call that ran was not the
-# call the approver reviewed. Modifying the target at that point would overwrite
-# the evidence of the discrepancy with the intended value, which is why the
-# response is declared as an enum rather than as prose a check has to interpret.
+# Retention is supplied as zero on the restore call and then read back. Reading
+# something other than zero means the approved parameter did not take effect, so
+# the call that ran was not the call the approver reviewed. Modifying the target
+# at that point would overwrite the evidence of the discrepancy with the intended
+# value, which is why the response is declared as an enum rather than as prose a
+# check has to interpret.
 ABORT_AND_CLEANUP = "abort-and-cleanup"
 
 
-def check_backup_mismatch_fails_closed(backup: dict[str, Any]) -> list[CheckResult]:
+def check_backup_mismatch_fails_closed(
+    backup: dict[str, Any], target: dict[str, Any]
+) -> list[CheckResult]:
     """Require an unexpected retention value to abort, not to be repaired in place."""
 
     on_mismatch = backup.get("on_mismatch")
@@ -711,15 +778,32 @@ def check_backup_mismatch_fails_closed(backup: dict[str, Any]) -> list[CheckResu
     aborts = on_mismatch.get("action") == ABORT_AND_CLEANUP
     repairs = on_mismatch.get("modify_target") is not False
     reasoned = bool(str(on_mismatch.get("rationale") or "").strip())
-    # Claiming to supply retention on the restore call is the other way this goes
-    # wrong: the restore API has no such parameter, so the claim could only be
-    # discovered as a failed command mid-drill.
-    honest_about_the_api = backup.get("supplied_on_restore_call") is False
+    # The restore API does accept the parameter, so leaving retention to be
+    # observed rather than chosen would hand the copy the source's retention by
+    # default. The value supplied on the call must also be the value the
+    # post-restore describe check expects, or the comparison proves nothing.
+    supplied = backup.get("supplied_on_restore_call") is True
+    parameters = target.get("explicit_restore_parameters")
+    supplied_value = next(
+        (
+            parameter.get("restore_call_value")
+            for parameter in (parameters if isinstance(parameters, list) else [])
+            if isinstance(parameter, dict)
+            and parameter.get("id") == "backup-retention-period"
+        ),
+        None,
+    )
+    agrees = supplied_value == backup.get("target_backup_retention_days")
 
-    if not honest_about_the_api:
+    if not supplied:
         detail = (
-            "the contract claims the copy's backup retention is supplied on the "
-            "restore call, which RestoreDBInstanceToPointInTime does not accept"
+            "the contract leaves the copy's backup retention to the restore "
+            "default, which is the source's existing setting rather than zero"
+        )
+    elif not agrees:
+        detail = (
+            f"the restore call supplies backup retention {supplied_value!r} but "
+            f"the verification expects {backup.get('target_backup_retention_days')!r}"
         )
     elif repairs:
         detail = (
@@ -740,7 +824,7 @@ def check_backup_mismatch_fails_closed(backup: dict[str, Any]) -> list[CheckResu
     return [
         CheckResult(
             check_id="targets/backup-retention-mismatch-fails-closed",
-            passed=honest_about_the_api and aborts and reasoned and not repairs,
+            passed=supplied and agrees and aborts and reasoned and not repairs,
             detail=detail,
         )
     ]

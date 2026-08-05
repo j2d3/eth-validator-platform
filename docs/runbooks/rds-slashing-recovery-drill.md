@@ -32,16 +32,30 @@ recovery evidence.
 1. `make check` passes on a clean checkout of the revision being drilled.
 2. `make rds-drill-readiness` passes, so every recovery guard the drill depends
    on is still declared in Terraform.
-3. The reviewed change that adds the drill security group, the drill-only
+3. The installed AWS CLI can express the approved restore call. Run:
+
+   ```sh
+   aws rds restore-db-instance-to-point-in-time help | grep -- --backup-retention-period
+   ```
+
+   If that prints nothing, **stop here and upgrade the AWS CLI.** Do not drop
+   the parameter to make the command run. `--backup-retention-period` is in the
+   current restore API, but an older CLI does not offer it — aws-cli 2.17.62
+   does not, 2.35.19 does — and the documented default for that parameter is
+   *"Uses existing setting"*. A restore that silently omits it therefore hands
+   the drill copy the source's seven-day retention, and the copy starts taking
+   its own automated backups of slashing history. This precondition runs before
+   gate 1, so refusing here costs nothing and signing is still on.
+4. The reviewed change that adds the drill security group, the drill-only
    connection `ExternalSecret`, and the drill signer manifests has merged. Those
    declarations are **not** in this repository yet; introducing them is a
    separate pull request, because merging them creates AWS resources. The drill
    endpoint `ConfigMap` is not among them: it carries a value that does not
    exist until gate 4, so it is created at drill time and is never committed.
-4. A drill-only BLS key exists: generated offline, never deposited, holding no
+5. A drill-only BLS key exists: generated offline, never deposited, holding no
    funds, absent from `applications/validators/` and from every Secrets Manager
    signing container.
-5. Two named humans are available — one operator, one approver. They must not be
+6. Two named humans are available — one operator, one approver. They must not be
    the same person for the `human-go-no-go` gate.
 
 ## Gate sequence
@@ -185,26 +199,32 @@ written the way the AWS CLI accepts it: a boolean is a flag pair, so
 | `--vpc-security-group-ids` | the drill security group and nothing else | the VPC's default security group |
 | `--db-parameter-group-name` | the custom group that sets `rds.force_ssl = 1` | the engine default group, which does not force TLS |
 | `--no-publicly-accessible` | public accessibility off | derived from the subnet group, not guaranteed |
-| `--no-multi-az` | Single-AZ | not documented — the restore API states no default for Multi-AZ, and an explicit AZ cannot be combined with one |
+| `--no-multi-az` | Single-AZ | Single-AZ — the restore command description says the new instance is created as a single-AZ deployment by default, except for a SQL Server instance with a mirroring option group, which this PostgreSQL instance is not |
 | `--availability-zone` | one AZ of the isolated database subnet group | a random, system-chosen zone |
 | `--no-deletion-protection` | off, so gate 8 can delete the copy | off — the restore API documents deletion protection as disabled by default, not copied from the source |
+| `--backup-retention-period 0` | automated backups disabled on the copy | the source's retention — the reference documents the default as *"Uses existing setting"*, so the copy would keep seven days of its own backups |
 
-The last two rows are supplied even though the documented default already
-matches, because the call the approver reads at gate 3 should state the posture
-it produces rather than rely on a default that is not visible in the command.
+`--no-multi-az` and `--no-deletion-protection` are supplied even though the
+documented default already matches, because the call the approver reads at gate 3
+should state the posture it produces rather than rely on a default that is not
+visible in the command.
 
-**Backup retention is observed, not chosen.** `restore-db-instance-to-point-in-time`
-has no `--backup-retention-period` parameter, so the copy's retention cannot be
-set on the restore call. Read it from the describe output instead. It must be
-zero.
+`--backup-retention-period` is the one integer in the table rather than a flag
+pair, and the one parameter whose availability depends on the installed CLI
+version — precondition 3 refuses the drill on a CLI that does not expose it. It
+is never dropped to make the command parse: omitting it is the one omission in
+this table that leaves the copy taking backups of slashing history.
+
+**Then read retention back from the describe output.** It must be zero.
 
 If it is not zero, **abort and run gate 8**. Do not modify the instance. The
 restored copy has just been reviewed and approved as a specific call with
-specific parameters; a retention period the approved call could not have
-produced means the call that ran was not the call that was approved, and a
-`modify-db-instance` at that point would replace the evidence of that with the
-value everyone expected to see. Record the observed value in the failure record
-and treat the difference as the finding.
+specific parameters; retention was supplied as zero on that call, so a nonzero
+value read back means the approved parameter did not take effect and the call
+that ran was not the call that was approved. A `modify-db-instance` at that point
+would replace the evidence of that with the value everyone expected to see.
+Record the observed value in the failure record and treat the difference as the
+finding.
 
 Then confirm the identifier is distinct from the source, and that TLS is
 actually enforced by attempting a non-TLS connection and being refused.
@@ -443,6 +463,9 @@ duty.
 
 - Contract: [`hack/qualification/rds-slashing-recovery-drill.yaml`](../../hack/qualification/rds-slashing-recovery-drill.yaml)
 - Preflight: `tools/verify_rds_recovery_drill_preflight.py`
+- Restore call reference: [`aws rds restore-db-instance-to-point-in-time`](https://docs.aws.amazon.com/cli/latest/reference/rds/restore-db-instance-to-point-in-time.html)
+  — the source for every `default_if_omitted` in the gate 4 table, including the
+  single-AZ default and `--backup-retention-period`'s *"Uses existing setting"*
 - Terraform: [`terraform/environments/dev/signer-foundation.tf`](../../terraform/environments/dev/signer-foundation.tf)
 - Signing tier: [`components/web3signer-and-slashing-protection.md`](../components/web3signer-and-slashing-protection.md)
 - Layer suspend contract: [`eks-flux-bootstrap.md`](eks-flux-bootstrap.md)

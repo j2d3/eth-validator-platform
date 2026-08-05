@@ -15,7 +15,7 @@ kind: SlashingRecoveryDrillContract
 
 metadata:
   name: rds-slashing-recovery-drill
-  revision: 3
+  revision: 4
   environment: dev
   tracking_issue: 180
   runbook: docs/runbooks/rds-slashing-recovery-drill.md
@@ -58,6 +58,9 @@ restore_target:
     - engine and engine version
     - the database contents at the recovery point, including every PostgreSQL
       role and that role's password
+    - backup retention, which the restore reference documents as defaulting to
+      the existing setting, and which the drill therefore overrides to zero
+      rather than leaves alone
   not_inherited_from_source:
     - db parameter group, so TLS enforcement is not inherited
     - VPC security groups
@@ -100,9 +103,10 @@ restore_target:
       value: Single-AZ, supplied as the `--no-multi-az` flag
       note: matches multi_az = false on the source, and an explicit availability
         zone cannot be combined with a Multi-AZ deployment
-      default_if_omitted: not documented — the restore API reference states no
-        default for MultiAZ, so a restore that omits it is not guaranteed to be
-        Single-AZ
+      default_if_omitted: Single-AZ — the restore command description states that
+        the new instance is created as a single-AZ deployment by default, except
+        for a SQL Server instance carrying a mirroring option group, which this
+        PostgreSQL instance is not
     - id: availability-zone
       value: one availability zone of the isolated database subnet group,
         supplied explicitly rather than system-selected
@@ -116,16 +120,38 @@ restore_target:
       default_if_omitted: off — the restore API documents that deletion
         protection is not enabled by default, and it is not copied from the
         source
-  # The restore API has no BackupRetentionPeriod member, so the copy's retention
-  # cannot be chosen on the restore call. It is observed afterwards instead, and
-  # a value other than zero is an abort rather than a post-restore modify. See
-  # `backup` below.
-  not_supplied_on_restore_call:
     - id: backup-retention-period
-      reason: RestoreDBInstanceToPointInTime accepts no backup retention
-        parameter, so a contract that claimed to supply one would describe a
-        call that cannot be made
-      handled_by: post-restore observation and the fail-closed abort in `backup`
+      value: zero days, supplied as `--backup-retention-period 0`, which disables
+        automated backups on the restored copy
+      # An integer option rather than a boolean flag pair, so it takes a value
+      # argument. Declared as a typed number as well as prose, because this is
+      # the one restore value the post-restore describe check compares against.
+      restore_call_value: 0
+      note: RestoreDBInstanceToPointInTime accepts this parameter, but not every
+        installed CLI exposes it — see `cli_capability_preconditions`
+      default_if_omitted: the source's retention period — the restore reference
+        documents the default as "Uses existing setting", so an omitted parameter
+        gives the drill copy the source's 7-day retention and starts taking
+        automated backups of slashing history on a copy that exists for hours
+  # `--backup-retention-period` is in the current RestoreDBInstanceToPointInTime
+  # surface, but it is not exposed by every installed AWS CLI: aws-cli 2.17.62
+  # does not generate it into its help output, and 2.35.19 does. Omitting it is
+  # not a safe fallback, because the documented default is "Uses existing
+  # setting" — a restore that drops the parameter inherits the source's
+  # retention rather than disabling backups. So the drill refuses to start on a
+  # CLI that cannot express the approved call, and the operator upgrades.
+  cli_capability_preconditions:
+    - id: backup-retention-period-supported
+      parameter: backup-retention-period
+      command: aws rds restore-db-instance-to-point-in-time help
+      must_expose: "--backup-retention-period"
+      checked_at: preconditions, before gate 1, so the refusal costs nothing and
+        signing is still on
+      on_missing: abort-before-first-gate
+      omitting_the_parameter_is_an_accepted_fallback: false
+      remediation: upgrade the AWS CLI until
+        `aws rds restore-db-instance-to-point-in-time help` exposes
+        `--backup-retention-period`, then restart the drill from preconditions
   post_restore_verification:
     # Read-only describe calls on the restored copy before any query runs.
     - the restored copy reports the isolated DB subnet group
@@ -215,13 +241,14 @@ restore_target:
         is handled by a human or written to a file.
   backup:
     target_backup_retention_days: 0
-    supplied_on_restore_call: false
+    supplied_on_restore_call: true
     verified_by: describe-db-instances on the restored copy before any query
     on_mismatch:
       action: abort-and-cleanup
       modify_target: false
       rationale: >-
-        Retention is observed, not chosen, so a value other than zero means the
+        Retention is supplied as zero on the restore call and then read back, so
+        a nonzero value means the approved parameter did not take effect — the
         call that ran was not the call the approver reviewed. Repairing the
         target in place would overwrite the evidence of that discrepancy with
         the intended value and let the drill continue on an instance nobody
@@ -764,6 +791,9 @@ cost:
 
 failure_handling:
   abort_conditions:
+    - the installed AWS CLI's `restore-db-instance-to-point-in-time help` does
+      not expose `--backup-retention-period`, so the approved call cannot be
+      expressed; this one is checked at preconditions, before signing stops
     - any live signer or validator-client Pod is running at `signing-disabled`
     - the recorded recovery point is outside the automated-backup retention window
     - the restore identifier would collide with the source identifier or an
@@ -771,7 +801,8 @@ failure_handling:
     - any explicit restore parameter was not supplied, or the restored copy's
       describe output disagrees with it
     - the restored copy reports a backup retention period other than zero, which
-      means the call that ran was not the call that was approved
+      means the supplied `--backup-retention-period 0` did not take effect and
+      the call that ran was not the call that was approved
     - the restored copy's table inventory digest differs from the declared
       expected digest, or database_version is not 12, or the Flyway history is
       not twelve successful migrations
