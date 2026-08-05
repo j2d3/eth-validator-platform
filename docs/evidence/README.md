@@ -19,3 +19,9 @@ values, raw environment dumps, kubeconfigs, or credentials.
 The first signing record covers the positive validator-client → Web3Signer →
 RDS → beacon-chain path. RDS recovery, conflicting-duty rejection, and
 signer-specific negative network probes remain separate evidence requirements.
+
+The RDS recovery and conflicting-duty requirements now have a designed
+procedure in
+[`runbooks/rds-slashing-recovery-drill.md`](../runbooks/rds-slashing-recovery-drill.md).
+That drill has not been run, and a readiness report from its preflight is not
+an evidence record. Only a reviewed file in this directory is.

@@ -179,6 +179,11 @@ The following remain required before a production claim:
 
 See [the first signing evidence](../../../docs/evidence/2026-08-04-first-signing-validator.md).
 
+Items 2 and 3 now have a designed, machine-checked procedure in
+[the recovery-drill runbook](../../../docs/runbooks/rds-slashing-recovery-drill.md).
+It has not been executed, and `make rds-drill-readiness` reports contract
+readiness only — it performs no restore and produces no recovery evidence.
+
 ### Pause, teardown, and cost semantics
 
 Scaling Ethereum workers to zero does not stop RDS, the EKS control plane,

@@ -25,6 +25,7 @@ lives here.
 | How does the two-agent build model work? | [development/agentic-workflow.md](development/agentic-workflow.md) |
 | How is the local development environment set up? | [runbooks/local-development.md](runbooks/local-development.md) |
 | How does an operator bootstrap EKS + Flux? | [runbooks/eks-flux-bootstrap.md](runbooks/eks-flux-bootstrap.md) |
+| How would slashing history be recovered, and what proves the copy is usable? | [runbooks/rds-slashing-recovery-drill.md](runbooks/rds-slashing-recovery-drill.md) |
 | Where does the code live? | [`README.md`'s repository map](../README.md#repository-map) |
 
 ## Documentation types
@@ -98,6 +99,7 @@ Operator procedures.
 - [operations-ingress.md](runbooks/operations-ingress.md)
 - [portal-telemetry.md](runbooks/portal-telemetry.md)
 - [ethereum-alerts.md](runbooks/ethereum-alerts.md)
+- [rds-slashing-recovery-drill.md](runbooks/rds-slashing-recovery-drill.md)
 - [dependabot.md](runbooks/dependabot.md)
 
 ### [Evidence](evidence/)

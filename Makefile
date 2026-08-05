@@ -5,7 +5,7 @@ TF_PLUGIN_CACHE_DIR := $(CURDIR)/.local/terraform-plugin-cache
 TF_ROOTS := terraform/bootstrap terraform/environments/dev terraform/environments/dns
 export PATH := $(LOCAL_BIN):$(PATH)
 
-.PHONY: help tools format fmt validate catalog test image-inventory container-contracts helm-template helm-releases kustomize-build verify-scripts portal-check local-preflight local-up local-bootstrap local-seed local-status local-down eks-capacity-status check
+.PHONY: help tools format fmt validate catalog test image-inventory container-contracts helm-template helm-releases kustomize-build verify-scripts portal-check rds-drill-readiness local-preflight local-up local-bootstrap local-seed local-status local-down eks-capacity-status check
 
 help: ## Show available targets
 	@awk 'BEGIN {FS = ":.*## "; printf "Usage: make <target>\n\n"} /^[a-zA-Z_-]+:.*## / {printf "  %-18s %s\n", $$1, $$2}' $(MAKEFILE_LIST)
@@ -67,6 +67,9 @@ verify-scripts: ## Syntax-check bash scripts under hack/
 
 portal-check: ## Build and verify the project home/operator portal
 	npm --prefix control-plane/portal test
+
+rds-drill-readiness: ## Check the RDS recovery-drill contract and print redacted readiness
+	python3 tools/verify_rds_recovery_drill_preflight.py
 
 local-preflight: ## Verify local Kubernetes and GitOps prerequisites
 	./hack/local-cluster.sh preflight
