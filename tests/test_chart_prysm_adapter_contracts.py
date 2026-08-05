@@ -272,6 +272,77 @@ class PrysmAdapterRenderTests(unittest.TestCase):
         self.assertIn("GLOAS_FORK_VERSION: 0x8000101b", derived)
         self.assertIn("GLOAS_FORK_EPOCH: 18446744073709551615", derived)
 
+    def test_config_derivation_does_not_require_image_utilities(self) -> None:
+        # The digest-pinned Prysm v7.1.8 image has /bin/sh but does not ship
+        # grep, sed, or awk. Keep the pre-exec derivation runnable with shell
+        # built-ins inside the real hardened container.
+        sts = self.by_kind["StatefulSet"][0]
+        consensus = next(
+            c
+            for c in sts["spec"]["template"]["spec"]["containers"]
+            if c["name"] == "consensus"
+        )
+        prefix, separator, _ = consensus["args"][0].partition(
+            "exec /beacon-chain"
+        )
+        self.assertTrue(separator)
+        for unavailable_utility in ("grep", "sed", "awk"):
+            self.assertNotRegex(
+                prefix,
+                rf"(?m)^\s*{unavailable_utility}(?:\s|$)",
+            )
+
+    def test_config_derivation_fails_closed_when_required_key_is_missing(self) -> None:
+        sts = self.by_kind["StatefulSet"][0]
+        consensus = next(
+            c
+            for c in sts["spec"]["template"]["spec"]["containers"]
+            if c["name"] == "consensus"
+        )
+        prefix, separator, _ = consensus["args"][0].partition(
+            "exec /beacon-chain"
+        )
+        self.assertTrue(separator)
+
+        cases = (
+            ("EPHEMERY_RESET_PERIOD", "NUMBER_OF_COLUMNS: 128\n"),
+            ("NUMBER_OF_COLUMNS", "EPHEMERY_RESET_PERIOD: 604800\n"),
+        )
+        for missing_key, remaining_line in cases:
+            with (
+                self.subTest(missing_key=missing_key),
+                tempfile.TemporaryDirectory() as directory,
+            ):
+                network_dir = Path(directory) / "network"
+                network_dir.mkdir()
+                (network_dir / "config.yaml").write_text(
+                    "PRESET_BASE: mainnet\n" + remaining_line,
+                    encoding="utf-8",
+                )
+                (network_dir / "boot_enr.txt").write_text(
+                    "enr:-first\n", encoding="utf-8"
+                )
+                tmp_root = Path(directory) / "tmp"
+                tmp_root.mkdir()
+                probe = (
+                    prefix.replace("/network/files/", str(network_dir) + "/")
+                    .replace(
+                        "/tmp/prysm-config.yaml",
+                        str(tmp_root / "prysm-config.yaml"),
+                    )
+                    + "printf DONE\n"
+                )
+                result = subprocess.run(
+                    ["/bin/sh", "-ec", probe],
+                    check=False,
+                    capture_output=True,
+                    text=True,
+                )
+
+            self.assertNotEqual(result.returncode, 0)
+            self.assertIn(missing_key, result.stderr)
+            self.assertIn("refusing unreviewed shape", result.stderr)
+
     def test_config_derivation_fails_closed_on_duplicate_gloas(self) -> None:
         # If upstream ever ships a bundle that already carries GLOAS_FORK_*
         # (i.e. the config shape drifted), the helper must fail-closed rather

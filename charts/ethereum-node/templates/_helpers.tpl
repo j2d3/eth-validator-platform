@@ -268,11 +268,34 @@ set -eu
 # because /network/files is a read-only projection of the bundle.
 src={{ printf "/network/files/%s" .Values.networkProfile.artifactBundle.files.consensusConfig | quote }}
 dst=/tmp/prysm-config.yaml
-if grep -Eq "^GLOAS_FORK_(VERSION|EPOCH):" "$src"; then
-  echo "ERROR: source config.yaml already contains GLOAS_FORK_* keys; refusing to append" >&2
+: > "$dst"
+saw_ephemery_reset_period=false
+saw_number_of_columns=false
+while IFS= read -r line || test -n "$line"; do
+  case "$line" in
+    GLOAS_FORK_VERSION:*|GLOAS_FORK_EPOCH:*)
+      printf '%s\n' "ERROR: source config.yaml already contains GLOAS_FORK_* keys; refusing to append" >&2
+      exit 1
+      ;;
+    EPHEMERY_RESET_PERIOD:*)
+      saw_ephemery_reset_period=true
+      ;;
+    NUMBER_OF_COLUMNS:*)
+      saw_number_of_columns=true
+      ;;
+    *)
+      printf '%s\n' "$line" >> "$dst"
+      ;;
+  esac
+done < "$src"
+test "$saw_ephemery_reset_period" = true || {
+  printf '%s\n' "ERROR: source config.yaml lacks EPHEMERY_RESET_PERIOD; refusing unreviewed shape" >&2
   exit 1
-fi
-grep -Ev "^(EPHEMERY_RESET_PERIOD|NUMBER_OF_COLUMNS):" "$src" > "$dst"
+}
+test "$saw_number_of_columns" = true || {
+  printf '%s\n' "ERROR: source config.yaml lacks NUMBER_OF_COLUMNS; refusing unreviewed shape" >&2
+  exit 1
+}
 printf 'GLOAS_FORK_VERSION: 0x8000101b\nGLOAS_FORK_EPOCH: 18446744073709551615\n' >> "$dst"
 # Assemble one --bootstrap-node flag per ENR — Prysm accepts repeated flags,
 # NOT a single CSV value (verified by Codex against v7.1.8 on 2026-08-05).
