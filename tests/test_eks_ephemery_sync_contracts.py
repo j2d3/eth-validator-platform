@@ -227,6 +227,14 @@ class EksEphemeryRenderTests(unittest.TestCase):
         ]["properties"]["syncMode"]
         self.assertEqual(sync_mode["enum"], ["snap", "full"])
 
+        monitor = self.by_kind["PodMonitor"][0]
+        execution_endpoint = next(
+            endpoint
+            for endpoint in monitor["spec"]["podMetricsEndpoints"]
+            if endpoint["port"] == "el-metrics"
+        )
+        self.assertEqual(execution_endpoint["path"], "/debug/metrics/prometheus")
+
     def test_selected_p2p_pair_uses_aws_lbc_without_exposing_http_or_metrics(
         self,
     ) -> None:

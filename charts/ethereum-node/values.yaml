@@ -215,10 +215,10 @@ executionClients:
   besu:
     image: hyperledger/besu:26.7.1@sha256:5c319f8f5f3449438c03ea7fa2c9bf24b866dc55ac98d802bb41ad793e740587
     # Besu's native Prometheus metric names differ from the other ELs.
-    # These names track Besu's documented series but are unverified against
-    # a live Pod until the first Besu pair is scraped; the recording rules
-    # degrade to empty series for unknown names rather than render errors
-    # (matching the pattern PR #96/#124 formalized). `headHeader`
+    # Runtime-observed on the active Ephemery Besu 26.7.1 Pod: the `/metrics`
+    # endpoint publishes both names below. The recording rules degrade to
+    # empty series for unknown names rather than render errors (matching the
+    # pattern PR #96/#124 formalized). `headHeader`
     # deliberately omitted for the same PRD §12.5 reason as Reth/Erigon:
     # Besu does not publish a separately-observed downloaded-header
     # frontier gauge distinct from executed head.

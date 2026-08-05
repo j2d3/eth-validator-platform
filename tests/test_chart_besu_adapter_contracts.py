@@ -138,6 +138,15 @@ class BesuAdapterRenderTests(unittest.TestCase):
         self.assertNotIn("exec reth", script)
         self.assertNotIn("exec erigon", script)
 
+    def test_podmonitor_uses_besu_metrics_path(self) -> None:
+        monitor = self.by_kind["PodMonitor"][0]
+        execution = next(
+            endpoint
+            for endpoint in monitor["spec"]["podMetricsEndpoints"]
+            if endpoint["port"] == "el-metrics"
+        )
+        self.assertEqual(execution["path"], "/metrics")
+
     def test_init_container_uses_besu_naming_and_data_marker(self) -> None:
         sts = self.by_kind["StatefulSet"][0]
         init_containers = sts["spec"]["template"]["spec"]["initContainers"]
