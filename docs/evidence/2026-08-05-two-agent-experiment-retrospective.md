@@ -14,7 +14,7 @@ This record covers **the collaboration**, not the platform it produced. The
 platform evidence records under the same directory cover product outcomes
 (EKS NetworkPolicy, first signing validator, Spot rebalance recovery). This
 one asks a different question: what did running the two-agent build model
-for five days at production cadence actually establish, and what didn't it.
+for five days at the observed high cadence actually establish, and what didn't it.
 
 No cloud account ID, ARN, network address, IP address, secret value,
 private key, mnemonic, validator public key, keystore path, or database
@@ -36,17 +36,9 @@ Merges to `main` between 2026-08-01T00:00Z and 2026-08-05T16:03Z
 | First-parent commits on `main` through record-close commit `a328365` | 152 |
 | Issues closed in the window | 18 |
 
-Query method: `gh api "search/issues?q=repo:j2d3/eth-validator-platform+is:pr+is:merged+merged:2026-08-01..2026-08-05T16:03:00Z" --paginate` for the merged-PR counts; `git log --first-parent --oneline --since=... --until=... a328365 | wc -l` for the commits-on-`main` count. The first-parent commit count (152) exceeds the merged-PR count (148) because some merges arrived as direct pushes rather than through the pull-request path; those are a different measure and are not included in the author-count table.
+Query method: `gh api "search/issues?q=repo:j2d3/eth-validator-platform+is:pr+is:merged+merged:2026-08-01..2026-08-05T16:03:00Z" --paginate` for the merged-PR counts; `git log --first-parent --oneline --since=... --until=... a328365 | wc -l` for the commits-on-`main` count. The first-parent commit count (152) and the merged-PR count (148) are different measures and their four-count difference is not proven to equal any single cause. Possible contributors include: an earlier repository history rewrite (several current first-parent commits associated with PRs no longer equal GitHub's stored `mergeCommit` SHA), direct pushes to `main` outside the pull-request path, and the semantic difference between commit timestamps (Git measure) and `merged_at` (PR-search measure).
 
-The `j2d3` author count is not equivalent to a single-agent Codex output:
-during this window, the operator merged some `j2d3`-authored changes
-without an at-head Claude review (early-window bootstrap work, Terraform
-apply plans that must run under a trusted-local identity, dependency
-updates from `github-actions[bot]`). The 43/97 ratio therefore understates
-the amount of work the two-agent contract actually gated. The gated-path
-subset — PRs opened under an agent branch prefix (`claude/*` or `codex/*`)
-that landed on `main` through the merge wrapper — is the one where the
-model's discipline was actually exercised.
+The `j2d3` GitHub identity is shared by Codex and by the human operator; the 97 count therefore mixes Codex-authored merges with operator-authored merges (early-window bootstrap work, Terraform apply plans that must run under a trusted-local identity). Bot actors (`dependabot[bot]`, `github-actions[bot]`) are outside that 97 count and appear on their own rows. This record does not compute the gated-path subset — the count of merges that specifically ran through the guarded-wrapper paired-review path — and does not claim that the raw 43/97 ratio measures the paired-review contract's coverage.
 
 **Platform outcomes across the window** (each has its own evidence record
 or runbook; enumerated here so the collaboration context is complete):
@@ -270,9 +262,9 @@ same defect is a counterfactual and is not established by this record.
   `.from_<sender>` files. Each agent read the file *in its own clone*,
   but each also wrote *to its own clone's copy*. The two files were
   never the same file; each agent read stale content indefinitely.
-  Fixed mid-experiment by hard-coding absolute paths — `5u6r054` writes
-  to `/personal/galaxy/.from_5u6r054` (Codex's clone reads it there),
-  and Codex writes to `/personal/galaxy-claude/.from_j2d3` (Claude's
+  Fixed mid-experiment by hard-coding absolute cross-clone paths —
+  Claude writes to `<codex-clone>/.from_5u6r054` (Codex's clone reads
+  it there), and Codex writes to `<claude-clone>/.from_j2d3` (Claude's
   clone reads it there).
 - **Mitigation installed**: absolute cross-clone paths documented in
   both agents' prompts; if a shared filesystem isn't available, use
@@ -352,7 +344,7 @@ same defect is a counterfactual and is not established by this record.
    per-release patch contract. A local script that refuses to push
    a catalog PR unless that specific test class ran green would have
    caught #164's overlay-patch omission before the CI round-trip.
-6. **Six-item comparison table for the three configurations** (see
+6. **Three-configuration comparison table** (see
    [`two-agent-setup.md`](../development/two-agent-setup.md)) drafted
    before starting, not derived from experience. The same-model-
    correlation risk on same-vendor pairs is the honest disclosure a
@@ -365,9 +357,11 @@ same defect is a counterfactual and is not established by this record.
   sustained multi-day operation at that pace is unknown. Both agents
   repeatedly reached quiet queues and stopped polling.
 - **Mainnet suitability.** Every activation in the window was
-  Ephemery testnet (generation 162) with synthetic identities and
-  32 tETH deposits. No real-value validator was exposed to this
-  pipeline.
+  Ephemery testnet (generation 162). The four signing pairs used
+  testnet-only validator identities (`synthetic: false` in the
+  catalog) with disposable testnet keys and 32 tETH deposits; the
+  five non-signing pairs used synthetic draft identities. No
+  real-value validator was exposed to this pipeline.
 - **Large-team scalability.** The model was tested with two agents +
   one human. It does not establish behavior with three or more agents,
   contested reviews across many parallel PRs, or agent teams with
@@ -376,26 +370,27 @@ same defect is a counterfactual and is not established by this record.
   model caught the specific classes of defect enumerated above. It
   does not prove absence of an entire category (e.g. a supply-chain
   compromise that both agents' base training would rationalize).
-- **Provider-independent review.** The Claude+Codex mix caught defects
-  each individually would likely have missed; two same-vendor sessions
-  share provider outages, quota limits, and model-family defaults.
-  This experiment does not establish how much of the caught-defect
-  count depended on the two-vendor asymmetry vs. the review discipline
+- **Provider-independent review.** Two same-vendor sessions share
+  provider outages, quota limits, and model-family defaults. This
+  experiment does not establish how much of the caught-defect count
+  depended on the two-vendor asymmetry vs. the review discipline
   alone.
 - **Hostile-agent resilience.** The merge wrapper enforces the
   paired-review contract on the honest path; there is no drill for a
   compromised agent attempting to author a malicious PR that its
   partner (also compromised, or fooled) approves.
 - **Recovery from the paired reviewer being permanently offline.**
-  Documented as a graceful degradation to single-agent operation for
-  non-safety-critical work; not exercised at length.
+  The landed setup guide states the available agent may continue
+  authoring bounded work but its PRs wait for the paired review;
+  the offline-reviewer state is not turned into an exception to the
+  merge contract. That behavior was not exercised at length.
 
 ## References
 
 - Two-agent narrative + evolution: [`agentic-workflow.md`](../development/agentic-workflow.md).
 - Portable setup guide (all three configurations): [`two-agent-setup.md`](../development/two-agent-setup.md).
 - Claude-specific setup one-pager: [`two-claude-collaboration.md`](../development/two-claude-collaboration.md).
-- Claude-specific bootstrapping prompt: [`two-claude-agent-prompt.md`](../development/two-claude-agent-prompt.md).
+- Claude session prompt: [`two-claude-agent-prompt.md`](../development/two-claude-agent-prompt.md).
 - Evidence-record rules: [`README.md`](README.md) in this directory.
 - Guarded merge wrapper source: [`hack/merge-pr.sh`](../../hack/merge-pr.sh).
 - Umbrella issue for the observability slice this window closed: [#130](https://github.com/j2d3/eth-validator-platform/issues/130).
