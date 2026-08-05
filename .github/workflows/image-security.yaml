@@ -13,6 +13,7 @@ on:
       - "Dockerfile*"
       - "**/Dockerfile*"
       - requirements-dev.txt
+      - tools/compare_image_inventories.py
       - tools/discover_container_images.py
       - tools/verify_image_scan_evidence.py
       - tools/verify_container_contracts.py
@@ -24,6 +25,7 @@ on:
       - "Dockerfile*"
       - "**/Dockerfile*"
       - requirements-dev.txt
+      - tools/compare_image_inventories.py
       - tools/discover_container_images.py
       - tools/verify_image_scan_evidence.py
       - tools/verify_container_contracts.py
@@ -42,10 +44,13 @@ jobs:
     timeout-minutes: 10
     outputs:
       matrix: ${{ steps.inventory.outputs.matrix }}
+      scan_required: ${{ steps.decision.outputs.scan_required }}
+      decision: ${{ steps.decision.outputs.decision }}
     steps:
       - name: Check out repository
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
         with:
+          fetch-depth: 0
           persist-credentials: false
       - name: Install inventory dependencies
         run: python3 -m pip install --disable-pip-version-check -r requirements-dev.txt
@@ -57,6 +62,40 @@ jobs:
           python3 tools/discover_container_images.py --format markdown >> "$GITHUB_STEP_SUMMARY"
           matrix="$(python3 tools/discover_container_images.py --format github-matrix)"
           printf 'matrix=%s\n' "$matrix" >> "$GITHUB_OUTPUT"
+      - name: Decide whether exact subjects require a fresh scan
+        id: decision
+        env:
+          BASE_SHA: ${{ github.event.pull_request.base.sha }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          if [[ "$GITHUB_EVENT_NAME" != "pull_request" ]]; then
+            printf 'scan_required=true\n' >> "$GITHUB_OUTPUT"
+            printf 'decision=full scan required for %s\n' "$GITHUB_EVENT_NAME" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+
+          critical_changes="$(git diff --name-only "$BASE_SHA"...HEAD -- \
+            .github/workflows/image-security.yaml \
+            requirements-dev.txt \
+            tools/compare_image_inventories.py \
+            tools/discover_container_images.py \
+            tools/verify_container_contracts.py \
+            tools/verify_image_scan_evidence.py)"
+          if [[ -n "$critical_changes" ]]; then
+            printf 'scan_required=true\n' >> "$GITHUB_OUTPUT"
+            printf 'decision=image evidence tooling changed\n' >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+
+          base_dir="$(mktemp -d)"
+          git worktree add --detach "$base_dir" "$BASE_SHA"
+          python3 "$base_dir/tools/discover_container_images.py" --format json \
+            > base-image-inventory.json
+          python3 tools/compare_image_inventories.py \
+            --base base-image-inventory.json \
+            --current image-inventory.json \
+            --format github-output >> "$GITHUB_OUTPUT"
       - name: Retain exact subjects and explicit gaps
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a
         with:
@@ -68,6 +107,7 @@ jobs:
   scan:
     name: Scan ${{ matrix.id }}
     needs: inventory
+    if: needs.inventory.outputs.scan_required == 'true'
     runs-on: ubuntu-latest
     timeout-minutes: 25
     strategy:
@@ -127,3 +167,28 @@ jobs:
             trivy-version.json
           if-no-files-found: error
           retention-days: 14
+
+  evidence-decision:
+    name: Container image evidence decision
+    if: always()
+    needs: [inventory, scan]
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - name: Verify scan or reuse result
+        env:
+          DECISION: ${{ needs.inventory.outputs.decision }}
+          INVENTORY_RESULT: ${{ needs.inventory.result }}
+          SCAN_REQUIRED: ${{ needs.inventory.outputs.scan_required }}
+          SCAN_RESULT: ${{ needs.scan.result }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          [[ "$INVENTORY_RESULT" == "success" ]]
+          if [[ "$SCAN_REQUIRED" == "true" ]]; then
+            [[ "$SCAN_RESULT" == "success" ]]
+            printf 'Fresh Trivy evidence was produced for every exact subject.\n' >> "$GITHUB_STEP_SUMMARY"
+          else
+            [[ "$SCAN_RESULT" == "skipped" ]]
+            printf 'No new Trivy scan ran: %s. Existing evidence applies only to the unchanged exact digests.\n' "$DECISION" >> "$GITHUB_STEP_SUMMARY"
+          fi
