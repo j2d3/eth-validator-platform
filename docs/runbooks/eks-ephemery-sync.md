@@ -357,22 +357,58 @@ Stopped retains the encrypted gp3 volumes and their storage cost. Resume the
 same Availability Zone, reactivate through another reviewed PR, and prove that
 the same PVC/PV identities reattach before collecting recovery evidence.
 
-During the fresh full-sync qualification run, perform one deliberate graceful
-restart while the execution head is advancing:
+The [2026-08-05 Spot reschedule](../evidence/2026-08-05-eks-spot-rebalance.md)
+reused this pair's claims and resumed head progression, but it did not capture
+the execution client's shutdown sequence. It therefore does not prove a
+graceful Geth restart and does not complete #84.
+
+During a fresh full-sync qualification run, perform one deliberate graceful
+restart while the execution head is advancing. Preserve the deleted Pod's log
+stream outside the repository; `kubectl logs --previous` on the replacement
+Pod cannot retrieve logs from a different Pod UID. This is a disruptive
+testnet runtime experiment: obtain operator approval and choose a window that
+accepts possible validator-duty downtime before running it. It was not run by
+the repository-only change that added these checks.
 
 ```bash
+EVIDENCE_DIR="$(mktemp -d)"
+POD=pair-ephemery-162-synthetic-0
+
 kubectl get pvc -n ethereum -o custom-columns=NAME:.metadata.name,UID:.metadata.uid,VOLUME:.spec.volumeName
-kubectl delete pod -n ethereum pair-ephemery-162-synthetic-0
+CAPTURE_STARTED_AT="$(date -u +%Y-%m-%dT%H:%M:%SZ)"
+kubectl logs -n ethereum "$POD" -c execution --timestamps --follow \
+  --since-time="$CAPTURE_STARTED_AT" \
+  >"$EVIDENCE_DIR/geth-shutdown.log" 2>&1 &
+GETH_LOG_PID=$!
+sleep 2
+kill -0 "$GETH_LOG_PID"
+
+kubectl delete pod -n ethereum "$POD"
+wait "$GETH_LOG_PID" || true
+
+grep -F 'Got interrupt, shutting down' "$EVIDENCE_DIR/geth-shutdown.log"
+grep -F 'Ethereum protocol stopped' "$EVIDENCE_DIR/geth-shutdown.log"
+grep -F 'Blockchain stopped' "$EVIDENCE_DIR/geth-shutdown.log"
 kubectl wait -n ethereum --for=condition=Ready \
-  pod/pair-ephemery-162-synthetic-0 --timeout=15m
+  "pod/$POD" --timeout=15m
+kubectl logs -n ethereum "$POD" -c execution --since-time="$CAPTURE_STARTED_AT" \
+  >"$EVIDENCE_DIR/geth-restart.log"
+if grep -Eq 'missing trie node|Fatal: Failed to register the Ethereum service' \
+  "$EVIDENCE_DIR/geth-restart.log"; then
+  printf 'Geth did not recover from the retained execution claim.\n' >&2
+  exit 1
+fi
 ```
 
-Do not use `--force` or override the 30-second grace period. After the Pod is
+Do not use `--force` or override the 30-second grace period. The three shutdown
+markers must occur after log capture begins and before the old Pod disappears;
+otherwise the run has not demonstrated a graceful Geth stop. After the Pod is
 Ready, prove both PVC UIDs and PV names are unchanged, verify exact chain
-identity again, and observe both heads resume advancing. A missing-trie error,
+identity again, and observe both heads resume advancing for the sustained
+15-minute window in section 8. A missing shutdown marker, missing-trie error,
 claim replacement, identity mismatch, or stalled head fails the drill and
 leaves #84 open. One passing Ephemery drill qualifies this profile only; it is
-not a general durability claim for Geth, EBS, or Spot interruption.
+not a general durability claim for Geth, EBS, Spot interruption, or snap sync.
 
 When generation 162 is retired, `archived` removes its reproducible chain-data
 claims and the `Delete` reclaim policy releases the EBS volumes. Add the
