@@ -60,6 +60,7 @@
             "reth": {"$ref": "#/$defs/networkAdapter"},
             "erigon": {"$ref": "#/$defs/networkAdapter"},
             "besu": {"$ref": "#/$defs/networkAdapter"},
+            "nethermind": {"$ref": "#/$defs/networkAdapter"},
             "lighthouse": {"$ref": "#/$defs/networkAdapter"},
             "teku": {"$ref": "#/$defs/networkAdapter"},
             "nimbus": {"$ref": "#/$defs/networkAdapter"}
@@ -178,7 +179,7 @@
       }
     },
     "executionClient": {
-      "enum": ["geth", "reth", "erigon", "besu"]
+      "enum": ["geth", "reth", "erigon", "besu", "nethermind"]
     },
     "consensusClient": {
       "enum": ["lighthouse", "teku", "nimbus"]
@@ -215,6 +216,15 @@
           }
         },
         "besu": {
+          "type": "object",
+          "required": ["image", "metrics"],
+          "additionalProperties": false,
+          "properties": {
+            "image": {"type": "string", "pattern": "@sha256:[0-9a-f]{64}$"},
+            "metrics": {"$ref": "#/$defs/executionMetricsMap"}
+          }
+        },
+        "nethermind": {
           "type": "object",
           "required": ["image", "metrics"],
           "additionalProperties": false,
@@ -551,6 +561,7 @@
           "additionalProperties": false,
           "required": [
             "executionGenesis",
+            "executionChainspec",
             "consensusConfig",
             "consensusGenesis",
             "consensusGenesisValidatorsRoot",
@@ -566,6 +577,7 @@
           ],
           "properties": {
             "executionGenesis": {"$ref": "#/$defs/bundlePath"},
+            "executionChainspec": {"$ref": "#/$defs/bundlePath"},
             "consensusConfig": {"$ref": "#/$defs/bundlePath"},
             "consensusGenesis": {"$ref": "#/$defs/bundlePath"},
             "consensusGenesisValidatorsRoot": {"$ref": "#/$defs/bundlePath"},
