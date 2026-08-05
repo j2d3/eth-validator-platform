@@ -6,6 +6,7 @@ locals {
     validator-ephemery-162-01 = "validator-keystore"
     validator-ephemery-162-02 = "validator-keystore-02"
     validator-ephemery-162-03 = "validator-keystore-03"
+    validator-ephemery-162-04 = "validator-keystore-04"
   }
 }
 
