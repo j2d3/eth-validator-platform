@@ -61,7 +61,8 @@
             "erigon": {"$ref": "#/$defs/networkAdapter"},
             "besu": {"$ref": "#/$defs/networkAdapter"},
             "lighthouse": {"$ref": "#/$defs/networkAdapter"},
-            "teku": {"$ref": "#/$defs/networkAdapter"}
+            "teku": {"$ref": "#/$defs/networkAdapter"},
+            "nimbus": {"$ref": "#/$defs/networkAdapter"}
           }
         },
         "signer": {
@@ -180,7 +181,7 @@
       "enum": ["geth", "reth", "erigon", "besu"]
     },
     "consensusClient": {
-      "enum": ["lighthouse", "teku"]
+      "enum": ["lighthouse", "teku", "nimbus"]
     },
     "executionClients": {
       "type": "object",
@@ -238,6 +239,15 @@
           }
         },
         "teku": {
+          "type": "object",
+          "required": ["image", "metrics"],
+          "additionalProperties": false,
+          "properties": {
+            "image": {"type": "string", "pattern": "@sha256:[0-9a-f]{64}$"},
+            "metrics": {"$ref": "#/$defs/consensusMetricsMap"}
+          }
+        },
+        "nimbus": {
           "type": "object",
           "required": ["image", "metrics"],
           "additionalProperties": false,
