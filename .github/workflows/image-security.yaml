@@ -224,7 +224,9 @@ jobs:
     timeout-minutes: 5
     outputs:
       available: ${{ steps.aggregate.outputs.available }}
-      images: ${{ steps.aggregate.outputs.images }}
+      exact_subjects: ${{ steps.aggregate.outputs.exact_subjects }}
+      scanned_subjects: ${{ steps.aggregate.outputs.scanned_subjects }}
+      coverage_gaps: ${{ steps.aggregate.outputs.coverage_gaps }}
       critical_total: ${{ steps.aggregate.outputs.critical_total }}
       critical_available: ${{ steps.aggregate.outputs.critical_available }}
       high_total: ${{ steps.aggregate.outputs.high_total }}
@@ -251,6 +253,12 @@ jobs:
             [[ "$SCAN_RESULT" == "skipped" ]]
             printf 'No new Trivy scan ran: %s. Existing evidence applies only to the unchanged exact digests.\n' "$DECISION" >> "$GITHUB_STEP_SUMMARY"
           fi
+      - name: Download the exact discovered inventory
+        if: needs.inventory.outputs.scan_required == 'true' && needs.scan.result == 'success'
+        uses: actions/download-artifact@634f93cb2916e3fdff6788551b99b062d0335ce0
+        with:
+          name: container-image-inventory
+          path: container-image-inventory
       - name: Download per-image decisions
         if: needs.inventory.outputs.scan_required == 'true' && needs.scan.result == 'success'
         uses: actions/download-artifact@634f93cb2916e3fdff6788551b99b062d0335ce0
@@ -264,6 +272,7 @@ jobs:
         run: |
           set -euo pipefail
           python3 tools/aggregate_image_scan_decisions.py \
+            --inventory container-image-inventory/image-inventory.json \
             --root image-scan-decisions \
             --output image-scan-summary.json \
             --github-output "$GITHUB_OUTPUT"
@@ -278,11 +287,13 @@ jobs:
           retention-days: 14
 
   public-finding-counts:
-    name: Image findings - ${{ needs.evidence-decision.outputs.images }} images - Critical ${{ needs.evidence-decision.outputs.critical_total }} (${{ needs.evidence-decision.outputs.critical_available }} fix available) - High ${{ needs.evidence-decision.outputs.high_total }} (${{ needs.evidence-decision.outputs.high_available }} fix available)
+    name: Image findings - ${{ needs.evidence-decision.outputs.scanned_subjects }}/${{ needs.evidence-decision.outputs.exact_subjects }} exact subjects - ${{ needs.evidence-decision.outputs.coverage_gaps }} coverage gaps - Critical ${{ needs.evidence-decision.outputs.critical_total }} (${{ needs.evidence-decision.outputs.critical_available }} fix available) - High ${{ needs.evidence-decision.outputs.high_total }} (${{ needs.evidence-decision.outputs.high_available }} fix available)
     needs: evidence-decision
     if: needs.evidence-decision.outputs.available == 'true'
     runs-on: ubuntu-latest
     timeout-minutes: 2
     steps:
-      - name: Publish counts in the public check name
-        run: printf '%s\n' 'Evidence only; findings do not block promotion.'
+      - name: Publish coverage and counts in the public check name
+        run: |
+          printf '%s\n' 'Evidence only; findings do not block promotion.'
+          printf '%s\n' 'Counts cover the exact discovered subjects only. Coverage gaps are unresolved image sources whose findings remain unknown.'

@@ -222,7 +222,7 @@ h1 {
 }
 
 .security-summary-grid {
-  grid-template-columns: repeat(4, 1fr);
+  grid-template-columns: repeat(5, 1fr);
   margin-bottom: 0;
   border: 0;
   border-radius: 0 0 12px 12px;
