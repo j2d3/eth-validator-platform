@@ -138,7 +138,10 @@ class NimbusAdapterRenderTests(unittest.TestCase):
         self.assertNotIn("boot_enr.yaml", script)
         # Data path and EE wiring. Current Nimbus uses --el; --web3-url is a
         # hidden legacy alias and is intentionally not emitted.
-        self.assertIn("--data-dir=/data", script)
+        # Kubernetes mounts the PVC root as root-owned/fsGroup-writable. Nimbus
+        # insists its data directory itself be 0700 and a hardened non-root
+        # process cannot chmod the mount root, so use a Nimbus-owned child.
+        self.assertIn("--data-dir=/data/nimbus", script)
         self.assertIn("--el=http://127.0.0.1:8551", script)
         self.assertNotIn("--web3-url", script)
         self.assertIn("--jwt-secret=/jwt/jwt.hex", script)
@@ -158,7 +161,8 @@ class NimbusAdapterRenderTests(unittest.TestCase):
         )
         script = consensus["args"][0]
         # Nimbus uses --data-dir (Lighthouse uses --datadir).
-        self.assertIn("--data-dir=/data", script)
+        self.assertIn("--data-dir=/data/nimbus", script)
+        self.assertNotIn("--data-dir=/data ", script)
         self.assertNotIn("--datadir=/data", script)
         # Nimbus uses --el for the EE (Lighthouse uses --execution-endpoint).
         self.assertIn("--el=", script)

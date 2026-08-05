@@ -69,6 +69,10 @@ Per #138's runtime-corrected adapter:
   `consensusBootnodes`.
 - `--el=http://127.0.0.1:8551` — current Nimbus flag; `--web3-url`
   is a hidden legacy alias and is deliberately not emitted.
+- `--data-dir=/data/nimbus` — uses a child of the PVC mount. Kubernetes
+  presents the mount root as root-owned and group-writable; Nimbus requires
+  its data directory to be mode `0700`, which the hardened non-root process
+  can enforce on a child directory it creates but not on the mount root.
 
 ## Metric normalization
 
@@ -92,12 +96,12 @@ errors.
 
 ## Non-signing qualification
 
-**Status: desired-state and render contracts configured; live sync
-qualification is the next gate.** This is the first rendered release
-exercising the Nimbus CL adapter — until Flux reconciles it on EKS
-and the beacon Pod scrapes actual metrics, "the chart renders correctly"
-is the strongest claim available. Test contract asserts that this
-release, plus the other five Ephemery pairs, render with the same
+**Status: live startup defect observed; correction pending qualification.**
+The first EKS reconciliation proved the Geth container healthy but Nimbus
+refused to start because it could not change the root-owned PVC mount from
+`0775` to its required `0700`. The child-directory correction above is the
+next runtime gate; sync and scrape qualification remain unproven. Test
+contract asserts that all Ephemery releases render with the same
 EKS-required patches (`valuesFiles`, dev telemetry, `aws-engine-secrets`
 Engine JWT); missing overlay patches on any release would fail CI.
 
