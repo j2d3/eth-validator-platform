@@ -103,8 +103,11 @@ class PortalStatusApiResponseTests(unittest.TestCase):
         results[SERVER.PAIR_QUERIES["validatorEnabled"]] = vector(
             1, **pair_labels
         )
-        results[SERVER.PAIR_QUERIES["processCpuCores"]] = vector(
+        results[SERVER.PAIR_QUERIES["containerCpuCores"]] = vector(
             0.08, **pair_labels, component="execution"
+        )
+        results[SERVER.PAIR_QUERIES["containerMemoryWorkingSetBytes"]] = vector(
+            512_000_000, **pair_labels, component="execution"
         )
 
         with patch.object(
@@ -128,6 +131,9 @@ class PortalStatusApiResponseTests(unittest.TestCase):
         self.assertEqual(pair["sync"]["consensusPeers"], 31)
         self.assertEqual(pair["signing"]["validatorsEnabled"], 1)
         self.assertEqual(pair["resources"]["cpuCores"]["execution"], 0.08)
+        self.assertEqual(
+            pair["resources"]["memoryBytes"]["execution"], 512_000_000
+        )
         self.assertEqual(
             snapshot["signing"],
             {

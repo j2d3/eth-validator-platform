@@ -129,7 +129,7 @@ spec:
             {{- end }}
             {{ join " or " $exprs }}
 
-        {{- /* Validator-client + process-generic rules. */}}
+        {{- /* Validator-client + container-resource rules. */}}
         {{- $validatorClients := dict -}}
         {{- range $client, $spec := $consClients -}}
         {{- if hasKey $spec.metrics "validatorEnabled" -}}
@@ -146,8 +146,63 @@ spec:
             {{- end }}
             {{ join " or " $exprs }}
         {{- end }}
-        - record: validator_platform_process_cpu_cores
-          expr: sum by ({{ $telemetryLabels }}, component) (rate(process_cpu_seconds_total{platform="ethereum-validator"}[5m]))
-        - record: validator_platform_process_resident_memory_bytes
-          expr: sum by ({{ $telemetryLabels }}, component) (process_resident_memory_bytes{platform="ethereum-validator"})
+        {{- /*
+        Client process metrics are not portable: several EL images omit
+        process_cpu_seconds_total and process_resident_memory_bytes. cAdvisor
+        exposes the container resource contract consistently. Its samples do
+        not carry platform identity, so join them to the controlled assignment
+        label exposed by kube-state-metrics, derive component from the exact
+        container name, and inherit the remaining telemetry labels from the
+        existing target rule. The `(0 * target + 1)` term uses target_up only
+        as identity metadata; a down metrics target must not turn real cgroup
+        usage into a false zero.
+        */}}
+        - record: validator_platform_container_cpu_cores
+          expr: >-
+            sum by ({{ $telemetryLabels }}, component) (
+              max by (namespace, pod, assignment_id, component) (
+                label_replace(
+                  label_replace(
+                    rate(container_cpu_usage_seconds_total{namespace="{{ .Release.Namespace }}",container=~"execution|consensus|validator",image!=""}[5m])
+                    * on (namespace, pod) group_left(label_platform_galaxy_lab_assignment_id)
+                      max by (namespace, pod, label_platform_galaxy_lab_assignment_id) (
+                        kube_pod_labels{namespace="{{ .Release.Namespace }}",label_platform_galaxy_lab_assignment_id!=""}
+                      ),
+                    "assignment_id", "$1", "label_platform_galaxy_lab_assignment_id", "(.+)"
+                  ),
+                  "component", "$1", "container", "(execution|consensus|validator)"
+                )
+              )
+              * on (assignment_id, component)
+                group_left(cluster, environment, lifecycle_state, network, network_profile, network_generation, network_identity, customer_id, validator_id, execution_client, consensus_client)
+                (
+                  0 * max by ({{ $telemetryLabels }}, component) (
+                    validator_platform_pair_target_up{component=~"execution|consensus|validator"}
+                  ) + 1
+                )
+            )
+        - record: validator_platform_container_memory_working_set_bytes
+          expr: >-
+            sum by ({{ $telemetryLabels }}, component) (
+              max by (namespace, pod, assignment_id, component) (
+                label_replace(
+                  label_replace(
+                    container_memory_working_set_bytes{namespace="{{ .Release.Namespace }}",container=~"execution|consensus|validator",image!=""}
+                    * on (namespace, pod) group_left(label_platform_galaxy_lab_assignment_id)
+                      max by (namespace, pod, label_platform_galaxy_lab_assignment_id) (
+                        kube_pod_labels{namespace="{{ .Release.Namespace }}",label_platform_galaxy_lab_assignment_id!=""}
+                      ),
+                    "assignment_id", "$1", "label_platform_galaxy_lab_assignment_id", "(.+)"
+                  ),
+                  "component", "$1", "container", "(execution|consensus|validator)"
+                )
+              )
+              * on (assignment_id, component)
+                group_left(cluster, environment, lifecycle_state, network, network_profile, network_generation, network_identity, customer_id, validator_id, execution_client, consensus_client)
+                (
+                  0 * max by ({{ $telemetryLabels }}, component) (
+                    validator_platform_pair_target_up{component=~"execution|consensus|validator"}
+                  ) + 1
+                )
+            )
 {{- end }}

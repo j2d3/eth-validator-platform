@@ -128,8 +128,10 @@ PAIR_QUERIES = {
     "consensusFinalityLagEpochs": (
         "validator_platform_consensus_finality_lag_epochs"
     ),
-    "processCpuCores": "validator_platform_process_cpu_cores",
-    "processMemoryBytes": "validator_platform_process_resident_memory_bytes",
+    "containerCpuCores": "validator_platform_container_cpu_cores",
+    "containerMemoryWorkingSetBytes": (
+        "validator_platform_container_memory_working_set_bytes"
+    ),
 }
 
 SAFE_PAIR_LABELS = (
@@ -311,8 +313,8 @@ def _pair_snapshot(results: dict[str, list[dict[str, Any]]]) -> list[dict[str, A
                 pairs[assignment_id][section][field] = _sample(record)
 
     for metric_name, resource_name in (
-        ("processCpuCores", "cpuCores"),
-        ("processMemoryBytes", "memoryBytes"),
+        ("containerCpuCores", "cpuCores"),
+        ("containerMemoryWorkingSetBytes", "memoryBytes"),
     ):
         for record in results[metric_name]:
             labels = _safe_labels(record.get("metric"))
