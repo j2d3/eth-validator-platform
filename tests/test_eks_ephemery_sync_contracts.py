@@ -57,6 +57,7 @@ class EksEphemeryRenderTests(unittest.TestCase):
                 "loadBalancerClass": "service.k8s.aws/nlb",
                 "annotations": {
                     "service.beta.kubernetes.io/aws-load-balancer-nlb-target-type": "ip",
+                    "service.beta.kubernetes.io/aws-load-balancer-enable-tcp-udp-listener": "true",
                     "service.beta.kubernetes.io/aws-load-balancer-scheme": "internet-facing",
                     "service.beta.kubernetes.io/aws-load-balancer-healthcheck-protocol": "tcp",
                     "service.beta.kubernetes.io/aws-load-balancer-healthcheck-port": "9000",
@@ -254,6 +255,12 @@ class EksEphemeryRenderTests(unittest.TestCase):
                 "service.beta.kubernetes.io/aws-load-balancer-healthcheck-port"
             ],
             "9000",
+        )
+        self.assertEqual(
+            annotations[
+                "service.beta.kubernetes.io/aws-load-balancer-enable-tcp-udp-listener"
+            ],
+            "true",
         )
         p2p_ports = {
             (port["port"], port.get("protocol", "TCP")) for port in p2p["spec"]["ports"]
