@@ -8,6 +8,7 @@ export const repository = "https://github.com/j2d3/eth-validator-platform";
 export const operationsOrigin = "https://ops.g.j2d3.com";
 export const statusEndpoint = `${operationsOrigin}/api/status`;
 export const grafanaBase = `${operationsOrigin}/grafana`;
+export const alertsDashboard = `${grafanaBase}/alerting/list`;
 export const signingDashboard =
   `${grafanaBase}/d/eth-eks-ephemery-sync/` +
   "ethereum-platform-eks-ephemery-sync-evidence?orgId=1";

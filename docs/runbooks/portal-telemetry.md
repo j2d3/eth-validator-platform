@@ -10,8 +10,9 @@ keys, or credentials from callers.
 The adapter remains a ClusterIP service in `portal-system`. In EKS,
 ingress-nginx exposes only `https://ops.g.j2d3.com/api/status`; the exact path
 is rewritten to `/v1/status`. Grafana is served separately under
-`https://ops.g.j2d3.com/grafana` with its login enabled and anonymous access
-disabled.
+`https://ops.g.j2d3.com/grafana`. The current public testnet demo permits
+anonymous Viewer access; writes still require the Grafana admin login. This
+exposes the Prometheus query surface and is not the production access model.
 
 The adapter uses the Prometheus Operator's headless `prometheus-operated`
 Service so AWS VPC CNI NetworkPolicy evaluates the selected Prometheus Pod IP
@@ -26,6 +27,9 @@ instead of the Service ClusterIP.
 - aggregate Ethereum Pod CPU, memory, restart, and persistent-volume usage;
 - enabled validator count, signer target state, loaded-key count, permitted and
   prevented slashing checks, and unknown-key signing requests;
+- aggregate firing-alert total plus critical/warning counts, excluding the
+  always-firing Prometheus `Watchdog`; no alert labels or annotations cross the
+  public API;
 - client-pair target state, peers, sync progress, lag, CPU, and memory;
 - the enabled-validator count for each active client pair; and
 - a per-pair Grafana URL only when the configured Grafana base URL passes the
@@ -76,5 +80,6 @@ curl --silent --show-error --head https://ops.g.j2d3.com/grafana/
 ```
 
 The API must return the same public-safe schema observed through the private
-port-forward. Grafana must redirect to its `/grafana/login` path over HTTPS;
-an anonymous dashboard response is a failed qualification.
+port-forward. Grafana must serve the Viewer surface over HTTPS while rejecting
+anonymous writes; the demo's accepted anonymous-read boundary is documented in
+`docs/runbooks/operations-ingress.md`.

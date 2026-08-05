@@ -71,6 +71,9 @@ def base_results() -> dict[str, list[dict]]:
         "signingPermittedTotal": 2,
         "signingPreventedTotal": 0,
         "signingMissingIdentifierTotal": 0,
+        "firingAlertsTotal": 2,
+        "firingAlertsCritical": 1,
+        "firingAlertsWarning": 1,
     }
     for name, value in scalar_values.items():
         results[SERVER.SCALAR_QUERIES[name]] = vector(value)
@@ -145,6 +148,13 @@ class PortalStatusApiResponseTests(unittest.TestCase):
                 "missingIdentifierTotal": 0,
             },
         )
+        self.assertEqual(
+            snapshot["alerts"],
+            {"firingTotal": 2, "critical": 1, "warning": 1},
+        )
+        self.assertIn('alertname!="Watchdog"', SERVER.SCALAR_QUERIES["firingAlertsTotal"])
+        self.assertIn('severity="critical"', SERVER.SCALAR_QUERIES["firingAlertsCritical"])
+        self.assertIn('severity="warning"', SERVER.SCALAR_QUERIES["firingAlertsWarning"])
 
         grafana = urlsplit(pair["grafanaUrl"])
         self.assertEqual((grafana.scheme, grafana.netloc), ("https", "ops.g.j2d3.com"))

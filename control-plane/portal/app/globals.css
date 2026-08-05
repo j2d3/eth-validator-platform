@@ -185,6 +185,17 @@ h1 {
   background: var(--surface);
 }
 
+.summary-item--link {
+  color: inherit;
+  text-decoration: none;
+}
+
+.summary-item--link:hover,
+.summary-item--link:focus-visible {
+  box-shadow: inset 0 0 0 2px var(--link);
+  outline: none;
+}
+
 .summary-item__label {
   display: block;
   color: var(--muted);
