@@ -67,6 +67,8 @@ test("server-renders the environment status page", async () => {
   assert.match(html, /Client-pair sync/);
   assert.match(html, /Repository security/);
   assert.match(html, /Container image scan/);
+  assert.match(html, /Exact subject coverage<\/span><strong>Unavailable/);
+  assert.match(html, /Latest coverage unavailable/);
   assert.match(html, /Image finding occurrences/);
   assert.match(html, /Dependency updates/);
   assert.match(html, /Image enforcement/);
@@ -245,6 +247,20 @@ test("live status uses the exact public adapter and polls without controls", asy
   assert.match(registry, /alertsDashboard\s*=\s*`\$\{grafanaBase\}\/alerting\/list`/);
   assert.doesNotMatch(component, /<button\b|role="button"/i);
   assert.doesNotMatch(component, /customer|validatorPublicKey|secretRef|keystore/i);
+});
+
+test("image coverage renders exact subjects and gaps without a false zero", async () => {
+  const component = await readFile(
+    new URL("../components/repository-security.tsx", import.meta.url),
+    "utf8",
+  );
+
+  assert.match(component, /exactSubjects\.scanned\}\/\$\{[^}]+exactSubjects\.expected\} exact subjects scanned/);
+  assert.match(component, /coverageGaps\} coverage gaps · unresolved image sources remain unknown/);
+  assert.match(component, /Exact subjects only ·/);
+  assert.match(component, /: "Unavailable"/);
+  assert.match(component, /"Latest coverage unavailable"/);
+  assert.doesNotMatch(component, /\?\?\s*0|\|\|\s*0/);
 });
 
 test("Worker imports the shared canonical origin", async () => {

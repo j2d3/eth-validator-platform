@@ -9,7 +9,7 @@ export const DEPENDABOT_PULLS_API =
   `https://api.github.com/repos/${REPOSITORY}/pulls?state=open&per_page=100`;
 
 const FINDINGS_NAME =
-  /^Image findings - (\d+) images - Critical (\d+) \((\d+) fix available\) - High (\d+) \((\d+) fix available\)$/;
+  /^Image findings - (\d+)\/(\d+) exact subjects - (\d+) coverage gaps - Critical (\d+) \((\d+) fix available\) - High (\d+) \((\d+) fix available\)$/;
 
 function isRecord(value) {
   return typeof value === "object" && value !== null && !Array.isArray(value);
@@ -87,10 +87,18 @@ export function parseImageSecurityEvidence(value, run) {
     throw new Error("Invalid image-security finding check");
   }
 
-  const [images, criticalTotal, criticalAvailable, highTotal, highAvailable] =
-    match.slice(1).map(Number);
+  const [
+    scannedSubjects,
+    exactSubjects,
+    coverageGaps,
+    criticalTotal,
+    criticalAvailable,
+    highTotal,
+    highAvailable,
+  ] = match.slice(1).map(Number);
   if (
-    images < 1 ||
+    exactSubjects < 1 ||
+    scannedSubjects !== exactSubjects ||
     criticalAvailable > criticalTotal ||
     highAvailable > highTotal
   ) {
@@ -98,7 +106,8 @@ export function parseImageSecurityEvidence(value, run) {
   }
 
   return {
-    images,
+    exactSubjects: { scanned: scannedSubjects, expected: exactSubjects },
+    coverageGaps,
     critical: { total: criticalTotal, available: criticalAvailable },
     high: { total: highTotal, available: highAvailable },
     completedAt: check.completed_at,
