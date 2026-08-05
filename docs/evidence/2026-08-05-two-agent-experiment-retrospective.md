@@ -22,22 +22,27 @@ endpoint is included.
 
 ## Aggregate activity
 
-Merges to `main` between 2026-08-01T00:00Z and 2026-08-05T16:03Z:
+Merges to `main` between 2026-08-01T00:00Z and 2026-08-05T16:03Z
+(GitHub search API, fully paginated, all actor classes):
 
-| Author | Count |
+| Author | Merged-PR count |
 |---:|---|
-| `j2d3` (Codex + occasional operator) | 74 |
-| `5u6r054` (Claude Code) | 23 |
-| `app/github-actions` (dependency updates + auto-merges) | 3 |
-| **Total merges to `main`** | **~100** |
-| Total PRs (open + closed + merged) since 2026-08-01 | 149 |
+| `j2d3` (Codex + occasional operator) | 97 |
+| `5u6r054` (Claude Code) | 43 |
+| `dependabot[bot]` (dependency updates) | 5 |
+| `github-actions[bot]` (workflow auto-merges) | 3 |
+| **Total PRs merged** | **148** |
+| Total PRs created in the window | 167 |
+| First-parent commits on `main` through record-close commit `a328365` | 152 |
 | Issues closed in the window | 18 |
+
+Query method: `gh api "search/issues?q=repo:j2d3/eth-validator-platform+is:pr+is:merged+merged:2026-08-01..2026-08-05T16:03:00Z" --paginate` for the merged-PR counts; `git log --first-parent --oneline --since=... --until=... a328365 | wc -l` for the commits-on-`main` count. The first-parent commit count (152) exceeds the merged-PR count (148) because some merges arrived as direct pushes rather than through the pull-request path; those are a different measure and are not included in the author-count table.
 
 The `j2d3` author count is not equivalent to a single-agent Codex output:
 during this window, the operator merged some `j2d3`-authored changes
 without an at-head Claude review (early-window bootstrap work, Terraform
 apply plans that must run under a trusted-local identity, dependency
-updates from `app/github-actions`). The 23/74 ratio therefore understates
+updates from `github-actions[bot]`). The 43/97 ratio therefore understates
 the amount of work the two-agent contract actually gated. The gated-path
 subset — PRs opened under an agent branch prefix (`claude/*` or `codex/*`)
 that landed on `main` through the merge wrapper — is the one where the
@@ -63,11 +68,25 @@ or runbook; enumerated here so the collaboration context is complete):
 
 ## What the paired-review model actually caught
 
-Each entry names the specific PR (or referenced issue) where the second
-agent blocked or corrected a change the authoring agent had produced. All
-of these were caught by an agent that did not write the change, not by
-CI, and would have landed on `main` under a single-agent workflow without
-equivalent independent review.
+Each entry names the specific PR (or referenced issue) where a change was
+blocked or corrected. The catching mechanism (paired-agent review vs. CI
+vs. runtime observation) is stated per-entry, because they are different
+mechanisms and this record must not merge them.
+
+**Collection method (interpretation, not evidence).** This list was
+enumerated from one side: the Claude session's memory files plus recent
+PR reviews it authored or received. It is not a complete audit of every
+correction the two-agent contract made across the window, and it is
+biased toward defects Claude either introduced or was told about. A
+symmetric list of what Codex authored and Claude corrected would improve
+the record; whether the omission is significant is operator
+interpretation.
+
+**Would-a-single-agent-workflow-have-caught-this? (interpretation, not
+evidence).** For each entry the record notes the catching mechanism
+observed here. Whether an equivalent independent review or the same CI
+suite in a hypothetical single-agent workflow would have caught the
+same defect is a counterfactual and is not established by this record.
 
 ### Fabricated or wrong metric names
 
@@ -142,24 +161,32 @@ equivalent independent review.
   Read-only diagnostic mount confirmed no `nethermind_db`; guard
   corrected.
 
-### Missing cross-cutting overlay patch
+### Missing cross-cutting overlay patch (caught by CI + parallel-Claude, not paired-agent review)
 
 - **New pair rendered against local defaults, not EKS overlay** (#164
   → `118d6e1` courtesy-fix) — Claude's initial Nethermind+Prysm catalog
   activation added the ServiceProfile + ValidatorIdentity + assignment
   + docs page, and passed all local tests. It did **not** add the
   per-pair patch block to `platform/apps/nodes/dev/kustomization.yaml`
-  (valuesFiles + telemetry + `aws-engine-secrets` Engine JWT). CI's
-  `test_signing_node_layer_waits_for_signer_application` caught the
-  missing sorted-release-name entry, and a parallel Claude call pushed
-  the corrective commit. Cause: the local test run had excluded
-  `tests/test_eks_ephemery_sync_contracts.py` via `--ignore` for speed;
-  that file is the exact contract that guards the overlay per-release
-  patch requirement.
+  (valuesFiles + telemetry + `aws-engine-secrets` Engine JWT). **Caught
+  by CI**, not by paired review: the required check
+  `test_signing_node_layer_waits_for_signer_application` failed the
+  sorted-release-name assertion. A parallel Claude call (a bounded
+  worker running under the same 5u6r054 identity, from a separate
+  worktree) authored the corrective commit `118d6e1` before Codex's
+  exact-head review. So this defect belongs under a distinct heading
+  from the paired-agent-caught set above: the collaboration model
+  contributed only by way of the parallel-Claude worker; the block
+  itself came from CI. Root cause of the miss: the local test run had
+  excluded `tests/test_eks_ephemery_sync_contracts.py` via `--ignore`
+  for speed; that file is the exact contract that guards the overlay
+  per-release patch requirement.
 - **Missing `Nethermind+Lighthouse` row in `docs/client-pairs/README.md`
-  table** — the same #164 review found that the framing table had been
-  one pair behind the fleet since #160 landed, and the courtesy-fix
-  extended the docs update.
+  table** — the framing table had been one pair behind the fleet since
+  #160 landed. The same #164 courtesy-fix commit added the missing row.
+  Same catching mechanism as the overlay-patch item above:
+  parallel-Claude cleanup adjacent to the CI-flagged fix; not a
+  paired-agent review find on the original #164 head.
 
 ### Stale-approval race + at-head enforcement
 
@@ -209,9 +236,15 @@ equivalent independent review.
   consolidated into his own #194.
 - **Mitigation installed**: `gh pr list --author <you> --state open`
   before opening a branch on any claimed issue, plus a search of the
-  paired agent's `<other>/*` branch prefix. Encoded in
-  [`feedback_check_parallel_claude_before_starting.md`](../../.claude/projects/-Users-johndurkin-personal-galaxy/memory/feedback_check_parallel_claude_before_starting.md)
-  and in the session prompt.
+  paired agent's `<other>/*` branch prefix. Encoded in the "Claim before
+  branching" principle of
+  [`two-claude-collaboration.md`](../development/two-claude-collaboration.md)
+  and the corresponding session-prompt entry in
+  [`two-claude-agent-prompt.md`](../development/two-claude-agent-prompt.md).
+  The Claude-side operating memory that first documented the failure
+  mode lives in the per-user memory directory, not in the repository,
+  and is therefore not linked here — the tracked artifacts above are
+  the durable statements of the mitigation.
 - **Not solved**: the underlying claim primitive is still a natural-
   language comment on a GitHub issue. A future iteration should use an
   atomic-lease mechanism (a labeled issue with a bot-enforced lease
