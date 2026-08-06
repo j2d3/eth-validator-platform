@@ -78,8 +78,21 @@ exchange context and resolve disagreements.
    These are file-based rather than in-repo because they carry rough drafts,
    coordination text, and evidence-in-progress that shouldn't be permanent
    history. Both sessions must read and write the same absolute shared path.
-   A gitignored file in two separate clones is two different files. Without a
-   shared filesystem, use the GitHub issue and PR threads only.
+   A gitignored file in two separate clones is two different files.
+
+   Pin the paths absolutely — write "claude-a writes to `/shared/dm/.from_claude_a`"
+   and "claude-b reads from `/shared/dm/.from_claude_a`", using the same string on
+   both sides. Do not rely on paths relative to each clone; `<clone-a>/.from_b`
+   and `<clone-b>/.from_b` look identical in prose but are two disjoint files
+   on disk. This was the recurring coordination failure in the original
+   experiment.
+
+   At session start, each agent should:
+   - `stat` its inbound path to confirm it exists and is readable;
+   - write a heartbeat line to its outbound path and confirm the other
+     session sees the new mtime on the next tick.
+
+   Without a shared filesystem, use the GitHub issue and PR threads only.
 
 ## How work flows day-to-day
 

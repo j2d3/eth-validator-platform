@@ -114,8 +114,13 @@ claim issue and file surface
 
 PRs, reviews, issue comments, and CI are authoritative. Local scratch files
 can carry a quick narrative handoff, but two separate clones do not share a
-file automatically. If scratch files are used, define both absolute paths and
-copy/update them deliberately; never let a stale local note override GitHub.
+file automatically. If scratch files are used, put them on a shared filesystem
+outside either clone (e.g. `/shared/dm/.from_<lane>`) and write the absolute
+path — the same string — in both sessions' prompts. Paths relative to each
+clone look identical in prose but resolve to disjoint files on disk. At
+session start, each lane should confirm its inbound path exists and is
+readable, and drop a heartbeat line to its outbound path so the other lane
+sees the mtime advance. Never let a stale local note override GitHub.
 
 Before every GitHub write or commit, verify the lane:
 

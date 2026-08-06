@@ -111,13 +111,26 @@ durable unattended work needs an external supervisor. Each tick:
 1. Sweep the review-request queue: `GH_CONFIG_DIR=<AGENT_A_GH_CONFIG> gh pr
    list --repo <REPO> --search "review-requested:<AGENT_A_HANDLE> is:open"`.
    Review each PR at exact head.
-2. Sweep your own open PRs: `GH_CONFIG_DIR=<AGENT_A_GH_CONFIG> gh pr list
+2. Sweep implicit re-review queue — PRs you previously reviewed where the
+   author has amended past your review:
+   `GH_CONFIG_DIR=<AGENT_A_GH_CONFIG> gh pr list --repo <REPO> --search
+   'is:pr is:open reviewed-by:<AGENT_A_HANDLE> review:changes_requested'`,
+   then for each PR compare `.head.sha` vs the last review's `.commit_id`:
+   `gh api repos/<REPO>/pulls/<N> --jq '{head: .head.sha, reviewCommit:
+   (.reviews[-1] // {}).commit_id, reviewedAt: (.reviews[-1] //
+   {}).submitted_at}'`. Head-vs-commit mismatch means the author has
+   amended and re-review is implicitly queued even though GitHub's formal
+   reviewer-request field is empty. Review at the new head.
+3. Sweep your own open PRs: `GH_CONFIG_DIR=<AGENT_A_GH_CONFIG> gh pr list
    --repo <REPO> --search "author:<AGENT_A_HANDLE> is:open"`. If APPROVED
    and CLEAN, author-merge via `<MERGE_WRAPPER> <N>`. If CHANGES_REQUESTED,
    address the feedback and push.
-3. Check <DM_TO_A>'s mtime; read if newer than last known.
-4. Reschedule via ScheduleWakeup at 300–1800s depending on activity.
-5. If genuinely idle for three consecutive ticks: one-line "idle" and
+4. Check <DM_TO_A>'s mtime; read if newer than last known. Also verify
+   <DM_TO_B> is the same absolute path Agent B sees as its inbound — a
+   two-clone install where each session writes to its own local file
+   silently no-ops the DM channel (see the collaboration guide's item 7).
+5. Reschedule via ScheduleWakeup at 300–1800s depending on activity.
+6. If genuinely idle for three consecutive ticks: one-line "idle" and
    scale to 1800s heartbeat.
 
 ## Your first action
