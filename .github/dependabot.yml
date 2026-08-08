@@ -111,6 +111,31 @@ updates:
           - minor
           - patch
 
+  # Terraform root: durable Secret Manager containers retained across a cold
+  # standby. It has its own state key and lifecycle protections.
+  - package-ecosystem: terraform
+    directory: /terraform/environments/durable
+    schedule:
+      interval: weekly
+      day: wednesday
+      time: "06:15"
+      timezone: Etc/UTC
+    open-pull-requests-limit: 2
+    labels:
+      - dependencies
+      - terraform
+    commit-message:
+      prefix: chore
+      include: scope
+    groups:
+      terraform-durable-minor-patch:
+        applies-to: version-updates
+        patterns:
+          - "*"
+        update-types:
+          - minor
+          - patch
+
   # Terraform root: public Route 53 records for the portal custom domain. It
   # has an independent state key so DNS changes cannot couple to EKS/RDS.
   - package-ecosystem: terraform

@@ -208,17 +208,23 @@ resource "aws_cloudwatch_log_group" "web3signer_postgresql" {
 resource "aws_db_instance" "web3signer" {
   identifier = local.web3signer_database_identifier
 
+  # A cold-standby restore supplies an encrypted snapshot. The restore API
+  # owns the database name, master username, and password in that case; those
+  # create-only arguments must remain unset rather than accidentally creating
+  # an empty database over the recovered slashing history.
+  snapshot_identifier = var.rds_snapshot_identifier
+
   engine         = "postgres"
   engine_version = var.rds_postgres_major_version
   instance_class = var.rds_instance_class
 
-  db_name  = local.web3signer_database_name
-  username = "web3signer_admin"
+  db_name  = var.rds_snapshot_identifier == null ? local.web3signer_database_name : null
+  username = var.rds_snapshot_identifier == null ? "web3signer_admin" : null
   port     = local.web3signer_database_port
 
   # RDS generates and retains the master password in its own Secrets Manager
   # secret. No password expression or secret version enters Terraform state.
-  manage_master_user_password = true
+  manage_master_user_password = var.rds_snapshot_identifier == null
 
   allocated_storage     = var.rds_allocated_storage_gib
   max_allocated_storage = var.rds_max_allocated_storage_gib
@@ -238,10 +244,13 @@ resource "aws_db_instance" "web3signer" {
   maintenance_window      = "sun:09:00-sun:10:00"
   copy_tags_to_snapshot   = true
 
-  deletion_protection       = var.rds_deletion_protection
-  skip_final_snapshot       = var.rds_skip_final_snapshot
-  final_snapshot_identifier = var.rds_skip_final_snapshot ? null : "${local.web3signer_database_identifier}-final"
-  delete_automated_backups  = false
+  deletion_protection = var.rds_deletion_protection
+  skip_final_snapshot = var.rds_skip_final_snapshot
+  final_snapshot_identifier = var.rds_skip_final_snapshot ? null : coalesce(
+    var.rds_final_snapshot_identifier,
+    "${local.web3signer_database_identifier}-final",
+  )
+  delete_automated_backups = false
 
   auto_minor_version_upgrade          = true
   allow_major_version_upgrade         = false
@@ -271,31 +280,14 @@ resource "aws_db_instance" "web3signer" {
 # password. The EKS adapter may project database to a target dbname key for
 # images/configuration that require that spelling; the AWS source stays stable.
 # Terraform never declares aws_secretsmanager_secret_version for either object.
-resource "aws_secretsmanager_secret" "web3signer_database" {
-  name                    = "${local.name}/signing/web3signer-database"
-  description             = "Web3Signer application database connection JSON; populated outside Terraform."
-  recovery_window_in_days = 7
-
-  tags = {
-    DataClassification = "database-credential"
-  }
+data "aws_secretsmanager_secret" "web3signer_database" {
+  name = "${local.name}/signing/web3signer-database"
 }
 
-resource "aws_secretsmanager_secret" "web3signer_signing_key" {
+data "aws_secretsmanager_secret" "web3signer_signing_key" {
   for_each = local.web3signer_signing_key_names
 
-  name                    = "${local.name}/signing/${each.value}"
-  description             = "Encrypted validator keystore bundle and password; populated by restricted onboarding outside Terraform."
-  recovery_window_in_days = 30
-
-  tags = {
-    DataClassification = "validator-signing-key"
-  }
-}
-
-moved {
-  from = aws_secretsmanager_secret.web3signer_signing_key
-  to   = aws_secretsmanager_secret.web3signer_signing_key["validator-ephemery-162-01"]
+  name = "${local.name}/signing/${each.value}"
 }
 
 data "aws_iam_policy_document" "external_secrets_reader_trust" {
@@ -322,7 +314,7 @@ data "aws_iam_policy_document" "external_secrets_engine_reader" {
     sid       = "ReadEngineJwt"
     effect    = "Allow"
     actions   = ["secretsmanager:DescribeSecret", "secretsmanager:GetSecretValue"]
-    resources = [aws_secretsmanager_secret.engine_jwt.arn]
+    resources = [data.aws_secretsmanager_secret.engine_jwt.arn]
   }
 }
 
@@ -342,7 +334,7 @@ data "aws_iam_policy_document" "external_secrets_database_reader" {
     sid       = "ReadWeb3SignerDatabaseCredential"
     effect    = "Allow"
     actions   = ["secretsmanager:DescribeSecret", "secretsmanager:GetSecretValue"]
-    resources = [aws_secretsmanager_secret.web3signer_database.arn]
+    resources = [data.aws_secretsmanager_secret.web3signer_database.arn]
   }
 }
 
@@ -362,7 +354,7 @@ data "aws_iam_policy_document" "external_secrets_signing_reader" {
     sid       = "ReadValidatorKeystore"
     effect    = "Allow"
     actions   = ["secretsmanager:DescribeSecret", "secretsmanager:GetSecretValue"]
-    resources = [for signing_key in values(aws_secretsmanager_secret.web3signer_signing_key) : signing_key.arn]
+    resources = [for signing_key in values(data.aws_secretsmanager_secret.web3signer_signing_key) : signing_key.arn]
   }
 }
 

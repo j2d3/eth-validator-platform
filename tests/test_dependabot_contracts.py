@@ -42,6 +42,7 @@ EXPECTED_OPEN_PR_LIMITS = {
     ("terraform", "/terraform/bootstrap"): 2,
     ("terraform", "/terraform/environments/dev"): 2,
     ("terraform", "/terraform/environments/dns"): 2,
+    ("terraform", "/terraform/environments/durable"): 2,
     ("pip", "/"): 2,
     ("npm", "/control-plane/portal"): 2,
 }
