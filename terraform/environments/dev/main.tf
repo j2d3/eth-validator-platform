@@ -227,10 +227,9 @@ module "eks" {
   tags = local.tags
 }
 
-resource "aws_secretsmanager_secret" "engine_jwt" {
-  name                    = "${local.name}/ethereum/engine-jwt"
-  description             = "EL/CL Engine API JWT; value is injected after Terraform apply and is not stored in state."
-  recovery_window_in_days = 7
+data "aws_secretsmanager_secret" "engine_jwt" {
+  name = "${local.name}/ethereum/engine-jwt"
+  # The container is owned by terraform/environments/durable.
 }
 
 resource "aws_iam_role" "external_secrets" {

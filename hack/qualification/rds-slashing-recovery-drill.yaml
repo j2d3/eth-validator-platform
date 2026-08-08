@@ -380,11 +380,12 @@ required_terraform_guards:
   - id: master-password-not-in-state
     terraform_file: signer-foundation.tf
     scope: resource:aws_db_instance.web3signer
-    expect: "manage_master_user_password = true"
+    expect: "manage_master_user_password = var.rds_snapshot_identifier == null"
     rationale: >-
-      The master credential is managed by RDS on both the source and the
-      restored copy, and the drill reads neither: it connects as the restored
-      application role.
+      A normal database create delegates the master credential to RDS. A
+      snapshot restore leaves the snapshot-owned master credential untouched;
+      neither path places a password expression in Terraform state, and the
+      drill connects as the restored application role.
 
 # Ordered. The preflight tool enforces this exact relative order, enforces that
 # no gate before `human-go-no-go` mutates AWS or bills, and enforces that

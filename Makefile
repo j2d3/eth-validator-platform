@@ -2,7 +2,7 @@ SHELL := /bin/bash
 .DEFAULT_GOAL := help
 LOCAL_BIN := $(CURDIR)/.local/bin
 TF_PLUGIN_CACHE_DIR := $(CURDIR)/.local/terraform-plugin-cache
-TF_ROOTS := terraform/bootstrap terraform/environments/dev terraform/environments/dns
+TF_ROOTS := terraform/bootstrap terraform/environments/dev terraform/environments/dns terraform/environments/durable
 export PATH := $(LOCAL_BIN):$(PATH)
 
 .PHONY: help tools format fmt validate catalog test image-inventory container-contracts helm-template helm-releases kustomize-build verify-scripts portal-check rds-drill-readiness local-preflight local-up local-bootstrap local-seed local-status local-down eks-capacity-status check

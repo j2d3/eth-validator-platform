@@ -935,8 +935,8 @@ class TerraformGuardTests(unittest.TestCase):
             encoding="utf-8"
         )
         weakened = original.replace(
-            "delete_automated_backups  = false",
-            "delete_automated_backups  = true",
+            "delete_automated_backups = false",
+            "delete_automated_backups = true",
         )
         self.assertNotEqual(original, weakened)
 

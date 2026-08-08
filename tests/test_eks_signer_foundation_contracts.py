@@ -11,6 +11,9 @@ ROOT = Path(__file__).resolve().parents[1]
 EKS_ROOT = ROOT / "terraform" / "environments" / "dev"
 MAIN = (EKS_ROOT / "main.tf").read_text(encoding="utf-8")
 SIGNER = (EKS_ROOT / "signer-foundation.tf").read_text(encoding="utf-8")
+DURABLE = (ROOT / "terraform" / "environments" / "durable" / "main.tf").read_text(
+    encoding="utf-8"
+)
 VARIABLES = (EKS_ROOT / "variables.tf").read_text(encoding="utf-8")
 OUTPUTS = (EKS_ROOT / "outputs.tf").read_text(encoding="utf-8")
 README = (EKS_ROOT / "README.md").read_text(encoding="utf-8")
@@ -243,19 +246,26 @@ class EksSignerFoundationContractTests(unittest.TestCase):
 
         self.assertNotIn('resource "aws_secretsmanager_secret_version"', terraform)
         self.assertNotRegex(terraform, r"(?m)^\s*(?:password|secret_string)\s*=")
-        self.assertIn("manage_master_user_password = true", database)
-        self.assertIn('resource "aws_secretsmanager_secret" "web3signer_database"', SIGNER)
-        self.assertIn('resource "aws_secretsmanager_secret" "web3signer_signing_key"', SIGNER)
+        self.assertIn(
+            "manage_master_user_password = var.rds_snapshot_identifier == null",
+            database,
+        )
+        self.assertIn(
+            'resource "aws_secretsmanager_secret" "web3signer_database"',
+            DURABLE,
+        )
+        self.assertIn(
+            'resource "aws_secretsmanager_secret" "web3signer_signing_key"',
+            DURABLE,
+        )
         self.assertIn("No password expression or secret version enters Terraform state", SIGNER)
 
     def test_each_validator_identity_has_an_independent_signing_key_container(self) -> None:
-        signing_key = resource_block(
-            "aws_secretsmanager_secret", "web3signer_signing_key"
-        )
-        compact_signer = " ".join(SIGNER.split())
+        signing_key = " ".join(DURABLE.split())
         compact_outputs = " ".join(OUTPUTS.split())
 
-        self.assertIn("for_each = local.web3signer_signing_key_names", signing_key)
+        self.assertIn("for_each = var.validator_signing_secret_names", signing_key)
+        self.assertIn("prevent_destroy = true", signing_key)
         self.assertIn(
             'validator-ephemery-162-01 = "validator-keystore"', SIGNER
         )
@@ -272,23 +282,25 @@ class EksSignerFoundationContractTests(unittest.TestCase):
             'validator-ephemery-162-05 = "validator-keystore-05"', SIGNER
         )
         self.assertIn(
-            'to = aws_secretsmanager_secret.web3signer_signing_key["validator-ephemery-162-01"]',
-            compact_signer,
-        )
-        self.assertIn(
-            "for validator_id, signing_key in aws_secretsmanager_secret.web3signer_signing_key",
+            "for validator_id, signing_key in data.aws_secretsmanager_secret.web3signer_signing_key",
             compact_outputs,
         )
         self.assertIn("validator_id => signing_key.arn", compact_outputs)
 
     def test_database_secret_matches_flux_source_contract(self) -> None:
-        database_secret = resource_block("aws_secretsmanager_secret", "web3signer_database")
-
-        self.assertIn('name = "${local.name}/signing/web3signer-database"', database_secret)
+        self.assertIn(
+            'data "aws_secretsmanager_secret" "web3signer_database"', SIGNER
+        )
+        self.assertIn(
+            'name = "${local.name}/signing/web3signer-database"', SIGNER
+        )
         self.assertIn("canonical source JSON fields are host, port, database, username, and", SIGNER)
         self.assertIn("projects the canonical `database` property to target `dbname`", README)
         self.assertIn("`.../signing/web3signer-database`", README)
-        self.assertIn('database_connection = aws_secretsmanager_secret.web3signer_database.arn', OUTPUTS)
+        self.assertIn(
+            "database_connection = data.aws_secretsmanager_secret.web3signer_database.arn",
+            OUTPUTS,
+        )
 
     def test_external_secrets_uses_scoped_assume_roles(self) -> None:
         base_policy = re.search(
@@ -337,20 +349,20 @@ class EksSignerFoundationContractTests(unittest.TestCase):
         engine_data = data_block("external_secrets_engine_reader")
         database_data = data_block("external_secrets_database_reader")
         signing_data = data_block("external_secrets_signing_reader")
-        self.assertIn("aws_secretsmanager_secret.engine_jwt.arn", engine_data)
-        self.assertNotIn("aws_secretsmanager_secret.web3signer_database.arn", engine_data)
+        self.assertIn("data.aws_secretsmanager_secret.engine_jwt.arn", engine_data)
+        self.assertNotIn("data.aws_secretsmanager_secret.web3signer_database.arn", engine_data)
         self.assertNotIn("web3signer_signing_key", engine_data)
 
-        self.assertIn("aws_secretsmanager_secret.web3signer_database.arn", database_data)
+        self.assertIn("data.aws_secretsmanager_secret.web3signer_database.arn", database_data)
         self.assertNotIn("web3signer_signing_key", database_data)
         self.assertNotIn("aws_secretsmanager_secret.engine_jwt.arn", database_data)
 
         self.assertIn(
-            "values(aws_secretsmanager_secret.web3signer_signing_key)",
+            "values(data.aws_secretsmanager_secret.web3signer_signing_key)",
             signing_data,
         )
-        self.assertNotIn("aws_secretsmanager_secret.web3signer_database.arn", signing_data)
-        self.assertNotIn("aws_secretsmanager_secret.engine_jwt.arn", signing_data)
+        self.assertNotIn("data.aws_secretsmanager_secret.web3signer_database.arn", signing_data)
+        self.assertNotIn("data.aws_secretsmanager_secret.engine_jwt.arn", signing_data)
         for policy in (engine_data, database_data, signing_data):
             self.assertNotIn('resources = ["*"]', policy)
 
