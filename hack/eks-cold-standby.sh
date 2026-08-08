@@ -156,6 +156,45 @@ destroy_plan() {
   rg '^Plan:' "$STATE_DIR/destroy-${final_id}.txt" || true
 }
 
+prepare_rds_for_destroy() {
+  local final_id="$1"
+  # Terraform's destroy plan does not apply an in-place configuration change
+  # before deleting a resource. Deletion protection must therefore be removed
+  # in a narrowly targeted update before the full destroy plan is applied.
+  tf apply -input=false -auto-approve \
+    -var='rds_deletion_protection=false' \
+    -var="rds_final_snapshot_identifier=${final_id}" \
+    -target=aws_db_instance.web3signer >/dev/null
+}
+
+delete_cluster_load_balancers() {
+  local arn tags
+  while read -r arn; do
+    [[ -n "$arn" ]] || continue
+    tags="$(aws elbv2 describe-tags --region "$AWS_REGION" \
+      --resource-arns "$arn" --query 'TagDescriptions[0].Tags' --output json)"
+    if jq -e --arg cluster "$CLUSTER_NAME" \
+      'any(.[]?; .Key == ("kubernetes.io/cluster/" + $cluster) and .Value == "owned")' \
+      <<<"$tags" >/dev/null; then
+      printf 'Deleting cluster-owned load balancer before teardown: %s\n' "$arn"
+      aws elbv2 delete-load-balancer --region "$AWS_REGION" --load-balancer-arn "$arn"
+    fi
+  done < <(aws elbv2 describe-load-balancers --region "$AWS_REGION" \
+    --query 'LoadBalancers[].LoadBalancerArn' --output text | tr '\t' '\n')
+}
+
+delete_detached_branch_enis_after_cluster_destroy() {
+  aws eks describe-cluster --region "$AWS_REGION" --name "$CLUSTER_NAME" >/dev/null 2>&1 && return 0
+  local eni description status
+  while read -r eni description status; do
+    [[ "$status" == "available" && "$description" == "aws-k8s-branch-eni" ]] || continue
+    printf 'Deleting detached cluster branch ENI after teardown: %s\n' "$eni"
+    aws ec2 delete-network-interface --region "$AWS_REGION" --network-interface-id "$eni"
+  done < <(aws ec2 describe-network-interfaces --region "$AWS_REGION" \
+    --filters Name=description,Values=aws-k8s-branch-eni \
+    --query 'NetworkInterfaces[].[NetworkInterfaceId,Description,Status]' --output text)
+}
+
 down() {
   require_tools
   preflight
@@ -165,6 +204,8 @@ down() {
   final_id="${DB_IDENTIFIER}-cold-final-$(date -u +%Y%m%d-%H%M%S)"
   plan_path="$STATE_DIR/destroy-${final_id}.tfplan"
   started="$(date +%s)"
+  prepare_rds_for_destroy "$final_id"
+  delete_cluster_load_balancers
   tf plan -destroy -refresh=false -input=false \
     -var='rds_deletion_protection=false' \
     -var="rds_final_snapshot_identifier=${final_id}" \
@@ -176,7 +217,18 @@ down() {
   printf 'Type %s to authorize the cold teardown: ' "$CONFIRMATION"
   read -r confirmation
   [[ "$confirmation" == "$CONFIRMATION" ]] || die "confirmation did not match; no AWS mutation performed"
-  tf apply -input=false -auto-approve "$plan_path"
+  if ! tf apply -input=false -auto-approve "$plan_path"; then
+    # AWS may leave cluster-created branch ENIs until the control plane is
+    # gone. Clean only detached artifacts, then retry from a fresh plan.
+    delete_detached_branch_enis_after_cluster_destroy
+    tf plan -destroy -refresh=false -input=false \
+      -var='rds_deletion_protection=false' \
+      -var="rds_final_snapshot_identifier=${final_id}" \
+      -out="$plan_path" -no-color >"$STATE_DIR/destroy-${final_id}.txt"
+    secret_deletes="$(tf show -json "$plan_path" | jq '[.resource_changes[] | select((.change.actions | index("delete")) and (.address | test("secretsmanager_secret")))] | length')"
+    [[ "$secret_deletes" == "0" ]] || die "retry destroy plan contains durable secret deletions"
+    tf apply -input=false -auto-approve "$plan_path"
+  fi
   printf 'Cold teardown elapsed seconds: %s\n' "$(( $(date +%s) - started ))"
 }
 
