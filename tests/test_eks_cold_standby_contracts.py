@@ -29,11 +29,20 @@ class EksColdStandbyContracts(unittest.TestCase):
         self.assertIn('.Value == "owned"', section)
         self.assertIn("delete-load-balancer", section)
 
-    def test_branch_eni_cleanup_requires_detached_known_artifact(self) -> None:
+    def test_branch_eni_cleanup_requires_detached_cluster_artifact(self) -> None:
         section = SCRIPT[SCRIPT.index("delete_detached_branch_enis_after_cluster_destroy()"):SCRIPT.index("down()")]
         self.assertIn('description,Values=aws-k8s-branch-eni', section)
+        self.assertIn('Name=tag:cluster.k8s.amazonaws.com/name,Values=$CLUSTER_NAME', section)
         self.assertIn('[[ "$status" == "available"', section)
+        self.assertIn("ResourceNotFoundException", section)
+        self.assertIn("cannot verify whether EKS cluster is absent", section)
         self.assertIn("delete-network-interface", section)
+
+    def test_confirmation_precedes_all_teardown_mutations(self) -> None:
+        section = SCRIPT[SCRIPT.index("down()") : SCRIPT.index("up()")]
+        confirmation = section.index("read -r confirmation")
+        self.assertLess(confirmation, section.index('prepare_rds_for_destroy "$final_id"'))
+        self.assertLess(confirmation, section.index("delete_cluster_load_balancers"))
 
     def test_destroy_plan_protects_durable_secrets_on_retry(self) -> None:
         self.assertGreaterEqual(SCRIPT.count('secret_deletes="$(tf show -json'), 2)

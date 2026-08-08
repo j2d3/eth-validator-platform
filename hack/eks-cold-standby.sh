@@ -184,7 +184,13 @@ delete_cluster_load_balancers() {
 }
 
 delete_detached_branch_enis_after_cluster_destroy() {
-  aws eks describe-cluster --region "$AWS_REGION" --name "$CLUSTER_NAME" >/dev/null 2>&1 && return 0
+  local cluster_error
+  if cluster_error="$(aws eks describe-cluster --region "$AWS_REGION" --name "$CLUSTER_NAME" 2>&1)"; then
+    return 0
+  fi
+  [[ "$cluster_error" == *"ResourceNotFoundException"* ]] || \
+    die "cannot verify whether EKS cluster is absent: $cluster_error"
+
   local eni description status
   while read -r eni description status; do
     [[ "$status" == "available" && "$description" == "aws-k8s-branch-eni" ]] || continue
@@ -192,6 +198,7 @@ delete_detached_branch_enis_after_cluster_destroy() {
     aws ec2 delete-network-interface --region "$AWS_REGION" --network-interface-id "$eni"
   done < <(aws ec2 describe-network-interfaces --region "$AWS_REGION" \
     --filters Name=description,Values=aws-k8s-branch-eni \
+              "Name=tag:cluster.k8s.amazonaws.com/name,Values=$CLUSTER_NAME" \
     --query 'NetworkInterfaces[].[NetworkInterfaceId,Description,Status]' --output text)
 }
 
@@ -204,8 +211,6 @@ down() {
   final_id="${DB_IDENTIFIER}-cold-final-$(date -u +%Y%m%d-%H%M%S)"
   plan_path="$STATE_DIR/destroy-${final_id}.tfplan"
   started="$(date +%s)"
-  prepare_rds_for_destroy "$final_id"
-  delete_cluster_load_balancers
   tf plan -destroy -refresh=false -input=false \
     -var='rds_deletion_protection=false' \
     -var="rds_final_snapshot_identifier=${final_id}" \
@@ -217,6 +222,16 @@ down() {
   printf 'Type %s to authorize the cold teardown: ' "$CONFIRMATION"
   read -r confirmation
   [[ "$confirmation" == "$CONFIRMATION" ]] || die "confirmation did not match; no AWS mutation performed"
+  prepare_rds_for_destroy "$final_id"
+  delete_cluster_load_balancers
+  # The targeted update changes Terraform state, so recreate the saved plan
+  # after authorization before applying it.
+  tf plan -destroy -refresh=false -input=false \
+    -var='rds_deletion_protection=false' \
+    -var="rds_final_snapshot_identifier=${final_id}" \
+    -out="$plan_path" -no-color >"$STATE_DIR/destroy-${final_id}.txt"
+  secret_deletes="$(tf show -json "$plan_path" | jq '[.resource_changes[] | select((.change.actions | index("delete")) and (.address | test("secretsmanager_secret")))] | length')"
+  [[ "$secret_deletes" == "0" ]] || die "post-authorization destroy plan contains $secret_deletes Secrets Manager deletions"
   if ! tf apply -input=false -auto-approve "$plan_path"; then
     # AWS may leave cluster-created branch ENIs until the control plane is
     # gone. Clean only detached artifacts, then retry from a fresh plan.
