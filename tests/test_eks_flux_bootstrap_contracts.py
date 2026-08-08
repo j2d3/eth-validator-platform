@@ -131,13 +131,11 @@ class EksFluxEntrypointTests(unittest.TestCase):
         self.assertNotIn("suspend", self.layers["infrastructure-controllers"]["spec"])
         self.assertNotIn("suspend", self.layers["infrastructure-configs"]["spec"])
         self.assertNotIn("suspend", self.layers["portal-observability"]["spec"])
-        # node-apps has been reviewed-unsuspended to admit the stopped
-        # HelmRelease per docs/runbooks/eks-ephemery-sync.md §4. The
-        # HelmRelease itself remains lifecycleState=stopped and non-signing;
-        # that safety property is asserted separately in
-        # test_eks_ephemery_sync_contracts.
+        # node-apps remains suspended after the fleet pause. Assignment state
+        # has already reconciled to stopped/non-signing, so resuming capacity
+        # cannot launch clients until a later reviewed GitOps reactivation.
         self.assertIn("suspend", self.layers["node-apps"]["spec"])
-        self.assertFalse(self.layers["node-apps"]["spec"]["suspend"])
+        self.assertTrue(self.layers["node-apps"]["spec"]["suspend"])
         # The signer adapter, prerequisite layer, and empty-key workload have
         # been separately reviewed after the RDS credential bootstrap, TLS,
         # migration, and branch-ENI paths were qualified. Validator duties are

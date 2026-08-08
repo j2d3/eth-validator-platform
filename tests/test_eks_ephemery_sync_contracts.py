@@ -498,11 +498,11 @@ class EksEphemeryFluxAndTelemetryTests(unittest.TestCase):
             layer["spec"]["dependsOn"],
             [{"name": "infrastructure-controllers"}, {"name": "apps"}],
         )
-        # The layer remains reconciled while assignments are stopped. Its
-        # dependencies will order a later reviewed reactivation behind both
-        # the Ready AWS LBC and shared-signer application.
+        # The layer is suspended after assignments reconcile to stopped. Its
+        # dependencies will order a later reviewed resume and reactivation
+        # behind both the Ready AWS LBC and shared-signer application.
         self.assertIn("suspend", layer["spec"])
-        self.assertFalse(layer["spec"]["suspend"])
+        self.assertTrue(layer["spec"]["suspend"])
 
         rendered = subprocess.run(
             ["kubectl", "kustomize", str(NODE_APPS)],
