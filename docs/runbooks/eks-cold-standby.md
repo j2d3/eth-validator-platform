@@ -79,6 +79,19 @@ The teardown must refuse to proceed when any signing flag is true, when any
 active workload exists, when the RDS snapshot is absent/unverified, or when the
 secret containers cannot be identified as retained resources.
 
+The operator performs one targeted Terraform update before the destroy plan:
+it changes the RDS instance's deletion-protection flag to `false` and assigns
+the unique final-snapshot identifier. A destroy plan cannot apply that
+in-place change as a prerequisite to deletion, so combining both actions in a
+single destroy plan is insufficient.
+
+During the first EKS drill, AWS also left an unattached VPC-CNI branch ENI and
+the Kubernetes-owned ingress NLB after the cluster disappeared. The operator
+removed those two cluster-scoped artifacts after verifying they were detached
+or tagged to this cluster; future teardown automation should make that cleanup
+explicit rather than assuming Terraform can remove them after the control
+plane is gone.
+
 ## Required recovery sequence
 
 1. Read the recovery manifest from S3 and verify its checksum and Git revision.
@@ -112,10 +125,38 @@ resources instead of relying on a broad `terraform destroy`:
 - an explicit `cold_restore_snapshot_identifier` input for restoring RDS from
   the verified snapshot.
 
-The current development root combines several of these concerns, so the first
-implementation step is a refactor and plan-only verification. No cold teardown
-should be attempted until a destroy plan proves that secret containers and the
-Terraform backend are outside its target set.
+The development root owns the ephemeral foundation and RDS; the separate
+`terraform/environments/durable` root owns the seven identity-addressed
+Secrets Manager containers. No cold teardown should be attempted until a
+destroy plan proves that secret containers and the Terraform backend are
+outside its target set.
+
+## First measured drill
+
+On 2026-08-08 in `us-west-2`, the lab completed one cold teardown and restore:
+
+- EKS control-plane creation during restore: 9m45s.
+- RDS restore from the encrypted manual snapshot: 10m51s.
+- End-to-end Terraform/EKS restore reported by the operator: 775s (12m55s).
+- The cold state contained no EKS cluster, VPC, NLB, RDS instance, or dev
+  Terraform resources; all seven durable secret containers and both encrypted
+  RDS snapshots remained available.
+- Flux was bootstrapped from `main@sha1:4b32329`; all infrastructure,
+  observability, signer-prerequisite, and application Kustomizations became
+  Ready. Validator assignments remained stopped and no signing workload was
+  admitted.
+
+The first teardown also exposed the deletion-protection ordering bug described
+above. It was corrected before the next down cycle; the next cycle must use
+the guarded `down` command and record its elapsed time independently.
+
+The follow-up cold-down completed on the same day in 1,173 seconds (19m33s).
+It removed the restored EKS cluster, VPC, load balancers, RDS instance, and
+ephemeral Terraform resources while retaining the seven durable secret
+containers and the encrypted restore snapshot. AWS again left one available
+`aws-k8s-branch-eni` behind after the control plane disappeared; the guarded
+cleanup removed that exact detached ENI and the destroy then completed. The
+lab was left in this cold state for the next recovery measurement.
 
 ## Cost expectation
 
@@ -124,4 +165,3 @@ nodes, NAT gateway, RDS instance hours, load balancers, and running workers.
 Remaining charges are expected to be primarily Secrets Manager, KMS, S3,
 Route 53, ECR, and retained encrypted backup storage. Actual pricing must be
 read from Cost Explorer after the first complete cold-standby day.
-
