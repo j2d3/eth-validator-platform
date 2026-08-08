@@ -6,20 +6,44 @@ readonly CHART="${REPOSITORY_ROOT}/charts/ethereum-node"
 temporary_directory="$(mktemp -d)"
 trap 'rm -rf "${temporary_directory}"' EXIT
 
+render_active_ephemery_values() {
+  python3 - "${REPOSITORY_ROOT}" <<'PY'
+import sys
+
+import yaml
+
+repository_root = sys.argv[1]
+sys.path.insert(0, repository_root)
+
+from tools import render_local_assignments
+
+catalog = render_local_assignments.load_catalog()
+assignment = catalog["ValidatorAssignment"]["assignment-ephemery-162-synthetic"]["spec"]
+assignment["lifecycle"] = "active"
+assignment["signingEnabled"] = True
+assignment["safety"] = {
+    "slashingProtectionConfirmed": True,
+    "doppelgangerProtectionConfirmed": True,
+}
+release = render_local_assignments.build_release(
+    "assignment-ephemery-162-synthetic", catalog
+)
+print(yaml.safe_dump(release["spec"]["values"], sort_keys=False))
+PY
+}
+
 helm lint "${CHART}"
 helm template ethereum-node "${CHART}" --namespace ethereum \
   >"${temporary_directory}/stopped.yaml"
 helm template ethereum-node "${CHART}" --namespace ethereum \
   --set lifecycleState=active \
   >"${temporary_directory}/active.yaml"
-python3 "${REPOSITORY_ROOT}/tools/render_local_assignments.py" \
-  --values-for assignment-ephemery-162-synthetic \
+render_active_ephemery_values \
   | helm template ephemery-162 "${CHART}" --namespace ethereum \
       --values - \
       --set lifecycleState=active \
       >"${temporary_directory}/ephemery-162.yaml"
-python3 "${REPOSITORY_ROOT}/tools/render_local_assignments.py" \
-  --values-for assignment-ephemery-162-synthetic \
+render_active_ephemery_values \
   >"${temporary_directory}/ephemery-eks-projected-values.yaml"
 python3 - "${temporary_directory}/ephemery-eks-projected-values.yaml" <<'PY'
 import sys
@@ -150,8 +174,7 @@ for expected_size in 50Gi 20Gi 5Gi; do
 done
 grep -q '^kind: Deployment$' "${temporary_directory}/ephemery-eks.yaml"
 grep -q 'platform.galaxy-lab/signing-enabled: "true"' "${temporary_directory}/ephemery-eks.yaml"
-if python3 "${REPOSITORY_ROOT}/tools/render_local_assignments.py" \
-  --values-for assignment-ephemery-162-synthetic \
+if render_active_ephemery_values \
   | helm template ephemery-162 "${CHART}" --namespace ethereum \
       --values - \
       --set lifecycleState=active \

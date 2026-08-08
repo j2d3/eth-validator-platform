@@ -111,9 +111,13 @@ class LocalAssignmentProjectionTests(unittest.TestCase):
         # catalog trio is three separate files joined by name references, so
         # a typo in serviceProfileRef would silently project a different
         # client combination rather than fail. Pin the projected result.
+        catalog = copy.deepcopy(self.catalog)
+        catalog["ValidatorAssignment"][
+            "assignment-ephemery-162-synthetic-nethermind-prysm"
+        ]["spec"]["lifecycle"] = "active"
         release = render_local_assignments.build_release(
             "assignment-ephemery-162-synthetic-nethermind-prysm",
-            self.catalog,
+            catalog,
         )
         values = release["spec"]["values"]
 

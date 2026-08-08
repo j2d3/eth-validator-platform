@@ -34,6 +34,17 @@ class EksEphemeryRenderTests(unittest.TestCase):
     @classmethod
     def setUpClass(cls) -> None:
         catalog = render_local_assignments.load_catalog()
+        # Runtime desired state may be paused between exercises. Build an
+        # explicit active signing fixture so these chart contracts continue
+        # to exercise the qualified validator path without requiring the live
+        # fleet to remain enabled in Git.
+        assignment = catalog["ValidatorAssignment"]["assignment-ephemery-162-synthetic"]["spec"]
+        assignment["lifecycle"] = "active"
+        assignment["signingEnabled"] = True
+        assignment["safety"] = {
+            "slashingProtectionConfirmed": True,
+            "doppelgangerProtectionConfirmed": True,
+        }
         release = render_local_assignments.build_release(
             "assignment-ephemery-162-synthetic", catalog
         )
@@ -481,14 +492,15 @@ class EksEphemeryRenderTests(unittest.TestCase):
 
 
 class EksEphemeryFluxAndTelemetryTests(unittest.TestCase):
-    def test_signing_node_layer_waits_for_signer_application(self) -> None:
+    def test_paused_node_layer_retains_inputs_without_admitting_workloads(self) -> None:
         layer = yaml.safe_load((CLUSTER / "node-apps.yaml").read_text(encoding="utf-8"))
         self.assertEqual(
             layer["spec"]["dependsOn"],
             [{"name": "infrastructure-controllers"}, {"name": "apps"}],
         )
-        # The layer remains reconciled; its dependencies order the validator
-        # behind both the Ready AWS LBC and shared-signer application.
+        # The layer remains reconciled while assignments are stopped. Its
+        # dependencies will order a later reviewed reactivation behind both
+        # the Ready AWS LBC and shared-signer application.
         self.assertIn("suspend", layer["spec"])
         self.assertFalse(layer["spec"]["suspend"])
 
@@ -511,17 +523,9 @@ class EksEphemeryFluxAndTelemetryTests(unittest.TestCase):
         releases = [
             document for document in documents if document["kind"] == "HelmRelease"
         ]
-        # Nine generation-pinned Ephemery pairs are rendered by this overlay:
-        # Geth+Lighthouse, Reth+Lighthouse, Geth+Teku, and Reth+Teku sign with
-        # disjoint identities; Erigon+Lighthouse, Geth+Nimbus, Besu+Teku,
-        # Nethermind+Lighthouse, and Nethermind+Prysm stay non-signing.
-        # Everything else in this test asserts on the four signing pairs; the
-        # non-signing pairs are covered in test_chart_reth_adapter_contracts,
-        # test_chart_teku_adapter_contracts,
-        # test_chart_erigon_adapter_contracts, test_chart_besu_adapter_contracts,
-        # test_chart_nimbus_adapter_contracts, test_chart_nethermind_adapter_contracts,
-        # test_chart_prysm_adapter_contracts, and
-        # test_local_assignment_projection.
+        # All nine generation-pinned Ephemery releases remain admitted so
+        # their identities, PVCs, and EKS-specific inputs are retained. Their
+        # stopped values render no client or validator workload.
         self.assertEqual(
             sorted(release["metadata"]["name"] for release in releases),
             [
@@ -544,7 +548,8 @@ class EksEphemeryFluxAndTelemetryTests(unittest.TestCase):
         # not an obviously-broken render.
         for release in releases:
             with self.subTest(release=release["metadata"]["name"]):
-                self.assertEqual(release["spec"]["values"]["lifecycleState"], "active")
+                self.assertEqual(release["spec"]["values"]["lifecycleState"], "stopped")
+                self.assertFalse(release["spec"]["values"]["validator"]["enabled"])
                 self.assertEqual(
                     release["spec"]["values"]["engineJwt"]["secretStoreName"],
                     "aws-engine-secrets",
@@ -585,44 +590,8 @@ class EksEphemeryFluxAndTelemetryTests(unittest.TestCase):
             "service.k8s.aws/nlb",
         )
 
-        signing_releases = {
-            release["metadata"]["name"]: release
-            for release in releases
-            if release["spec"]["values"]["validator"]["enabled"]
-        }
-        self.assertEqual(
-            set(signing_releases),
-            {
-                "assignment-ephemery-162-synthetic",
-                "assignment-ephemery-162-synthetic-reth",
-                "assignment-ephemery-162-synthetic-reth-teku",
-                "assignment-ephemery-162-synthetic-teku",
-            },
-        )
-        signing_public_keys = set()
-        signing_validator_ids = set()
-        for release in signing_releases.values():
-            values = release["spec"]["values"]
-            validator = values["validator"]
-            self.assertTrue(validator["slashingProtectionConfirmed"])
-            self.assertTrue(
-                values["networkProfile"]["signer"]["web3signer"]["signingQualified"]
-            )
-            self.assertEqual(
-                validator["networkConfigMapName"],
-                "web3signer-network-config-ephemery-162",
-            )
-            signing_public_keys.add(validator["publicKey"])
-            signing_validator_ids.add(values["identity"]["validatorId"])
-        self.assertEqual(len(signing_public_keys), 4)
-        self.assertEqual(
-            signing_validator_ids,
-            {
-                "validator-ephemery-162-01",
-                "validator-ephemery-162-02",
-                "validator-ephemery-162-03",
-                "validator-ephemery-162-04",
-            },
+        self.assertFalse(
+            any(release["spec"]["values"]["validator"]["enabled"] for release in releases)
         )
 
     def test_sync_dashboard_uses_only_declared_evidence_and_states_limits(self) -> None:

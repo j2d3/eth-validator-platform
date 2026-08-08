@@ -22,16 +22,16 @@ spec:
       interval: 10m
       reconcileStrategy: Revision
   install:
-    disableWait: false
+    disableWait: true
     remediation:
       retries: 3
   upgrade:
-    disableWait: false
+    disableWait: true
     remediation:
       retries: 3
   values:
     fullnameOverride: pair-ephemery-162-synthetic-teku
-    lifecycleState: active
+    lifecycleState: stopped
     networkProfile:
       name: ephemery-162
       family: ephemery
@@ -110,9 +110,5 @@ spec:
       validatorId: validator-ephemery-162-03
       assignmentId: assignment-ephemery-162-synthetic-teku
     validator:
-      enabled: true
-      slashingProtectionConfirmed: true
-      publicKey: '0xb98d4a2bfa3bbc4e9b4d24c04d3e160efdee23daeb99f6c82b7472d85452528ee241ae7440a069dd1a2a653797df558a'
-      feeRecipient: '0x26c31E06d6D4CEd468704b62Cb6c2F897D997576'
-      graffiti: eth-validator-platform-lab
-      networkConfigMapName: web3signer-network-config-ephemery-162
+      enabled: false
+      slashingProtectionConfirmed: false
