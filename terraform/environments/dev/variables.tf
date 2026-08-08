@@ -224,6 +224,34 @@ variable "rds_skip_final_snapshot" {
   default     = false
 }
 
+variable "rds_final_snapshot_identifier" {
+  description = "Optional unique identifier for the final encrypted RDS snapshot created during a reviewed cold-standby teardown."
+  type        = string
+  default     = null
+
+  validation {
+    condition = var.rds_final_snapshot_identifier == null || can(regex(
+      "^[a-zA-Z][a-zA-Z0-9-]{0,254}$",
+      var.rds_final_snapshot_identifier,
+    ))
+    error_message = "rds_final_snapshot_identifier must start with a letter and contain only letters, digits, and hyphens."
+  }
+}
+
+variable "rds_snapshot_identifier" {
+  description = "Optional existing encrypted RDS snapshot used to restore the Web3Signer database during cold-standby recovery."
+  type        = string
+  default     = null
+
+  validation {
+    condition = var.rds_snapshot_identifier == null || can(regex(
+      "^[a-zA-Z][a-zA-Z0-9-]{0,254}$",
+      var.rds_snapshot_identifier,
+    ))
+    error_message = "rds_snapshot_identifier must start with a letter and contain only letters, digits, and hyphens."
+  }
+}
+
 variable "access_entries" {
   description = "EKS access entries. Prefer mapped IAM roles over permanent IAM users."
   type = map(object({

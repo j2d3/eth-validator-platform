@@ -25,7 +25,7 @@ output "load_balancer_controller_role_arn" {
 
 output "engine_jwt_secret_arn" {
   description = "Secrets Manager ARN populated by the deployment workflow after apply."
-  value       = aws_secretsmanager_secret.engine_jwt.arn
+  value       = data.aws_secretsmanager_secret.engine_jwt.arn
 }
 
 output "external_secrets_role_arn" {
@@ -45,9 +45,9 @@ output "external_secrets_reader_role_arns" {
 output "web3signer_secret_arns" {
   description = "Empty Secrets Manager containers populated by restricted bootstrap/onboarding procedures outside Terraform."
   value = {
-    database_connection = aws_secretsmanager_secret.web3signer_database.arn
+    database_connection = data.aws_secretsmanager_secret.web3signer_database.arn
     signing_key_bundles = {
-      for validator_id, signing_key in aws_secretsmanager_secret.web3signer_signing_key :
+      for validator_id, signing_key in data.aws_secretsmanager_secret.web3signer_signing_key :
       validator_id => signing_key.arn
     }
   }
