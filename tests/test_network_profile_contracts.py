@@ -162,6 +162,16 @@ class NetworkProfileCatalogTests(unittest.TestCase):
                 document["spec"]["signer"]["web3signer"][
                     "signingQualified"
                 ] = False
+            if (
+                document["kind"] == "ValidatorAssignment"
+                and document["metadata"]["name"] == "assignment-ephemery-162-synthetic"
+            ):
+                document["spec"]["lifecycle"] = "active"
+                document["spec"]["signingEnabled"] = True
+                document["spec"]["safety"] = {
+                    "slashingProtectionConfirmed": True,
+                    "doppelgangerProtectionConfirmed": True,
+                }
 
         errors = validate_catalog.relational_errors(documents)
 
@@ -200,8 +210,16 @@ class NetworkProfileRenderingTests(unittest.TestCase):
         self.assertRegex(values["networkProfile"]["identityFingerprint"], r"^[0-9a-f]{64}$")
 
     def test_ephemery_projection_is_digest_pinned_and_signing_qualified(self) -> None:
+        catalog = copy.deepcopy(self.catalog)
+        assignment = catalog["ValidatorAssignment"]["assignment-ephemery-162-synthetic"]["spec"]
+        assignment["lifecycle"] = "active"
+        assignment["signingEnabled"] = True
+        assignment["safety"] = {
+            "slashingProtectionConfirmed": True,
+            "doppelgangerProtectionConfirmed": True,
+        }
         release = render_local_assignments.build_release(
-            "assignment-ephemery-162-synthetic", self.catalog
+            "assignment-ephemery-162-synthetic", catalog
         )
         values = release["spec"]["values"]
         network = values["networkProfile"]
@@ -234,8 +252,16 @@ class NetworkProfileRenderingTests(unittest.TestCase):
             )
 
     def test_reset_pvc_names_preserve_long_pair_reference_entropy(self) -> None:
+        catalog = copy.deepcopy(self.catalog)
+        assignment = catalog["ValidatorAssignment"]["assignment-ephemery-162-synthetic"]["spec"]
+        assignment["lifecycle"] = "active"
+        assignment["signingEnabled"] = True
+        assignment["safety"] = {
+            "slashingProtectionConfirmed": True,
+            "doppelgangerProtectionConfirmed": True,
+        }
         release = render_local_assignments.build_release(
-            "assignment-ephemery-162-synthetic", self.catalog
+            "assignment-ephemery-162-synthetic", catalog
         )
 
         def render_pvc_names(fullname: str) -> set[str]:

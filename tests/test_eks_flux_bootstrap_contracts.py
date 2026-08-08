@@ -511,7 +511,7 @@ class EksApplicationSafetyTests(unittest.TestCase):
                 self.assertFalse(container["securityContext"]["allowPrivilegeEscalation"])
                 self.assertEqual(container["securityContext"]["capabilities"]["drop"], ["ALL"])
 
-    def test_catalog_signing_assignment_is_disabled_by_the_local_overlay(self) -> None:
+    def test_stopped_catalog_assignment_remains_disabled_in_the_local_overlay(self) -> None:
         generated = load_one(
             ROOT
             / "platform"
@@ -520,7 +520,8 @@ class EksApplicationSafetyTests(unittest.TestCase):
             / "assignments"
             / "assignment-ephemery-162-synthetic.yaml"
         )
-        self.assertTrue(generated["spec"]["values"]["validator"]["enabled"])
+        self.assertEqual(generated["spec"]["values"]["lifecycleState"], "stopped")
+        self.assertFalse(generated["spec"]["values"]["validator"]["enabled"])
 
         local_documents = render_all(ROOT / "platform" / "apps" / "local")
         release = object_named(
@@ -537,13 +538,13 @@ class EksApplicationSafetyTests(unittest.TestCase):
         self.assertIn("values-eks-ephemery.yaml", overlay)
         self.assertIn("eth-validator-platform-dev", overlay)
 
-    def test_profile_records_the_qualified_signing_state(self) -> None:
-        profile = load_one(APPS / "profile.yaml")
+    def test_node_profile_records_the_paused_signing_state(self) -> None:
+        profile = load_one(NODE_APPS / "profile.yaml")
         self.assertEqual(profile["data"]["environment"], "dev")
-        self.assertEqual(profile["data"]["signingEnabled"], "true")
+        self.assertEqual(profile["data"]["signingEnabled"], "false")
         self.assertEqual(
             profile["metadata"]["labels"]["platform.galaxy-lab/signing-enabled"],
-            "true",
+            "false",
         )
 
     def test_released_signer_projects_only_the_encrypted_key_secret(self) -> None:

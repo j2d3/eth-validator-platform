@@ -5,7 +5,7 @@ metadata:
 spec:
   validatorRef: validator-ephemery-162-synthetic-erigon
   networkProfileRef: ephemery-162
-  lifecycle: active
+  lifecycle: stopped
   serviceProfileRef: dedicated-erigon-lighthouse
   nodePairRef: pair-ephemery-162-synthetic-erigon
   signerRef: shared-web3signer
@@ -14,4 +14,4 @@ spec:
     slashingProtectionConfirmed: false
     doppelgangerProtectionConfirmed: false
   maintenance:
-    reason: Activate the non-signing Erigon and Lighthouse client pair for live Ephemery sync qualification with a third execution client; keep it running.
+    reason: Pause the Ephemery fleet for the 2026-08-08 cost and recovery exercise; retain chain data.

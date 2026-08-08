@@ -7,10 +7,10 @@ metadata:
     app.kubernetes.io/part-of: ethereum-validator-platform
     platform.galaxy-lab/environment: dev
     platform.galaxy-lab/profile: ephemery-node-sync
-    platform.galaxy-lab/signing-enabled: "true"
+    platform.galaxy-lab/signing-enabled: "false"
 data:
   environment: dev
-  profile: ephemery-validator
+  profile: ephemery-paused
   network: ephemery-162
-  signingEnabled: "true"
-  explanation: "The Geth/Lighthouse pair runs one validator client through the shared Web3Signer service."
+  signingEnabled: "false"
+  explanation: "All Ephemery assignments are stopped for the 2026-08-08 cost and recovery exercise."

@@ -5,7 +5,7 @@ metadata:
 spec:
   validatorRef: validator-ephemery-162-synthetic-besu-teku
   networkProfileRef: ephemery-162
-  lifecycle: active
+  lifecycle: stopped
   serviceProfileRef: dedicated-besu-teku
   nodePairRef: pair-ephemery-162-synthetic-besu-teku
   signerRef: shared-web3signer
@@ -14,4 +14,4 @@ spec:
     slashingProtectionConfirmed: false
     doppelgangerProtectionConfirmed: false
   maintenance:
-    reason: Activate the non-signing Besu and Teku client pair for live Ephemery sync qualification — first JVM-EL plus JVM-CL composition and first rendered release exercising Besu (#137) and Teku (#109) dispatching together; keep it running.
+    reason: Pause the Ephemery fleet for the 2026-08-08 cost and recovery exercise; retain chain data.
