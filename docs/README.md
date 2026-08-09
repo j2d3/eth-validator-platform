@@ -29,6 +29,7 @@ lives here.
 | How is one validator key generated, deposited, and onboarded? | [runbooks/validator-key-ceremony.md](runbooks/validator-key-ceremony.md) |
 | How would a private repository supply Flux desired state? | [ADR 0002](adrs/0002-private-flux-source-authentication.md) and [runbook](runbooks/flux-source-authentication.md) |
 | How would slashing history be recovered, and what proves the copy is usable? | [runbooks/rds-slashing-recovery-drill.md](runbooks/rds-slashing-recovery-drill.md) |
+| How can a cold-restored EKS lab be brought back to testnet signing? | [runbooks/eks-signing-recovery.md](runbooks/eks-signing-recovery.md) |
 | Where does the code live? | [`README.md`'s repository map](../README.md#repository-map) |
 
 ## Documentation types
@@ -98,6 +99,7 @@ Operator procedures.
 - [eks-flux-bootstrap.md](runbooks/eks-flux-bootstrap.md)
 - [eks-capacity.md](runbooks/eks-capacity.md)
 - [eks-ephemery-sync.md](runbooks/eks-ephemery-sync.md)
+- [eks-signing-recovery.md](runbooks/eks-signing-recovery.md)
 - [network-profiles.md](runbooks/network-profiles.md)
 - [operations-ingress.md](runbooks/operations-ingress.md)
 - [portal-telemetry.md](runbooks/portal-telemetry.md)

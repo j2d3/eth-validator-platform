@@ -5,7 +5,7 @@ TF_PLUGIN_CACHE_DIR := $(CURDIR)/.local/terraform-plugin-cache
 TF_ROOTS := terraform/bootstrap terraform/environments/dev terraform/environments/dns terraform/environments/durable
 export PATH := $(LOCAL_BIN):$(PATH)
 
-.PHONY: help tools format fmt validate catalog test image-inventory container-contracts helm-template helm-releases kustomize-build verify-scripts portal-check rds-drill-readiness local-preflight local-up local-bootstrap local-seed local-status local-down eks-capacity-status check
+.PHONY: help tools format fmt validate catalog test image-inventory container-contracts helm-template helm-releases kustomize-build verify-scripts portal-check rds-drill-readiness local-preflight local-up local-bootstrap local-seed local-status local-down eks-capacity-status eks-signing-recovery check
 
 help: ## Show available targets
 	@awk 'BEGIN {FS = ":.*## "; printf "Usage: make <target>\n\n"} /^[a-zA-Z_-]+:.*## / {printf "  %-18s %s\n", $$1, $$2}' $(MAKEFILE_LIST)
@@ -91,5 +91,8 @@ local-down: ## Delete the local cluster after the signing-safety guard passes
 
 eks-capacity-status: ## Show live zonal Ethereum capacity in the EKS lab
 	./hack/eks-lab-capacity.sh status
+
+eks-signing-recovery: ## Verify restored EKS/RDS substrate before signing activation
+	./hack/eks-signing-recovery.sh observe
 
 check: fmt catalog test helm-template kustomize-build verify-scripts ## Run offline local validation
