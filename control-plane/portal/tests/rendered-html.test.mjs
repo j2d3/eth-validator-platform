@@ -56,6 +56,7 @@ test("server-renders the environment status page", async () => {
   );
   assert.match(html, /name="twitter:card" content="summary_large_image"/i);
   assert.match(html, /Environment status/);
+  assert.match(html, /Platform state/);
   assert.match(html, /Loading live status/);
   assert.match(html, /Kubernetes and node dashboards/);
   assert.match(html, /Signing validators<\/span><strong>Unavailable/);
@@ -243,10 +244,31 @@ test("live status uses the exact public adapter and polls without controls", asy
   assert.match(component, /Firing alerts/);
   assert.match(component, /Alert evaluation unavailable/);
   assert.match(component, /alertsAvailable/);
+  assert.match(component, /Cold storage \/ no live endpoint/);
+  assert.match(component, /Warm standby/);
+  assert.match(component, /Cluster telemetry unavailable/);
   assert.match(component, /href=\{alertsDashboard\}/);
   assert.match(registry, /alertsDashboard\s*=\s*`\$\{grafanaBase\}\/alerting\/list`/);
   assert.doesNotMatch(component, /<button\b|role="button"/i);
   assert.doesNotMatch(component, /customer|validatorPublicKey|secretRef|keystore/i);
+});
+
+test("live status gives a failed poll priority over a retained snapshot", async () => {
+  const component = await readFile(
+    new URL("../components/live-status.tsx", import.meta.url),
+    "utf8",
+  );
+
+  const telemetryError = component.indexOf('error === "Cluster telemetry unavailable"');
+  const coldEndpointError = component.indexOf('error === "No live cluster endpoint"');
+  const snapshotFallback = component.indexOf("if (!snapshot)");
+  assert.ok(telemetryError >= 0);
+  assert.ok(coldEndpointError >= 0);
+  assert.ok(snapshotFallback >= 0);
+  assert.ok(
+    telemetryError < snapshotFallback && coldEndpointError < snapshotFallback,
+    "the latest poll error must determine the banner before a retained snapshot",
+  );
 });
 
 test("image coverage renders exact subjects, SBOMs, and gaps without a false zero", async () => {

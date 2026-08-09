@@ -258,6 +258,36 @@ h1 {
   color: var(--off);
 }
 
+.platform-state {
+  display: grid;
+  gap: 3px;
+  min-width: 230px;
+  padding: 10px 14px;
+  border-left: 3px solid currentColor;
+}
+
+.platform-state span,
+.platform-state small {
+  color: var(--muted);
+  font-size: 0.72rem;
+}
+
+.platform-state strong {
+  font-size: 0.95rem;
+}
+
+.platform-state--ready {
+  color: var(--ready);
+}
+
+.platform-state--paused {
+  color: var(--paused);
+}
+
+.platform-state--off {
+  color: var(--off);
+}
+
 .panel {
   margin-top: 24px;
   background: var(--surface);

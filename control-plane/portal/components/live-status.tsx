@@ -265,7 +265,70 @@ function validatorsEnabled(value: NullableNumber | undefined): string {
   return `${formatNumber(value, 0)} enabled`;
 }
 
-function EnvironmentHeading({ signing }: { signing?: SigningSnapshot }) {
+type PlatformState = {
+  label: string;
+  detail: string;
+  tone: "ready" | "paused" | "off";
+};
+
+function platformState(
+  snapshot: StatusSnapshot | null,
+  error: string | null,
+): PlatformState {
+  // A successful snapshot may be older than the latest poll. Prefer the latest
+  // endpoint result so a teardown cannot leave the banner stuck on "Running".
+  if (error === "Cluster telemetry unavailable") {
+    return {
+      label: "Telemetry unavailable",
+      detail: "The cluster endpoint responded without usable Prometheus data",
+      tone: "paused",
+    };
+  }
+  if (error === "No live cluster endpoint") {
+    return {
+      label: "Cold storage / no live endpoint",
+      detail: "No Kubernetes status endpoint responded",
+      tone: "off",
+    };
+  }
+  if (!snapshot) {
+    return {
+      label: "Loading",
+      detail: "Waiting for the status endpoint",
+      tone: "paused",
+    };
+  }
+
+  const readyNodes = snapshot.cluster.nodes.ready;
+  const ethereumPods = snapshot.cluster.ethereumWorkloads.podsRunning;
+  if (readyNodes !== null && readyNodes > 0 && ethereumPods !== null && ethereumPods > 0) {
+    return {
+      label: "Running",
+      detail: "Ready nodes and Ethereum workloads are reporting",
+      tone: "ready",
+    };
+  }
+  if (readyNodes !== null && readyNodes > 0) {
+    return {
+      label: "Warm standby",
+      detail: "The cluster is reporting, with no running Ethereum workloads",
+      tone: "paused",
+    };
+  }
+  return {
+    label: "Cluster state unavailable",
+    detail: "The endpoint responded, but ready-node state is null or zero",
+    tone: "off",
+  };
+}
+
+function EnvironmentHeading({
+  signing,
+  state,
+}: {
+  signing?: SigningSnapshot;
+  state?: PlatformState;
+}) {
   const validators = signing?.validatorsEnabled;
   const signerUp = signing?.signerUp;
   const available = validators !== null && validators !== undefined;
@@ -279,6 +342,13 @@ function EnvironmentHeading({ signing }: { signing?: SigningSnapshot }) {
         <p className="context">Development · EKS · AWS us-west-2</p>
         <h1 id="page-title">Environment status</h1>
       </div>
+      {state ? (
+        <div className={`platform-state platform-state--${state.tone}`}>
+          <span>Platform state</span>
+          <strong>{state.label}</strong>
+          <small>{state.detail}</small>
+        </div>
+      ) : null}
       <a
         className={`signing-state ${healthy ? "signing-state--ready" : "signing-state--off"}`}
         href={signingDashboard}
@@ -307,15 +377,29 @@ export default function LiveStatus() {
           cache: "no-store",
           headers: { Accept: "application/json" },
         });
-        if (!response.ok) throw new Error(`HTTP ${response.status}`);
+        if (!response.ok) {
+          throw new Error(
+            response.status === 503
+              ? "Cluster telemetry unavailable"
+              : "No live cluster endpoint",
+          );
+        }
         const body: unknown = await response.json();
         if (!isSnapshot(body)) throw new Error("Invalid status response");
         if (active) {
           setSnapshot(body);
           setError(null);
         }
-      } catch {
-        if (active) setError("Live status unavailable");
+      } catch (reason) {
+        if (active) {
+          setError(
+            reason instanceof Error && reason.message === "Cluster telemetry unavailable"
+              ? reason.message
+              : reason instanceof Error && reason.message === "No live cluster endpoint"
+                ? reason.message
+                : "No live cluster endpoint",
+          );
+        }
       }
     }
 
@@ -330,7 +414,7 @@ export default function LiveStatus() {
   if (!snapshot) {
     return (
       <>
-        <EnvironmentHeading />
+        <EnvironmentHeading state={platformState(null, error)} />
         <section className="panel telemetry-message" aria-live="polite">
           {error ?? "Loading live status…"}
         </section>
@@ -346,7 +430,10 @@ export default function LiveStatus() {
 
   return (
     <>
-      <EnvironmentHeading signing={snapshot.signing} />
+      <EnvironmentHeading
+        signing={snapshot.signing}
+        state={platformState(snapshot, error)}
+      />
 
       <section className="summary-grid" aria-label="Live cluster summary">
         <article className="summary-item">
