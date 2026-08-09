@@ -1,0 +1,55 @@
+name: Rebase open pull requests
+
+on:
+  push:
+    branches: [main]
+
+# This workflow only keeps branches current. It never merges a pull request,
+# changes review state, or runs code from a pull-request branch.
+permissions:
+  contents: write
+  pull-requests: write
+
+concurrency:
+  group: rebase-open-pull-requests-main
+  cancel-in-progress: false
+
+jobs:
+  rebase:
+    name: Rebase eligible pull requests
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - name: Rebase non-draft pull requests from this repository
+        env:
+          GH_TOKEN: ${{ github.token }}
+          REPOSITORY: ${{ github.repository }}
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          failed=0
+          while IFS= read -r number; do
+            [[ -n "$number" ]] || continue
+            echo "Rebasing PR #$number"
+            if ! gh api \
+              --method PUT \
+              "repos/$REPOSITORY/pulls/$number/update-branch" \
+              -f update_method=rebase; then
+              echo "PR #$number could not be rebased; leaving it open for review" >&2
+              failed=1
+            fi
+          done < <(
+            gh api --paginate \
+              "repos/$REPOSITORY/pulls?state=open&base=main&per_page=100" \
+              --jq '.[]
+                | select(.draft != true)
+                | select(.head.repo != null)
+                | select(.head.repo.full_name == env.REPOSITORY)
+                | .number'
+          )
+
+          if (( failed != 0 )); then
+            echo "One or more eligible pull requests need manual conflict resolution" >&2
+            exit 1
+          fi
