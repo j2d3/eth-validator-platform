@@ -56,6 +56,7 @@ test("server-renders the environment status page", async () => {
   );
   assert.match(html, /name="twitter:card" content="summary_large_image"/i);
   assert.match(html, /Environment status/);
+  assert.match(html, /Platform state/);
   assert.match(html, /Loading live status/);
   assert.match(html, /Kubernetes and node dashboards/);
   assert.match(html, /Signing validators<\/span><strong>Unavailable/);
@@ -243,6 +244,9 @@ test("live status uses the exact public adapter and polls without controls", asy
   assert.match(component, /Firing alerts/);
   assert.match(component, /Alert evaluation unavailable/);
   assert.match(component, /alertsAvailable/);
+  assert.match(component, /Cold storage \/ no live endpoint/);
+  assert.match(component, /Warm standby/);
+  assert.match(component, /Cluster telemetry unavailable/);
   assert.match(component, /href=\{alertsDashboard\}/);
   assert.match(registry, /alertsDashboard\s*=\s*`\$\{grafanaBase\}\/alerting\/list`/);
   assert.doesNotMatch(component, /<button\b|role="button"/i);
