@@ -9,8 +9,10 @@ ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 AWS_REGION="${AWS_REGION:-us-west-2}"
 CLUSTER_NAME="${CLUSTER_NAME:-eth-validator-platform-dev}"
 DB_IDENTIFIER="${DB_IDENTIFIER:-eth-validator-platform-dev-web3signer}"
+DB_IDENTIFIER_PREFIX="${DB_IDENTIFIER_PREFIX:-${CLUSTER_NAME}-web3signer}"
 KUBECONFIG_PATH="${KUBECONFIG_PATH:-${ROOT_DIR}/.local/eks-kubeconfig}"
 EXPECTED_SECRET_PREFIX="${EXPECTED_SECRET_PREFIX:-${CLUSTER_NAME}/}"
+EXPECTED_SECRET_NAMES="${EXPECTED_SECRET_NAMES:-${CLUSTER_NAME}/ethereum/engine-jwt,${CLUSTER_NAME}/signing/web3signer-database,${CLUSTER_NAME}/signing/validator-keystore,${CLUSTER_NAME}/signing/validator-keystore-02,${CLUSTER_NAME}/signing/validator-keystore-03,${CLUSTER_NAME}/signing/validator-keystore-04,${CLUSTER_NAME}/signing/validator-keystore-05}"
 
 die() { printf 'signing-recovery: %s\n' "$*" >&2; exit 1; }
 need() { command -v "$1" >/dev/null 2>&1 || die "required command not found: $1"; }
@@ -22,9 +24,17 @@ require_cluster() {
 }
 
 require_database() {
-  local status
+  local status identifier
+  local -a identifiers matching_identifiers
   status="$(aws rds describe-db-instances --region "$AWS_REGION" --db-instance-identifier "$DB_IDENTIFIER" --query 'DBInstances[0].DBInstanceStatus' --output text)"
   [[ "$status" == "available" ]] || die "RDS instance is not available: $status"
+
+  mapfile -t identifiers < <(aws rds describe-db-instances --region "$AWS_REGION" --query 'DBInstances[].DBInstanceIdentifier' --output text | tr '\t' '\n')
+  for identifier in "${identifiers[@]}"; do
+    [[ "$identifier" == "$DB_IDENTIFIER_PREFIX"* ]] && matching_identifiers+=("$identifier")
+  done
+  (( ${#matching_identifiers[@]} == 1 )) || die "expected exactly one signer-tier RDS instance with prefix $DB_IDENTIFIER_PREFIX (found ${#matching_identifiers[@]})"
+  [[ "${matching_identifiers[0]}" == "$DB_IDENTIFIER" ]] || die "signer-tier RDS instance does not match DB_IDENTIFIER: ${matching_identifiers[0]}"
 }
 
 require_flux() {
@@ -39,15 +49,35 @@ require_flux() {
 }
 
 require_secret_inventory() {
-  local count
-  count="$(aws secretsmanager list-secrets --region "$AWS_REGION" --query 'SecretList[].Name' --output text | tr '\t' '\n' | awk -v prefix="$EXPECTED_SECRET_PREFIX" 'index($0,prefix)==1 {n++} END {print n+0}')"
-  (( count >= 3 )) || die "expected durable secret containers are missing (found $count)"
-  printf 'Durable secret containers discovered: %s (values not read)\n' "$count"
+  local secret expected found
+  local -a discovered expected_names actual_names
+  mapfile -t discovered < <(aws secretsmanager list-secrets --region "$AWS_REGION" --query 'SecretList[].Name' --output text | tr '\t' '\n')
+  IFS=',' read -r -a expected_names <<< "$EXPECTED_SECRET_NAMES"
+  (( ${#expected_names[@]} > 0 )) || die 'EXPECTED_SECRET_NAMES must not be empty'
+
+  for expected in "${expected_names[@]}"; do
+    [[ "$expected" == "$EXPECTED_SECRET_PREFIX"* ]] || die "expected secret is outside EXPECTED_SECRET_PREFIX: $expected"
+  done
+  for secret in "${discovered[@]}"; do
+    [[ "$secret" == "$EXPECTED_SECRET_PREFIX"* ]] && actual_names+=("$secret")
+  done
+  (( ${#actual_names[@]} == ${#expected_names[@]} )) || die "durable secret inventory does not match expected count (found ${#actual_names[@]}, expected ${#expected_names[@]})"
+  for expected in "${expected_names[@]}"; do
+    found=false
+    for secret in "${actual_names[@]}"; do
+      [[ "$secret" == "$expected" ]] && found=true && break
+    done
+    "$found" || die "expected durable secret container is missing: $expected"
+  done
+  printf 'Durable secret inventory matches %s expected containers (values not read)\n' "${#expected_names[@]}"
 }
 
 require_no_unapproved_signers() {
   export KUBECONFIG="$KUBECONFIG_PATH"
   local enabled
+  # This intentionally targets lifecycle records only. platform-profile is an
+  # environment profile, not a workload lifecycle record, even when it carries
+  # the signing-enabled label for configuration.
   enabled="$(kubectl get configmap -A -l 'platform.galaxy-lab/lifecycle' -o json | jq '[.items[] | select(.metadata.labels["platform.galaxy-lab/signing-enabled"] == "true")] | length')"
   [[ "$enabled" == "0" ]] || die "signing-enabled lifecycle records already exist: $enabled"
 }
