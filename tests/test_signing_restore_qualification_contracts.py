@@ -159,24 +159,27 @@ class SigningRestoreQualificationContracts(unittest.TestCase):
             "digests have no ordering; a 'larger' hash is just a mismatch",
         )
 
-    def test_every_assignment_is_currently_stopped(self) -> None:
-        """The design's precondition holds in the repository right now."""
+    def test_assignments_remain_non_signing_until_safety_is_confirmed(self) -> None:
+        """Catalog policy permits non-signing work but blocks unsafe signing."""
         assignment_files = sorted(ASSIGNMENTS_DIR.glob("*.yaml"))
         self.assertTrue(assignment_files)
         for path in assignment_files:
             manifest = yaml.safe_load(path.read_text(encoding="utf-8"))
             spec = manifest.get("spec", {})
-            self.assertEqual(
-                spec.get("lifecycle"),
-                "stopped",
-                f"{path.name} is not stopped; signing-restore design "
-                "precondition does not hold",
-            )
             self.assertIs(
                 spec.get("signingEnabled"),
                 False,
                 f"{path.name} has signing enabled",
             )
+            safety = spec.get("safety", {})
+            if not (
+                safety.get("slashingProtectionConfirmed")
+                and safety.get("doppelgangerProtectionConfirmed")
+            ):
+                self.assertFalse(
+                    spec.get("signingEnabled"),
+                    f"{path.name} enables signing without both safety confirmations",
+                )
 
 
 if __name__ == "__main__":

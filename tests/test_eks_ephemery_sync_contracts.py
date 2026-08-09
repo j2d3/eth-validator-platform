@@ -492,17 +492,16 @@ class EksEphemeryRenderTests(unittest.TestCase):
 
 
 class EksEphemeryFluxAndTelemetryTests(unittest.TestCase):
-    def test_paused_node_layer_retains_inputs_without_admitting_workloads(self) -> None:
+    def test_resumed_node_layer_retains_inputs_for_the_non_signing_pair(self) -> None:
         layer = yaml.safe_load((CLUSTER / "node-apps.yaml").read_text(encoding="utf-8"))
         self.assertEqual(
             layer["spec"]["dependsOn"],
             [{"name": "infrastructure-controllers"}, {"name": "apps"}],
         )
-        # The layer is suspended after assignments reconcile to stopped. Its
-        # dependencies will order a later reviewed resume and reactivation
-        # behind both the Ready AWS LBC and shared-signer application.
+        # The reviewed non-signing resume remains ordered behind both the
+        # Ready AWS LBC and shared-signer application.
         self.assertIn("suspend", layer["spec"])
-        self.assertTrue(layer["spec"]["suspend"])
+        self.assertFalse(layer["spec"]["suspend"])
 
         rendered = subprocess.run(
             ["kubectl", "kustomize", str(NODE_APPS)],
@@ -548,7 +547,15 @@ class EksEphemeryFluxAndTelemetryTests(unittest.TestCase):
         # not an obviously-broken render.
         for release in releases:
             with self.subTest(release=release["metadata"]["name"]):
-                self.assertEqual(release["spec"]["values"]["lifecycleState"], "stopped")
+                expected_lifecycle = (
+                    "active"
+                    if release["metadata"]["name"]
+                    == "assignment-ephemery-162-synthetic"
+                    else "stopped"
+                )
+                self.assertEqual(
+                    release["spec"]["values"]["lifecycleState"], expected_lifecycle
+                )
                 self.assertFalse(release["spec"]["values"]["validator"]["enabled"])
                 self.assertEqual(
                     release["spec"]["values"]["engineJwt"]["secretStoreName"],

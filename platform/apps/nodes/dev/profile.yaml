@@ -10,7 +10,7 @@ metadata:
     platform.galaxy-lab/signing-enabled: "false"
 data:
   environment: dev
-  profile: ephemery-paused
+  profile: ephemery-non-signing-sync
   network: ephemery-162
   signingEnabled: "false"
-  explanation: "All Ephemery assignments are stopped for the 2026-08-08 cost and recovery exercise."
+  explanation: "One Ephemery assignment is active for non-signing sync qualification; all others remain stopped."
