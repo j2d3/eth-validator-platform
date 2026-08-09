@@ -37,10 +37,19 @@ pre_teardown_fingerprint:
   fields:
     - slashing_schema_version
     - validator_identity_count
-    - per_validator_max_signed_block_slot_digest
-    - per_validator_max_signed_attestation_epoch_digest
+    - per_validator_max_signed_block_slot
+    - per_validator_max_signed_attestation_source_epoch
+    - per_validator_max_signed_attestation_target_epoch
+    - per_validator_signed_record_count
+    - content_digest
     - final_snapshot_identifier
     - captured_at_utc
+  # Ordered fields are integers with a defined ordering; the content digest is
+  # a hash and therefore carries no ordering at all. The two are compared under
+  # different rules (see continuity_rule below). The content digest is only
+  # meaningful because the teardown order freezes the source: signing stops and
+  # workloads are removed before capture, and the final snapshot is taken with
+  # no writer left, so an intact restore reproduces it exactly.
 
 # Automated after `up` completes. Every check is read-only against AWS and the
 # cluster; a failure stops the sequence with assignments untouched.
@@ -59,9 +68,12 @@ post_restore_qualification:
         `slashing_schema_version`
     - id: row-continuity
       requirement: >-
-        restored per-validator digests are greater than or equal to
-        the fingerprint digests; recovered history may extend but never
-        regress (PRD §5.8)
+        every restored ordered value (per-validator max signed block slot,
+        max attestation source/target epoch, signed record count, and the
+        validator identity count) is greater than or equal to its captured
+        counterpart, and under the frozen-source condition the restored
+        content digest equals the captured digest exactly; recovered history
+        may extend but never regress (PRD §5.8)
     - id: single-slashing-authority
       requirement: >-
         exactly one signer-tier PostgreSQL endpoint exists; no
@@ -77,6 +89,24 @@ post_restore_qualification:
         every file under applications/validators/assignments/
         declares `lifecycle: stopped`, and no validator-client workload is
         running (PRD §5.7)
+
+# Machine-evaluable comparison semantics for the row-continuity gate. Ordered
+# fields compare numerically; digests compare for equality only. A digest
+# mismatch with intact ordered values is still a failure — under a frozen
+# source there is no innocent explanation, and uncertainty fails closed
+# (PRD §5.9).
+continuity_rule:
+  ordered_fields:
+    - validator_identity_count
+    - per_validator_max_signed_block_slot
+    - per_validator_max_signed_attestation_source_epoch
+    - per_validator_max_signed_attestation_target_epoch
+    - per_validator_signed_record_count
+  ordered_comparison: restored_must_be_greater_or_equal
+  equality_only_fields:
+    - content_digest
+  equality_condition: frozen-source (no writer between capture and final snapshot)
+  on_any_violation: fail-closed
 
 # The single interactive step. Nothing before it required a human; nothing
 # after it is a new authority — enablement travels through ordinary review.

@@ -51,6 +51,23 @@ class SigningRestoreQualificationContracts(unittest.TestCase):
         self.assertIn("slashing_schema_version", fingerprint["fields"])
         self.assertIn("final_snapshot_identifier", fingerprint["fields"])
 
+    def test_every_compared_field_has_defined_semantics(self) -> None:
+        """No field is compared without an ordering or an equality rule.
+
+        Digests carry no ordering; only integer maxima and counts may use
+        the >= comparison.
+        """
+        rule = self.contract["continuity_rule"]
+        fields = set(self.contract["pre_teardown_fingerprint"]["fields"])
+        ordered = set(rule["ordered_fields"])
+        equality_only = set(rule["equality_only_fields"])
+        self.assertEqual(ordered & equality_only, set())
+        self.assertLessEqual(ordered | equality_only, fields)
+        self.assertEqual(rule["ordered_comparison"], "restored_must_be_greater_or_equal")
+        self.assertIn("digest", " ".join(equality_only))
+        self.assertNotIn("digest", " ".join(ordered))
+        self.assertEqual(rule["on_any_violation"], "fail-closed")
+
     def test_qualification_checks_cover_the_named_invariants(self) -> None:
         check_ids = {c["id"] for c in self.contract["post_restore_qualification"]["checks"]}
         self.assertLessEqual(
@@ -81,6 +98,66 @@ class SigningRestoreQualificationContracts(unittest.TestCase):
         self.assertIn("fail", self.runbook.lower())
         for section in ("§5.7", "§5.9", "§5.12"):
             self.assertIn(section, self.runbook)
+
+    def test_continuity_rule_semantics_on_reference_cases(self) -> None:
+        """Execute the contract's comparison rule against known cases.
+
+        The reference evaluator is the rule as written: ordered fields pass
+        when restored >= captured, equality-only fields pass on exact match,
+        and any violation fails.
+        """
+        rule = self.contract["continuity_rule"]
+
+        def evaluate(captured: dict, restored: dict) -> bool:
+            for field in rule["ordered_fields"]:
+                if field in captured and restored.get(field, -1) < captured[field]:
+                    return False
+            for field in rule["equality_only_fields"]:
+                if field in captured and restored.get(field) != captured[field]:
+                    return False
+            return True
+
+        captured = {
+            "validator_identity_count": 3,
+            "per_validator_max_signed_block_slot": 4_100_200,
+            "per_validator_max_signed_attestation_source_epoch": 128_130,
+            "per_validator_max_signed_attestation_target_epoch": 128_131,
+            "per_validator_signed_record_count": 9_412,
+            "content_digest": "sha256:aa11",
+        }
+
+        intact = dict(captured)
+        self.assertTrue(evaluate(captured, intact))
+
+        extended = dict(captured, per_validator_max_signed_block_slot=4_100_500)
+        extended["content_digest"] = "sha256:aa11"
+        self.assertTrue(evaluate(captured, extended))
+
+        regressed_slot = dict(captured, per_validator_max_signed_block_slot=4_099_999)
+        self.assertFalse(evaluate(captured, regressed_slot))
+
+        regressed_epoch = dict(
+            captured, per_validator_max_signed_attestation_target_epoch=128_000
+        )
+        self.assertFalse(evaluate(captured, regressed_epoch))
+
+        regressed_count = dict(captured, per_validator_signed_record_count=9_000)
+        self.assertFalse(evaluate(captured, regressed_count))
+
+        lost_validator = dict(captured, validator_identity_count=2)
+        self.assertFalse(evaluate(captured, lost_validator))
+
+        digest_mismatch = dict(captured, content_digest="sha256:bb22")
+        self.assertFalse(
+            evaluate(captured, digest_mismatch),
+            "a digest mismatch with intact ordered values must still fail closed",
+        )
+
+        higher_digest_is_not_a_pass = dict(captured, content_digest="sha256:ff99")
+        self.assertFalse(
+            evaluate(captured, higher_digest_is_not_a_pass),
+            "digests have no ordering; a 'larger' hash is just a mismatch",
+        )
 
     def test_every_assignment_is_currently_stopped(self) -> None:
         """The design's precondition holds in the repository right now."""

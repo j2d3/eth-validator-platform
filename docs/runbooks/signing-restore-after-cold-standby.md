@@ -31,9 +31,18 @@ deleting the RDS instance, an aggregate fingerprint:
 
 - slashing-protection schema version;
 - validator identity count;
-- per-validator digests of the maximum signed block slot and the maximum
-  signed attestation epoch;
+- per-validator maximum signed block slot, maximum signed attestation source
+  and target epochs, and signed-record counts — integers with a defined
+  ordering, so "restored ≥ captured" is a meaningful comparison;
+- an order-independent content digest, compared for **exact equality only** —
+  a hash has no ordering, so it can never express "at least as much history";
 - the final snapshot identifier and a UTC capture timestamp.
+
+The digest comparison is only sound because the teardown order freezes the
+source: signing stops and workloads are removed before capture, and the final
+snapshot is taken with no writer left. An intact restore therefore reproduces
+the digest exactly; a mismatch with intact ordered values has no innocent
+explanation and fails closed (PRD §5.9).
 
 The fingerprint contains no secret values and is stored beside the recovery
 manifest in S3, so it survives cold storage and travels with the state the
@@ -66,9 +75,9 @@ authorization (PRD §5.12), and Flux performs the reconciliation.
 ## What each automated gate defends
 
 - **Row continuity (gate 4)** defends PRD §5.8: recovered history may extend
-  but never regress. A digest lower than the fingerprint means signed duties
-  are missing from the restored database, and signing on top of it risks
-  repeating them.
+  but never regress. A restored maximum slot, epoch, or record count below its
+  captured counterpart means signed duties are missing from the restored
+  database, and signing on top of it risks repeating them.
 - **Single slashing authority (gate 5)** defends PRD §5.2: if a drill copy,
   stale replica, or second endpoint is reachable by the signer tier, two
   databases could each believe they are the authority — qualification refuses
