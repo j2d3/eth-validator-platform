@@ -5,7 +5,7 @@ metadata:
 spec:
   validatorRef: validator-ephemery-162-01
   networkProfileRef: ephemery-162
-  lifecycle: stopped
+  lifecycle: active
   serviceProfileRef: dedicated-geth-lighthouse
   nodePairRef: pair-ephemery-162-synthetic
   signerRef: shared-web3signer
@@ -15,4 +15,4 @@ spec:
     slashingProtectionConfirmed: false
     doppelgangerProtectionConfirmed: false
   maintenance:
-    reason: Pause the Ephemery fleet for the 2026-08-08 cost and recovery exercise; retain keys, slashing history, and chain data.
+    reason: Resume one non-signing Ephemery pair after cold-standby recovery to qualify chain sync.

@@ -131,11 +131,10 @@ class EksFluxEntrypointTests(unittest.TestCase):
         self.assertNotIn("suspend", self.layers["infrastructure-controllers"]["spec"])
         self.assertNotIn("suspend", self.layers["infrastructure-configs"]["spec"])
         self.assertNotIn("suspend", self.layers["portal-observability"]["spec"])
-        # node-apps remains suspended after the fleet pause. Assignment state
-        # has already reconciled to stopped/non-signing, so resuming capacity
-        # cannot launch clients until a later reviewed GitOps reactivation.
+        # node-apps is resumed only for the reviewed non-signing sync
+        # qualification. Catalog state still limits activation to one pair.
         self.assertIn("suspend", self.layers["node-apps"]["spec"])
-        self.assertTrue(self.layers["node-apps"]["spec"]["suspend"])
+        self.assertFalse(self.layers["node-apps"]["spec"]["suspend"])
         # The signer adapter, prerequisite layer, and empty-key workload have
         # been separately reviewed after the RDS credential bootstrap, TLS,
         # migration, and branch-ENI paths were qualified. Validator duties are
@@ -509,7 +508,7 @@ class EksApplicationSafetyTests(unittest.TestCase):
                 self.assertFalse(container["securityContext"]["allowPrivilegeEscalation"])
                 self.assertEqual(container["securityContext"]["capabilities"]["drop"], ["ALL"])
 
-    def test_stopped_catalog_assignment_remains_disabled_in_the_local_overlay(self) -> None:
+    def test_resumed_catalog_assignment_is_active_but_non_signing_in_local_overlay(self) -> None:
         generated = load_one(
             ROOT
             / "platform"
@@ -518,7 +517,7 @@ class EksApplicationSafetyTests(unittest.TestCase):
             / "assignments"
             / "assignment-ephemery-162-synthetic.yaml"
         )
-        self.assertEqual(generated["spec"]["values"]["lifecycleState"], "stopped")
+        self.assertEqual(generated["spec"]["values"]["lifecycleState"], "active")
         self.assertFalse(generated["spec"]["values"]["validator"]["enabled"])
 
         local_documents = render_all(ROOT / "platform" / "apps" / "local")
@@ -531,12 +530,22 @@ class EksApplicationSafetyTests(unittest.TestCase):
         self.assertFalse(values["validator"]["enabled"])
         self.assertFalse(values["validator"]["slashingProtectionConfirmed"])
 
+        catalog_assignments = sorted(
+            (ROOT / "applications" / "validators" / "assignments").glob("*.yaml")
+        )
+        active_assignments = [
+            path.name
+            for path in catalog_assignments
+            if load_one(path)["spec"]["lifecycle"] == "active"
+        ]
+        self.assertEqual(active_assignments, ["assignment-ephemery-162-synthetic.yaml"])
+
         overlay = (NODE_APPS / "kustomization.yaml").read_text(encoding="utf-8")
         self.assertNotIn("lifecycleState", overlay)
         self.assertIn("values-eks-ephemery.yaml", overlay)
         self.assertIn("eth-validator-platform-dev", overlay)
 
-    def test_node_profile_records_the_paused_signing_state(self) -> None:
+    def test_node_profile_records_the_non_signing_sync_state(self) -> None:
         profile = load_one(NODE_APPS / "profile.yaml")
         self.assertEqual(profile["data"]["environment"], "dev")
         self.assertEqual(profile["data"]["signingEnabled"], "false")
@@ -544,6 +553,7 @@ class EksApplicationSafetyTests(unittest.TestCase):
             profile["metadata"]["labels"]["platform.galaxy-lab/signing-enabled"],
             "false",
         )
+        self.assertEqual(profile["data"]["profile"], "ephemery-non-signing-sync")
 
     def test_released_signer_projects_only_the_encrypted_key_secret(self) -> None:
         documents = render_all(APPS)
