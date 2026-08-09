@@ -34,12 +34,14 @@ class RebaseOpenPullRequestsWorkflowTests(unittest.TestCase):
         )
 
     def test_rebases_only_eligible_same_repository_prs(self) -> None:
-        self.assertIn("state=open&base=main", self.text)
-        self.assertIn("select(.draft != true)", self.text)
-        self.assertIn("select(.head.repo != null)", self.text)
-        self.assertIn("select(.head.repo.full_name == env.REPOSITORY)", self.text)
-        self.assertIn('select(.user.login != "dependabot[bot]")', self.text)
-        self.assertIn('select(.user.login != "github-actions[bot]")', self.text)
+        self.assertIn("states: OPEN", self.text)
+        self.assertIn('baseRefName: "main"', self.text)
+        self.assertIn("select(.isDraft != true)", self.text)
+        self.assertIn("headRepository { nameWithOwner }", self.text)
+        self.assertIn(".headRepository.nameWithOwner == env.REPOSITORY", self.text)
+        self.assertIn('mergeStateStatus == "BEHIND"', self.text)
+        self.assertIn("sort_by(.number)", self.text)
+        self.assertIn("No eligible behind pull request found", self.text)
 
     def test_uses_the_graphql_rebase_mutation(self) -> None:
         self.assertIn("gh api graphql", self.text)
@@ -50,7 +52,6 @@ class RebaseOpenPullRequestsWorkflowTests(unittest.TestCase):
 
     def test_conflicts_are_reported_and_never_merged(self) -> None:
         self.assertIn("could not be rebased; leaving it open", self.text)
-        self.assertIn("failed=1", self.text)
         self.assertIn("exit 1", self.text)
         self.assertNotIn("gh pr merge", self.text)
         self.assertNotIn("--admin", self.text)
