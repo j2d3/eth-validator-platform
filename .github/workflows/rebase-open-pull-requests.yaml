@@ -16,11 +16,11 @@ concurrency:
 
 jobs:
   rebase:
-    name: Rebase eligible pull requests
+    name: Rebase one eligible pull request
     runs-on: ubuntu-latest
     timeout-minutes: 10
     steps:
-      - name: Rebase eligible pull requests from this repository
+      - name: Rebase one behind pull request from this repository
         env:
           GH_TOKEN: ${{ github.token }}
           REPOSITORY: ${{ github.repository }}
@@ -28,39 +28,53 @@ jobs:
         run: |
           set -euo pipefail
 
-          failed=0
-          while IFS=$'\t' read -r number pull_request_id expected_head_oid; do
-            [[ -n "$number" ]] || continue
-            echo "Rebasing PR #$number"
-            if ! gh api graphql \
-              -F pullRequestId="$pull_request_id" \
-              -F expectedHeadOid="$expected_head_oid" \
-              -f query='mutation($pullRequestId: ID!, $expectedHeadOid: GitObjectID!) {
-                updatePullRequestBranch(input: {
-                  pullRequestId: $pullRequestId
-                  expectedHeadOid: $expectedHeadOid
-                  updateMethod: REBASE
-                }) {
-                  pullRequest { url }
+          owner=${REPOSITORY%/*}
+          name=${REPOSITORY#*/}
+          candidate=$(gh api graphql \
+            -F owner="$owner" \
+            -F name="$name" \
+            -f query='query($owner: String!, $name: String!) {
+              repository(owner: $owner, name: $name) {
+                pullRequests(first: 100, states: OPEN, baseRefName: "main") {
+                  nodes {
+                    number
+                    id
+                    isDraft
+                    headRefOid
+                    mergeStateStatus
+                    headRepository { nameWithOwner }
+                  }
                 }
-              }'; then
-              echo "PR #$number could not be rebased; leaving it open for review" >&2
-              failed=1
-            fi
-          done < <(
-            gh api --paginate \
-              "repos/$REPOSITORY/pulls?state=open&base=main&per_page=100" \
-              --jq '.[]
-                | select(.draft != true)
-                | select(.head.repo != null)
-                | select(.head.repo.full_name == env.REPOSITORY)
-                | select(.user.login != "dependabot[bot]")
-                | select(.user.login != "github-actions[bot]")
-                | [.number, .node_id, .head.sha]
-                | @tsv'
-          )
+              }
+            }' \
+            --jq '.data.repository.pullRequests.nodes
+              | map(select(.isDraft != true))
+              | map(select(.headRepository.nameWithOwner == env.REPOSITORY))
+              | map(select(.mergeStateStatus == "BEHIND"))
+              | sort_by(.number)
+              | .[0] // empty')
 
-          if (( failed != 0 )); then
-            echo "One or more eligible pull requests need manual conflict resolution" >&2
+          if [[ -z "$candidate" ]]; then
+            echo "No eligible behind pull request found"
+            exit 0
+          fi
+
+          number=$(jq -r '.number' <<<"$candidate")
+          pull_request_id=$(jq -r '.id' <<<"$candidate")
+          expected_head_oid=$(jq -r '.headRefOid' <<<"$candidate")
+          echo "Rebasing PR #$number"
+          if ! gh api graphql \
+            -F pullRequestId="$pull_request_id" \
+            -F expectedHeadOid="$expected_head_oid" \
+            -f query='mutation($pullRequestId: ID!, $expectedHeadOid: GitObjectID!) {
+              updatePullRequestBranch(input: {
+                pullRequestId: $pullRequestId
+                expectedHeadOid: $expectedHeadOid
+                updateMethod: REBASE
+              }) {
+                pullRequest { url }
+              }
+            }'; then
+            echo "PR #$number could not be rebased; leaving it open for review" >&2
             exit 1
           fi
