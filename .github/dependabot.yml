@@ -207,6 +207,14 @@ updates:
     commit-message:
       prefix: chore
       include: scope
+    ignore:
+      # vinext is deliberately pinned to 0.0.45 (#212): every newer release
+      # pulls the unfixed image-size advisory (CVE-2025-71329) into the audit
+      # graph, and Dependabot reads the rollback as an outdated version (#214
+      # proposed exactly that revert). Issue #215 records the exit condition;
+      # tests/test_portal_dependency_contracts.py enforces the pin itself.
+      # Remove this entry only together with the #215 re-upgrade.
+      - dependency-name: vinext
     groups:
       portal-minor-patch:
         applies-to: version-updates
