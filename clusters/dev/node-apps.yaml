@@ -25,7 +25,7 @@ spec:
   # non-signing. This retains the reviewed releases and their PVCs while
   # preventing a capacity-resume exercise from launching clients before an
   # explicit GitOps reactivation.
-  suspend: true
+  suspend: false
   commonMetadata:
     labels:
       platform.galaxy-lab/environment: dev
