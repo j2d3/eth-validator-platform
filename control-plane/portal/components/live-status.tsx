@@ -275,21 +275,23 @@ function platformState(
   snapshot: StatusSnapshot | null,
   error: string | null,
 ): PlatformState {
+  // A successful snapshot may be older than the latest poll. Prefer the latest
+  // endpoint result so a teardown cannot leave the banner stuck on "Running".
+  if (error === "Cluster telemetry unavailable") {
+    return {
+      label: "Telemetry unavailable",
+      detail: "The cluster endpoint responded without usable Prometheus data",
+      tone: "paused",
+    };
+  }
+  if (error === "No live cluster endpoint") {
+    return {
+      label: "Cold storage / no live endpoint",
+      detail: "No Kubernetes status endpoint responded",
+      tone: "off",
+    };
+  }
   if (!snapshot) {
-    if (error === "Cluster telemetry unavailable") {
-      return {
-        label: "Telemetry unavailable",
-        detail: "The cluster endpoint responded without usable Prometheus data",
-        tone: "paused",
-      };
-    }
-    if (error === "No live cluster endpoint") {
-      return {
-        label: "Cold storage / no live endpoint",
-        detail: "No Kubernetes status endpoint responded",
-        tone: "off",
-      };
-    }
     return {
       label: "Loading",
       detail: "Waiting for the status endpoint",
