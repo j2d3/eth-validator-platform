@@ -29,7 +29,9 @@ require_database() {
   status="$(aws rds describe-db-instances --region "$AWS_REGION" --db-instance-identifier "$DB_IDENTIFIER" --query 'DBInstances[0].DBInstanceStatus' --output text)"
   [[ "$status" == "available" ]] || die "RDS instance is not available: $status"
 
-  mapfile -t identifiers < <(aws rds describe-db-instances --region "$AWS_REGION" --query 'DBInstances[].DBInstanceIdentifier' --output text | tr '\t' '\n')
+  while IFS= read -r identifier; do
+    [[ -n "$identifier" ]] && identifiers+=("$identifier")
+  done < <(aws rds describe-db-instances --region "$AWS_REGION" --query 'DBInstances[].DBInstanceIdentifier' --output text | tr '\t' '\n')
   for identifier in "${identifiers[@]}"; do
     [[ "$identifier" == "$DB_IDENTIFIER_PREFIX"* ]] && matching_identifiers+=("$identifier")
   done
@@ -51,7 +53,9 @@ require_flux() {
 require_secret_inventory() {
   local secret expected found
   local -a discovered expected_names actual_names
-  mapfile -t discovered < <(aws secretsmanager list-secrets --region "$AWS_REGION" --query 'SecretList[].Name' --output text | tr '\t' '\n')
+  while IFS= read -r secret; do
+    [[ -n "$secret" ]] && discovered+=("$secret")
+  done < <(aws secretsmanager list-secrets --region "$AWS_REGION" --query 'SecretList[].Name' --output text | tr '\t' '\n')
   IFS=',' read -r -a expected_names <<< "$EXPECTED_SECRET_NAMES"
   (( ${#expected_names[@]} > 0 )) || die 'EXPECTED_SECRET_NAMES must not be empty'
 
