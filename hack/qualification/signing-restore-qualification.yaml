@@ -1,0 +1,134 @@
+# Declarative contract for restoring signing after a cold-standby restore.
+#
+# This file is a plan, not an execution record. Nothing in this repository
+# enables signing. The contract narrows the interaction cost of a signing
+# restore to exactly one human go/no-go gate by making everything before that
+# gate automated *and read-only*, and everything after it ordinary Git-mediated
+# deployment (PRD §5.12). It never weakens PRD §5.7 (signing is the final
+# readiness gate) or §5.9 (fail closed): a qualification failure at any point
+# leaves every assignment `lifecycle: stopped`.
+apiVersion: platform.galaxy-lab/v1
+kind: SigningRestoreQualificationContract
+
+metadata:
+  name: signing-restore-qualification
+  revision: 1
+  environment: dev
+  tracking_issue: 180
+  runbook: docs/runbooks/signing-restore-after-cold-standby.md
+  depends_on:
+    - docs/runbooks/eks-cold-standby.md
+    - docs/runbooks/rds-slashing-recovery-drill.md
+
+status:
+  # Flipped only by a reviewed change that also lands the evidence record.
+  executed: false
+  signing_enablement_authorized: false
+  evidence_record: null
+
+# Captured during the guarded cold teardown (`down`), before the RDS instance
+# is deleted, and stored beside the recovery manifest so it survives cold
+# storage. The fingerprint contains aggregate, non-secret values only.
+pre_teardown_fingerprint:
+  captured_by: hack/eks-cold-standby.sh down
+  storage: s3-recovery-manifest
+  survives_cold_storage: true
+  contains_secret_values: false
+  fields:
+    - slashing_schema_version
+    - validator_identity_count
+    - per_validator_max_signed_block_slot
+    - per_validator_max_signed_attestation_source_epoch
+    - per_validator_max_signed_attestation_target_epoch
+    - per_validator_signed_record_count
+    - content_digest
+    - final_snapshot_identifier
+    - captured_at_utc
+  # Ordered fields are integers with a defined ordering; the content digest is
+  # a hash and therefore carries no ordering at all. The two are compared under
+  # different rules (see continuity_rule below). The content digest is only
+  # meaningful because the teardown order freezes the source: signing stops and
+  # workloads are removed before capture, and the final snapshot is taken with
+  # no writer left, so an intact restore reproduces it exactly.
+
+# Automated after `up` completes. Every check is read-only against AWS and the
+# cluster; a failure stops the sequence with assignments untouched.
+post_restore_qualification:
+  mutates_aws: false
+  mutates_cluster: false
+  reads_secret_values: false
+  checks:
+    - id: restored-endpoint-reachable
+      requirement: >-
+        the restored RDS instance answers on the signer tier
+        endpoint with TLS enforced (`rds.force_ssl = 1`)
+    - id: schema-compatibility
+      requirement: >-
+        restored slashing schema version equals the fingerprint's
+        `slashing_schema_version`
+    - id: row-continuity
+      requirement: >-
+        every restored ordered value (per-validator max signed block slot,
+        max attestation source/target epoch, signed record count, and the
+        validator identity count) is greater than or equal to its captured
+        counterpart, and under the frozen-source condition the restored
+        content digest equals the captured digest exactly; recovered history
+        may extend but never regress (PRD §5.8)
+    - id: single-slashing-authority
+      requirement: >-
+        exactly one signer-tier PostgreSQL endpoint exists; no
+        drill, duplicate, or stale instance is reachable by the signer
+        (PRD §5.2)
+    - id: signer-prerequisites-ready
+      requirement: >-
+        all seven durable Secrets Manager containers resolve and
+        the signer-prerequisite Kustomizations are Ready, with the signer
+        deployment healthy and admitting no signing work
+    - id: assignments-still-stopped
+      requirement: >-
+        every file under applications/validators/assignments/
+        declares `lifecycle: stopped`, and no validator-client workload is
+        running (PRD §5.7)
+
+# Machine-evaluable comparison semantics for the row-continuity gate. Ordered
+# fields compare numerically; digests compare for equality only. A digest
+# mismatch with intact ordered values is still a failure — under a frozen
+# source there is no innocent explanation, and uncertainty fails closed
+# (PRD §5.9).
+continuity_rule:
+  ordered_fields:
+    - validator_identity_count
+    - per_validator_max_signed_block_slot
+    - per_validator_max_signed_attestation_source_epoch
+    - per_validator_max_signed_attestation_target_epoch
+    - per_validator_signed_record_count
+  ordered_comparison: restored_must_be_greater_or_equal
+  equality_only_fields:
+    - content_digest
+  equality_condition: frozen-source (no writer between capture and final snapshot)
+  on_any_violation: fail-closed
+
+# The single interactive step. Nothing before it required a human; nothing
+# after it is a new authority — enablement travels through ordinary review.
+human_gate:
+  id: human-go-no-go
+  count: 1
+  requires:
+    - a named operator and a named approver, who must not be the same person
+    - the full post-restore qualification report, passing
+    - an issue comment recording the decision and the report digest
+  on_no_go: assignments remain stopped; no cleanup is required because
+    qualification mutated nothing
+
+# Enablement is a Git change like any other deployment (PRD §5.12). The gate
+# above authorizes *opening* it; merge authorization is the normal paired
+# review, and Flux performs the reconciliation.
+enablement:
+  mechanism: git-merge
+  change_shape: assignment lifecycle stopped -> active for the approved
+    identities only
+  constraints:
+    - one active assignment per public key (PRD §5.1)
+    - signing readiness remains gated by the signer's own health checks
+      (PRD §5.7); Kubernetes readiness alone never implies permission to sign
+    - a failed or uncertain reconciliation fails closed (PRD §5.9)
