@@ -13,6 +13,8 @@ import json
 import unittest
 from pathlib import Path
 
+import yaml
+
 
 ROOT = Path(__file__).resolve().parents[1]
 PORTAL = ROOT / "control-plane" / "portal"
@@ -56,6 +58,32 @@ class PortalVinextRollbackContract(unittest.TestCase):
             image_size_paths,
             [],
             "re-upgrade Vinext only after #215's image-size remediation gate",
+        )
+
+    def test_dependabot_ignores_vinext_while_the_rollback_holds(self) -> None:
+        """Dependabot must not re-propose the #212 revert (as #214 did).
+
+        The ignore entry and the pin leave together, per #215.
+        """
+        config = yaml.safe_load(
+            (ROOT / ".github" / "dependabot.yml").read_text(encoding="utf-8")
+        )
+        portal_blocks = [
+            entry
+            for entry in config["updates"]
+            if entry["package-ecosystem"] == "npm"
+            and entry["directory"] == "/control-plane/portal"
+        ]
+        self.assertEqual(len(portal_blocks), 1)
+        ignored = [
+            rule["dependency-name"]
+            for rule in portal_blocks[0].get("ignore", [])
+        ]
+        self.assertIn(
+            "vinext",
+            ignored,
+            "restore the dependabot ignore entry, or remove it only with the "
+            "#215 re-upgrade",
         )
 
 
