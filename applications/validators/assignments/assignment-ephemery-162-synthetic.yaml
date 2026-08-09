@@ -9,10 +9,10 @@ spec:
   serviceProfileRef: dedicated-geth-lighthouse
   nodePairRef: pair-ephemery-162-synthetic
   signerRef: shared-web3signer
-  signingEnabled: false
+  signingEnabled: true
   feeRecipient: "0x26c31E06d6D4CEd468704b62Cb6c2F897D997576"
   safety:
-    slashingProtectionConfirmed: false
-    doppelgangerProtectionConfirmed: false
+    slashingProtectionConfirmed: true
+    doppelgangerProtectionConfirmed: true
   maintenance:
-    reason: Resume one non-signing Ephemery pair after cold-standby recovery to qualify chain sync.
+    reason: Restore the deposited Ephemery validator after sync and recovery gates passed; Lighthouse doppelganger protection must clear before duties.
