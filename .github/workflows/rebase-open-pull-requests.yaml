@@ -20,7 +20,7 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 10
     steps:
-      - name: Rebase non-draft pull requests from this repository
+      - name: Rebase eligible pull requests from this repository
         env:
           GH_TOKEN: ${{ github.token }}
           REPOSITORY: ${{ github.repository }}
@@ -29,13 +29,21 @@ jobs:
           set -euo pipefail
 
           failed=0
-          while IFS= read -r number; do
+          while IFS=$'\t' read -r number pull_request_id expected_head_oid; do
             [[ -n "$number" ]] || continue
             echo "Rebasing PR #$number"
-            if ! gh api \
-              --method PUT \
-              "repos/$REPOSITORY/pulls/$number/update-branch" \
-              -f update_method=rebase; then
+            if ! gh api graphql \
+              -F pullRequestId="$pull_request_id" \
+              -F expectedHeadOid="$expected_head_oid" \
+              -f query='mutation($pullRequestId: ID!, $expectedHeadOid: GitObjectID!) {
+                updatePullRequestBranch(input: {
+                  pullRequestId: $pullRequestId
+                  expectedHeadOid: $expectedHeadOid
+                  updateMethod: REBASE
+                }) {
+                  pullRequest { url }
+                }
+              }'; then
               echo "PR #$number could not be rebased; leaving it open for review" >&2
               failed=1
             fi
@@ -46,7 +54,10 @@ jobs:
                 | select(.draft != true)
                 | select(.head.repo != null)
                 | select(.head.repo.full_name == env.REPOSITORY)
-                | .number'
+                | select(.user.login != "dependabot[bot]")
+                | select(.user.login != "github-actions[bot]")
+                | [.number, .node_id, .head.sha]
+                | @tsv'
           )
 
           if (( failed != 0 )); then
