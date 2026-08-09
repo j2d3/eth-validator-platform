@@ -86,6 +86,16 @@ require_no_unapproved_signers() {
   [[ "$enabled" == "0" ]] || die "signing-enabled lifecycle records already exist: $enabled"
 }
 
+require_node_layer() {
+  export KUBECONFIG="$KUBECONFIG_PATH"
+  local ready suspended pod_count
+  read -r ready suspended < <(kubectl -n flux-system get kustomization node-apps -o jsonpath='{.status.conditions[?(@.type=="Ready")].status} {.spec.suspend}{"\n"}')
+  [[ "$ready" == "True" ]] || die "node-apps Kustomization is not Ready"
+  [[ "$suspended" != "true" ]] || die "node-apps Kustomization is suspended"
+  pod_count="$(kubectl -n ethereum get pods -o json | jq '[.items[] | select(.status.phase == "Running")] | length')"
+  (( pod_count > 0 )) || die "node-apps is active but no Ethereum Pods are Running"
+}
+
 report() {
   export KUBECONFIG="$KUBECONFIG_PATH"
   printf 'EKS signing recovery gates passed for %s/%s\n' "$AWS_REGION" "$CLUSTER_NAME"
@@ -107,7 +117,8 @@ main() {
   require_no_unapproved_signers
   if [[ "$mode" == "signing" ]]; then
     [[ "${RECOVERY_CONFIRMATION:-}" == "ephemery-testnet" ]] || die 'signing mode requires RECOVERY_CONFIRMATION=ephemery-testnet'
-    printf '%s\n' 'Testnet signing gates are mechanically satisfied; a reviewed assignment activation is still required.'
+    require_node_layer
+    printf '%s\n' 'Restored signer substrate and active node layer passed; sustained sync, doppelganger, and assignment activation remain required.'
   fi
   report
 }
