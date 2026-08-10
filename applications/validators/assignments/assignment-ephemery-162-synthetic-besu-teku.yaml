@@ -15,4 +15,4 @@ spec:
     slashingProtectionConfirmed: true
     doppelgangerProtectionConfirmed: true
   maintenance:
-    reason: Enable validator 04 after current Besu+Teku sync, Web3Signer key inventory, slashing continuity, and Teku doppelganger qualification checks; solo-human GO recorded on issue 6.
+    reason: Enable validator 04 after current Besu+Teku sync, Web3Signer key inventory, slashing continuity, and Teku doppelganger qualification checks; solo-human GO recorded on issue 6 comment 5245349747.
