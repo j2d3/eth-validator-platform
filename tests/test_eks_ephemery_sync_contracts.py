@@ -550,7 +550,10 @@ class EksEphemeryFluxAndTelemetryTests(unittest.TestCase):
                 expected_lifecycle = (
                     "active"
                     if release["metadata"]["name"]
-                    == "assignment-ephemery-162-synthetic"
+                    in {
+                        "assignment-ephemery-162-synthetic",
+                        "assignment-ephemery-162-synthetic-reth",
+                    }
                     else "stopped"
                 )
                 self.assertEqual(

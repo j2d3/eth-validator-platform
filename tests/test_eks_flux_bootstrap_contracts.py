@@ -540,7 +540,13 @@ class EksApplicationSafetyTests(unittest.TestCase):
             for path in catalog_assignments
             if load_one(path)["spec"]["lifecycle"] == "active"
         ]
-        self.assertEqual(active_assignments, ["assignment-ephemery-162-synthetic.yaml"])
+        self.assertEqual(
+            active_assignments,
+            [
+                "assignment-ephemery-162-synthetic-reth.yaml",
+                "assignment-ephemery-162-synthetic.yaml",
+            ],
+        )
 
         overlay = (NODE_APPS / "kustomization.yaml").read_text(encoding="utf-8")
         self.assertNotIn("lifecycleState", overlay)
