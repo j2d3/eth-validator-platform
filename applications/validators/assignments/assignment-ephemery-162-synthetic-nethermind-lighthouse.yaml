@@ -15,4 +15,4 @@ spec:
     slashingProtectionConfirmed: true
     doppelgangerProtectionConfirmed: true
   maintenance:
-    reason: Enable validator 02 after current Nethermind+Lighthouse sync, Web3Signer key inventory, slashing continuity, and Lighthouse doppelganger qualification checks; solo-human GO recorded on issue 6.
+    reason: Enable validator 02 after current Nethermind+Lighthouse sync, Web3Signer key inventory, slashing continuity, and Lighthouse doppelganger qualification checks; solo-human GO recorded on issue 6 comment 5245259708.
