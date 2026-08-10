@@ -6,11 +6,11 @@ metadata:
   labels:
     app.kubernetes.io/part-of: ethereum-validator-platform
     platform.galaxy-lab/environment: dev
-    platform.galaxy-lab/profile: ephemery-node-sync
-    platform.galaxy-lab/signing-enabled: "false"
+    platform.galaxy-lab/profile: ephemery-signing-recovery
+    platform.galaxy-lab/signing-enabled: "true"
 data:
   environment: dev
-  profile: ephemery-non-signing-sync
+  profile: ephemery-signing-recovery
   network: ephemery-162
-  signingEnabled: "false"
-  explanation: "One Ephemery assignment is active for non-signing sync qualification; all others remain stopped."
+  signingEnabled: "true"
+  explanation: "One deposited Ephemery assignment is restored for signing qualification; all other assignments remain stopped."

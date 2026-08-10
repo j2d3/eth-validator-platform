@@ -556,7 +556,11 @@ class EksEphemeryFluxAndTelemetryTests(unittest.TestCase):
                 self.assertEqual(
                     release["spec"]["values"]["lifecycleState"], expected_lifecycle
                 )
-                self.assertFalse(release["spec"]["values"]["validator"]["enabled"])
+                expected_enabled = release["metadata"]["name"] == "assignment-ephemery-162-synthetic"
+                self.assertEqual(
+                    release["spec"]["values"]["validator"]["enabled"],
+                    expected_enabled,
+                )
                 self.assertEqual(
                     release["spec"]["values"]["engineJwt"]["secretStoreName"],
                     "aws-engine-secrets",
@@ -597,9 +601,12 @@ class EksEphemeryFluxAndTelemetryTests(unittest.TestCase):
             "service.k8s.aws/nlb",
         )
 
-        self.assertFalse(
-            any(release["spec"]["values"]["validator"]["enabled"] for release in releases)
-        )
+        enabled = [
+            release["metadata"]["name"]
+            for release in releases
+            if release["spec"]["values"]["validator"]["enabled"]
+        ]
+        self.assertEqual(enabled, ["assignment-ephemery-162-synthetic"])
 
     def test_sync_dashboard_uses_only_declared_evidence_and_states_limits(self) -> None:
         config_map = yaml.safe_load(

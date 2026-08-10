@@ -160,18 +160,21 @@ class SigningRestoreQualificationContracts(unittest.TestCase):
         )
 
     def test_assignments_remain_non_signing_until_safety_is_confirmed(self) -> None:
-        """Catalog policy permits non-signing work but blocks unsafe signing."""
+        """Only the explicitly qualified assignment may sign."""
+        qualified = {"assignment-ephemery-162-synthetic.yaml"}
         assignment_files = sorted(ASSIGNMENTS_DIR.glob("*.yaml"))
         self.assertTrue(assignment_files)
         for path in assignment_files:
             manifest = yaml.safe_load(path.read_text(encoding="utf-8"))
             spec = manifest.get("spec", {})
-            self.assertIs(
-                spec.get("signingEnabled"),
-                False,
-                f"{path.name} has signing enabled",
-            )
             safety = spec.get("safety", {})
+            if path.name in qualified:
+                self.assertIs(spec.get("signingEnabled"), True)
+                self.assertEqual(spec.get("lifecycle"), "active")
+                self.assertTrue(safety.get("slashingProtectionConfirmed"))
+                self.assertTrue(safety.get("doppelgangerProtectionConfirmed"))
+                continue
+            self.assertIs(spec.get("signingEnabled"), False, f"{path.name} has signing enabled")
             if not (
                 safety.get("slashingProtectionConfirmed")
                 and safety.get("doppelgangerProtectionConfirmed")
