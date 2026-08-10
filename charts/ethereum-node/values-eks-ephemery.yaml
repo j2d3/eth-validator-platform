@@ -20,7 +20,7 @@ executionClients:
     # Temporary evidence collection for the Ephemery peer-session failure.
     # Remove after the root cause is fixed; this is intentionally scoped to
     # the EKS diagnostic overlay rather than the reusable base chart.
-    logFilter: "reth_network=debug"
+    logFilter: "net=debug"
 
 # Client-diversity pairs sync through outbound peers by default. The dev
 # Kustomize overlay promotes exactly one selected pair to an AWS LBC-owned
