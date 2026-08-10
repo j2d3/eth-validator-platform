@@ -409,6 +409,9 @@ exec reth node \
   --chain {{ printf "/network/files/%s" .Values.networkProfile.artifactBundle.files.executionGenesis | quote }} \
   --datadir /data \
   --log.file.max-files 0 \
+  {{- with .Values.executionClients.reth.logFilter }}
+  --log.stdout.filter={{ . | quote }} \
+  {{- end }}
   --bootnodes "$bootnodes" \
   --trusted-peers "$bootnodes" \
   --http \
