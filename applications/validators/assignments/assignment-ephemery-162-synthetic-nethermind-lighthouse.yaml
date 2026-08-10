@@ -3,15 +3,16 @@ kind: ValidatorAssignment
 metadata:
   name: assignment-ephemery-162-synthetic-nethermind-lighthouse
 spec:
-  validatorRef: validator-ephemery-162-synthetic-nethermind-lighthouse
+  validatorRef: validator-ephemery-162-02
   networkProfileRef: ephemery-162
   lifecycle: active
   serviceProfileRef: dedicated-nethermind-lighthouse
   nodePairRef: pair-ephemery-162-synthetic-nethermind-lighthouse
   signerRef: shared-web3signer
-  signingEnabled: false
+  signingEnabled: true
+  feeRecipient: "0x26c31E06d6D4CEd468704b62Cb6c2F897D997576"
   safety:
-    slashingProtectionConfirmed: false
-    doppelgangerProtectionConfirmed: false
+    slashingProtectionConfirmed: true
+    doppelgangerProtectionConfirmed: true
   maintenance:
-    reason: Start as a non-signing client-diversity pair; signing remains disabled pending qualification.
+    reason: Enable validator 02 after current Nethermind+Lighthouse sync, Web3Signer key inventory, slashing continuity, and Lighthouse doppelganger qualification checks; solo-human GO recorded on issue 6 comment 5245259708.

@@ -3,7 +3,7 @@ kind: ValidatorAssignment
 metadata:
   name: assignment-ephemery-162-synthetic-reth
 spec:
-  validatorRef: validator-ephemery-162-02
+  validatorRef: validator-ephemery-162-synthetic-reth
   networkProfileRef: ephemery-162
   lifecycle: active
   serviceProfileRef: dedicated-reth-lighthouse
@@ -15,4 +15,4 @@ spec:
     slashingProtectionConfirmed: false
     doppelgangerProtectionConfirmed: false
   maintenance:
-    reason: Resume the Reth-Lighthouse pair for post-restore sync qualification; signing remains disabled.
+    reason: Keep the Reth-Lighthouse pair active as a synthetic non-signing diagnostic while validator 02 is qualified on Nethermind-Lighthouse.
