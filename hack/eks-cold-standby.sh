@@ -7,6 +7,7 @@ set -euo pipefail
 
 ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 TF_ROOT="${ROOT_DIR}/terraform/environments/dev"
+DNS_ROOT="${ROOT_DIR}/terraform/environments/dns"
 TF_BIN="${TF_BIN:-${ROOT_DIR}/.local/bin/terraform}"
 AWS_REGION="${AWS_REGION:-us-west-2}"
 CLUSTER_NAME="${CLUSTER_NAME:-eth-validator-platform-dev}"
@@ -34,6 +35,10 @@ require_tools() {
 
 tf() {
   "$TF_BIN" -chdir="$TF_ROOT" "$@"
+}
+
+dns_tf() {
+  "$TF_BIN" -chdir="$DNS_ROOT" "$@"
 }
 
 backend_bucket() {
@@ -247,6 +252,33 @@ down() {
   printf 'Cold teardown elapsed seconds: %s\n' "$(( $(date +%s) - started ))"
 }
 
+refresh_operations_dns() {
+  require_tools
+  local host plan_path changed
+  export KUBECONFIG="$KUBECONFIG_PATH"
+  host="$(kubectl -n ingress-nginx get service ingress-nginx-controller \
+    -o jsonpath='{.status.loadBalancer.ingress[0].hostname}')"
+  case "$host" in
+    *.elb.*.amazonaws.com) ;;
+    *) die "ingress controller has no validated AWS load-balancer hostname: ${host:-<empty>}" ;;
+  esac
+  [[ -f "$DNS_ROOT/backend.hcl" ]] || die "DNS Terraform backend config is missing: $DNS_ROOT/backend.hcl"
+  dns_tf init -reconfigure -backend-config=backend.hcl -input=false >/dev/null
+  plan_path="$STATE_DIR/operations-dns-$(date -u +%Y%m%d-%H%M%S).tfplan"
+  dns_tf plan -input=false \
+    -var="operations_load_balancer_hostname=$host" \
+    -out="$plan_path" -no-color >/dev/null
+  changed="$(dns_tf show -json "$plan_path" | jq '[.resource_changes[] | select(.change.actions != ["no-op"])]')"
+  [[ "$(jq 'length' <<<"$changed")" -le 1 ]] || \
+    die "DNS refresh plan contains unexpected resource changes: $changed"
+  if [[ "$(jq -r '.[0].address // empty' <<<"$changed")" != "" && \
+        "$(jq -r '.[0].address' <<<"$changed")" != "aws_route53_record.operations[0]" ]]; then
+    die "DNS refresh plan changes an unexpected resource: $(jq -r '.[0].address' <<<"$changed")"
+  fi
+  dns_tf apply -input=false -auto-approve "$plan_path" >/dev/null
+  printf 'Operations DNS refreshed to %s (plan: %s)\n' "$host" "$plan_path"
+}
+
 up() {
   require_tools
   local snapshot_id started
@@ -258,10 +290,11 @@ up() {
   aws eks update-kubeconfig --region "$AWS_REGION" --name "$CLUSTER_NAME" --alias "$CLUSTER_NAME" >/dev/null
   printf 'Terraform/EKS restore elapsed seconds: %s\n' "$(( $(date +%s) - started ))"
   printf '%s\n' 'Flux bootstrap remains an explicit post-restore step; follow docs/runbooks/eks-flux-bootstrap.md.'
+  printf '%s\n' 'After ingress-nginx reports its new NLB hostname, run: hack/eks-cold-standby.sh refresh-dns'
 }
 
 usage() {
-  printf 'Usage: %s {preflight|snapshot|destroy-plan|down|up}\n' "$0" >&2
+  printf 'Usage: %s {preflight|snapshot|destroy-plan|down|up|refresh-dns}\n' "$0" >&2
   exit 2
 }
 
@@ -271,5 +304,6 @@ case "${1:-}" in
   destroy-plan) destroy_plan ;;
   down) down ;;
   up) up ;;
+  refresh-dns) refresh_operations_dns ;;
   *) usage ;;
 esac
