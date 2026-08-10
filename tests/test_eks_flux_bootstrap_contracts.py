@@ -508,7 +508,7 @@ class EksApplicationSafetyTests(unittest.TestCase):
                 self.assertFalse(container["securityContext"]["allowPrivilegeEscalation"])
                 self.assertEqual(container["securityContext"]["capabilities"]["drop"], ["ALL"])
 
-    def test_resumed_catalog_assignment_is_active_but_non_signing_in_local_overlay(self) -> None:
+    def test_restored_catalog_assignment_is_active_and_signing_in_local_overlay(self) -> None:
         generated = load_one(
             ROOT
             / "platform"
@@ -518,7 +518,7 @@ class EksApplicationSafetyTests(unittest.TestCase):
             / "assignment-ephemery-162-synthetic.yaml"
         )
         self.assertEqual(generated["spec"]["values"]["lifecycleState"], "active")
-        self.assertFalse(generated["spec"]["values"]["validator"]["enabled"])
+        self.assertTrue(generated["spec"]["values"]["validator"]["enabled"])
 
         local_documents = render_all(ROOT / "platform" / "apps" / "local")
         release = object_named(
@@ -527,6 +527,8 @@ class EksApplicationSafetyTests(unittest.TestCase):
             "assignment-ephemery-162-synthetic",
         )
         values = release["spec"]["values"]
+        # The local kind overlay deliberately keeps validator duties disabled;
+        # EKS consumes the generated projection above without this override.
         self.assertFalse(values["validator"]["enabled"])
         self.assertFalse(values["validator"]["slashingProtectionConfirmed"])
 
@@ -545,15 +547,15 @@ class EksApplicationSafetyTests(unittest.TestCase):
         self.assertIn("values-eks-ephemery.yaml", overlay)
         self.assertIn("eth-validator-platform-dev", overlay)
 
-    def test_node_profile_records_the_non_signing_sync_state(self) -> None:
+    def test_node_profile_records_the_restored_signing_state(self) -> None:
         profile = load_one(NODE_APPS / "profile.yaml")
         self.assertEqual(profile["data"]["environment"], "dev")
-        self.assertEqual(profile["data"]["signingEnabled"], "false")
+        self.assertEqual(profile["data"]["signingEnabled"], "true")
         self.assertEqual(
             profile["metadata"]["labels"]["platform.galaxy-lab/signing-enabled"],
-            "false",
+            "true",
         )
-        self.assertEqual(profile["data"]["profile"], "ephemery-non-signing-sync")
+        self.assertEqual(profile["data"]["profile"], "ephemery-signing-recovery")
 
     def test_released_signer_projects_only_the_encrypted_key_secret(self) -> None:
         documents = render_all(APPS)
