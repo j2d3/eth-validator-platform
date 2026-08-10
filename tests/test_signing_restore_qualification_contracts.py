@@ -171,6 +171,7 @@ class SigningRestoreQualificationContracts(unittest.TestCase):
         """Only explicitly qualified assignments may sign."""
         qualified = {
             "assignment-ephemery-162-synthetic.yaml",
+            "assignment-ephemery-162-synthetic-besu-teku.yaml",
             "assignment-ephemery-162-synthetic-nethermind-lighthouse.yaml",
             "assignment-ephemery-162-synthetic-teku.yaml",
         }

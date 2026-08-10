@@ -8,7 +8,7 @@ metadata:
   labels:
     app.kubernetes.io/part-of: ethereum-validator-platform
     platform.galaxy-lab/assignment-id: assignment-ephemery-162-synthetic-besu-teku
-    platform.galaxy-lab/validator-id: validator-ephemery-162-synthetic-besu-teku
+    platform.galaxy-lab/validator-id: validator-ephemery-162-04
 spec:
   interval: 10m
   timeout: 10m
@@ -106,9 +106,13 @@ spec:
       cluster: kind-eth-validator-local
       environment: local
     identity:
-      customerId: customer-synthetic-lab
-      validatorId: validator-ephemery-162-synthetic-besu-teku
+      customerId: customer-testnet-lab
+      validatorId: validator-ephemery-162-04
       assignmentId: assignment-ephemery-162-synthetic-besu-teku
     validator:
-      enabled: false
-      slashingProtectionConfirmed: false
+      enabled: true
+      slashingProtectionConfirmed: true
+      publicKey: '0x8d5426e6c82992254cf15a6a154ecfab15d16c6b18d76c5d75b024c7bcd4f30823a9fe3ea3c669020016491860ef0422'
+      feeRecipient: '0x26c31E06d6D4CEd468704b62Cb6c2F897D997576'
+      graffiti: eth-validator-platform-lab
+      networkConfigMapName: web3signer-network-config-ephemery-162
