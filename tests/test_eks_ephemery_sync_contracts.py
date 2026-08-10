@@ -550,7 +550,10 @@ class EksEphemeryFluxAndTelemetryTests(unittest.TestCase):
                 self.assertEqual(
                     release["spec"]["values"]["lifecycleState"], expected_lifecycle
                 )
-                expected_enabled = release["metadata"]["name"] == "assignment-ephemery-162-synthetic"
+                expected_enabled = release["metadata"]["name"] in {
+                    "assignment-ephemery-162-synthetic",
+                    "assignment-ephemery-162-synthetic-teku",
+                }
                 self.assertEqual(
                     release["spec"]["values"]["validator"]["enabled"],
                     expected_enabled,
@@ -600,7 +603,13 @@ class EksEphemeryFluxAndTelemetryTests(unittest.TestCase):
             for release in releases
             if release["spec"]["values"]["validator"]["enabled"]
         ]
-        self.assertEqual(enabled, ["assignment-ephemery-162-synthetic"])
+        self.assertEqual(
+            enabled,
+            [
+                "assignment-ephemery-162-synthetic",
+                "assignment-ephemery-162-synthetic-teku",
+            ],
+        )
 
     def test_sync_dashboard_uses_only_declared_evidence_and_states_limits(self) -> None:
         config_map = yaml.safe_load(

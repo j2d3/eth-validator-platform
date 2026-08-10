@@ -168,8 +168,11 @@ class SigningRestoreQualificationContracts(unittest.TestCase):
         )
 
     def test_assignments_remain_non_signing_until_safety_is_confirmed(self) -> None:
-        """Only the explicitly qualified assignment may sign."""
-        qualified = {"assignment-ephemery-162-synthetic.yaml"}
+        """Only explicitly qualified assignments may sign."""
+        qualified = {
+            "assignment-ephemery-162-synthetic.yaml",
+            "assignment-ephemery-162-synthetic-teku.yaml",
+        }
         assignment_files = sorted(ASSIGNMENTS_DIR.glob("*.yaml"))
         self.assertTrue(assignment_files)
         for path in assignment_files:
