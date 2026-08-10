@@ -3,7 +3,7 @@ kind: ValidatorAssignment
 metadata:
   name: assignment-ephemery-162-synthetic-reth-teku
 spec:
-  validatorRef: validator-ephemery-162-04
+  validatorRef: validator-ephemery-162-synthetic-reth-teku
   networkProfileRef: ephemery-162
   lifecycle: active
   serviceProfileRef: dedicated-reth-teku
@@ -15,4 +15,4 @@ spec:
     slashingProtectionConfirmed: false
     doppelgangerProtectionConfirmed: false
   maintenance:
-    reason: Start as a non-signing client-diversity pair; signing remains disabled pending qualification.
+    reason: Keep the Reth-Teku pair active as a synthetic non-signing diagnostic while validator 04 is qualified on Besu-Teku.

@@ -552,6 +552,7 @@ class EksEphemeryFluxAndTelemetryTests(unittest.TestCase):
                 )
                 expected_enabled = release["metadata"]["name"] in {
                     "assignment-ephemery-162-synthetic",
+                    "assignment-ephemery-162-synthetic-besu-teku",
                     "assignment-ephemery-162-synthetic-nethermind-lighthouse",
                     "assignment-ephemery-162-synthetic-teku",
                 }
@@ -608,6 +609,7 @@ class EksEphemeryFluxAndTelemetryTests(unittest.TestCase):
             enabled,
             [
                 "assignment-ephemery-162-synthetic",
+                "assignment-ephemery-162-synthetic-besu-teku",
                 "assignment-ephemery-162-synthetic-nethermind-lighthouse",
                 "assignment-ephemery-162-synthetic-teku",
             ],

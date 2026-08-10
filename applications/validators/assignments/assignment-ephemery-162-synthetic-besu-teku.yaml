@@ -3,15 +3,16 @@ kind: ValidatorAssignment
 metadata:
   name: assignment-ephemery-162-synthetic-besu-teku
 spec:
-  validatorRef: validator-ephemery-162-synthetic-besu-teku
+  validatorRef: validator-ephemery-162-04
   networkProfileRef: ephemery-162
   lifecycle: active
   serviceProfileRef: dedicated-besu-teku
   nodePairRef: pair-ephemery-162-synthetic-besu-teku
   signerRef: shared-web3signer
-  signingEnabled: false
+  signingEnabled: true
+  feeRecipient: "0x26c31E06d6D4CEd468704b62Cb6c2F897D997576"
   safety:
-    slashingProtectionConfirmed: false
-    doppelgangerProtectionConfirmed: false
+    slashingProtectionConfirmed: true
+    doppelgangerProtectionConfirmed: true
   maintenance:
-    reason: Start as a non-signing client-diversity pair; signing remains disabled pending qualification.
+    reason: Enable validator 04 after current Besu+Teku sync, Web3Signer key inventory, slashing continuity, and Teku doppelganger qualification checks; solo-human GO recorded on issue 6.

@@ -8,7 +8,7 @@ metadata:
   labels:
     app.kubernetes.io/part-of: ethereum-validator-platform
     platform.galaxy-lab/assignment-id: assignment-ephemery-162-synthetic-reth-teku
-    platform.galaxy-lab/validator-id: validator-ephemery-162-04
+    platform.galaxy-lab/validator-id: validator-ephemery-162-synthetic-reth-teku
 spec:
   interval: 10m
   timeout: 10m
@@ -106,8 +106,8 @@ spec:
       cluster: kind-eth-validator-local
       environment: local
     identity:
-      customerId: customer-testnet-lab
-      validatorId: validator-ephemery-162-04
+      customerId: customer-synthetic-lab
+      validatorId: validator-ephemery-162-synthetic-reth-teku
       assignmentId: assignment-ephemery-162-synthetic-reth-teku
     validator:
       enabled: false
