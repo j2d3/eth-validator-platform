@@ -1,0 +1,9 @@
+apiVersion: platform.galaxy-lab/v1alpha1
+kind: ValidatorIdentity
+metadata:
+  name: validator-ephemery-162-synthetic-reth
+spec:
+  customerRef: customer-synthetic-lab
+  networkProfileRef: ephemery-162
+  lifecycle: draft
+  synthetic: true
