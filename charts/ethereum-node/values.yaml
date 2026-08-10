@@ -172,6 +172,9 @@ executionClients:
   # manifest digest resolved 2026-08-04.
   reth:
     image: ghcr.io/paradigmxyz/reth:v1.6.0@sha256:5b283f65853d32b240c8f639939bd6f9a8c6918b6dfc3148d0ba97e57d7f8da4
+    # Optional temporary diagnostic filter. Keep empty in the base chart so
+    # normal workloads retain the image's default logging level.
+    logFilter: ""
     # Reth's native metric names differ from Geth's. Names below are the
     # gauges Reth exposes on --metrics; verify against the running Pod's
     # /metrics output before treating dashboard series as ground truth.
