@@ -15,4 +15,4 @@ spec:
     slashingProtectionConfirmed: true
     doppelgangerProtectionConfirmed: true
   maintenance:
-    reason: Enable validator 03 after current Geth+Teku sync, Web3Signer key inventory, slashing continuity, and doppelganger qualification checks.
+    reason: Enable validator 03 after current Geth+Teku sync, Web3Signer key inventory, slashing continuity, and doppelganger qualification checks; solo-human GO recorded on issue 6 comment 5244951297.
