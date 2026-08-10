@@ -22,16 +22,16 @@ spec:
       interval: 10m
       reconcileStrategy: Revision
   install:
-    disableWait: true
+    disableWait: false
     remediation:
       retries: 3
   upgrade:
-    disableWait: true
+    disableWait: false
     remediation:
       retries: 3
   values:
     fullnameOverride: pair-ephemery-162-synthetic-nethermind-prysm
-    lifecycleState: stopped
+    lifecycleState: active
     networkProfile:
       name: ephemery-162
       family: ephemery

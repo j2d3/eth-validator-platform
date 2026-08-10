@@ -523,8 +523,7 @@ class EksEphemeryFluxAndTelemetryTests(unittest.TestCase):
             document for document in documents if document["kind"] == "HelmRelease"
         ]
         # All nine generation-pinned Ephemery releases remain admitted so
-        # their identities, PVCs, and EKS-specific inputs are retained. Their
-        # stopped values render no client or validator workload.
+        # their identities, PVCs, and EKS-specific inputs are retained.
         self.assertEqual(
             sorted(release["metadata"]["name"] for release in releases),
             [
@@ -547,15 +546,7 @@ class EksEphemeryFluxAndTelemetryTests(unittest.TestCase):
         # not an obviously-broken render.
         for release in releases:
             with self.subTest(release=release["metadata"]["name"]):
-                expected_lifecycle = (
-                    "active"
-                    if release["metadata"]["name"]
-                    in {
-                        "assignment-ephemery-162-synthetic",
-                        "assignment-ephemery-162-synthetic-reth",
-                    }
-                    else "stopped"
-                )
+                expected_lifecycle = "active"
                 self.assertEqual(
                     release["spec"]["values"]["lifecycleState"], expected_lifecycle
                 )
