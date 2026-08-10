@@ -126,6 +126,11 @@ class RethAdapterRenderTests(unittest.TestCase):
         self.assertIn("--chain ", script)
         self.assertIn("--datadir /data", script)
         self.assertIn("--log.file.max-files 0", script)
+        # Ephemery's pinned enodes are direct peers as well as discovery
+        # helpers. This avoids a Reth-only bootstrap stall when discovery
+        # does not establish an outbound session.
+        self.assertIn('--bootnodes "$bootnodes"', script)
+        self.assertIn('--trusted-peers "$bootnodes"', script)
         self.assertIn("--authrpc.jwtsecret /jwt/jwt.hex", script)
         self.assertIn("--metrics 0.0.0.0:6060", script)
         # No Geth signature leaks in.

@@ -410,6 +410,7 @@ exec reth node \
   --datadir /data \
   --log.file.max-files 0 \
   --bootnodes "$bootnodes" \
+  --trusted-peers "$bootnodes" \
   --http \
   --http.addr 0.0.0.0 \
   --http.port 8545 \
