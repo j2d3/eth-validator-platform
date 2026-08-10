@@ -9,10 +9,10 @@ spec:
   serviceProfileRef: dedicated-geth-teku
   nodePairRef: pair-ephemery-162-synthetic-teku
   signerRef: shared-web3signer
-  signingEnabled: false
+  signingEnabled: true
   feeRecipient: "0x26c31E06d6D4CEd468704b62Cb6c2F897D997576"
   safety:
-    slashingProtectionConfirmed: false
-    doppelgangerProtectionConfirmed: false
+    slashingProtectionConfirmed: true
+    doppelgangerProtectionConfirmed: true
   maintenance:
-    reason: Start as a non-signing client-diversity pair; signing remains disabled pending qualification.
+    reason: Enable validator 03 after current Geth+Teku sync, Web3Signer key inventory, slashing continuity, and doppelganger qualification checks; solo-human GO recorded on issue 6 comment 5244951297.
