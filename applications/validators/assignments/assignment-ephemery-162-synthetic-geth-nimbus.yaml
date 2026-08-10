@@ -5,7 +5,7 @@ metadata:
 spec:
   validatorRef: validator-ephemery-162-synthetic-geth-nimbus
   networkProfileRef: ephemery-162
-  lifecycle: stopped
+  lifecycle: active
   serviceProfileRef: dedicated-geth-nimbus
   nodePairRef: pair-ephemery-162-synthetic-geth-nimbus
   signerRef: shared-web3signer
@@ -14,4 +14,4 @@ spec:
     slashingProtectionConfirmed: false
     doppelgangerProtectionConfirmed: false
   maintenance:
-    reason: Pause the Ephemery fleet for the 2026-08-08 cost and recovery exercise; retain chain data.
+    reason: Start as a non-signing client-diversity pair; signing remains disabled pending qualification.

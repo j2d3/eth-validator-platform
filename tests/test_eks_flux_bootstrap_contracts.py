@@ -543,7 +543,14 @@ class EksApplicationSafetyTests(unittest.TestCase):
         self.assertEqual(
             active_assignments,
             [
+                "assignment-ephemery-162-synthetic-besu-teku.yaml",
+                "assignment-ephemery-162-synthetic-erigon.yaml",
+                "assignment-ephemery-162-synthetic-geth-nimbus.yaml",
+                "assignment-ephemery-162-synthetic-nethermind-lighthouse.yaml",
+                "assignment-ephemery-162-synthetic-nethermind-prysm.yaml",
+                "assignment-ephemery-162-synthetic-reth-teku.yaml",
                 "assignment-ephemery-162-synthetic-reth.yaml",
+                "assignment-ephemery-162-synthetic-teku.yaml",
                 "assignment-ephemery-162-synthetic.yaml",
             ],
         )
