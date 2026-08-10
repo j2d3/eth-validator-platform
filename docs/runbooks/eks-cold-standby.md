@@ -104,13 +104,17 @@ plane is gone.
 4. Recreate EKS and its add-ons, then bootstrap Flux from the recorded Git
    revision. Flux must initially reconcile with all assignments stopped and
    signing disabled.
-5. Recreate worker capacity, allow chain-data PVCs to bind, and resync one
+5. After the ingress controller reports its new AWS load-balancer hostname,
+   run `./hack/eks-cold-standby.sh refresh-dns`. This refreshes the
+   Terraform-owned `ops.g.j2d3.com` CNAME; a restore creates a new NLB and the
+   previous CNAME must never be assumed to remain valid.
+6. Recreate worker capacity, allow chain-data PVCs to bind, and resync one
    client pair at a time. Do not restore a validator duty merely because Pods
    are Ready.
-6. Reconcile the Engine JWT and database Secrets through External Secrets.
+7. Reconcile the Engine JWT and database Secrets through External Secrets.
    Reconcile signing-key Secrets only after the restored RDS path and identity
    inventory match the manifest.
-7. Re-run the normal activation gates: chain identity, sync distance,
+8. Re-run the normal activation gates: chain identity, sync distance,
    doppelganger protection, exact public-key match, slashing backup evidence,
    and one-active-assignment uniqueness.
 

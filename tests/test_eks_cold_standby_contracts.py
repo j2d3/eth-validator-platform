@@ -56,6 +56,15 @@ class EksColdStandbyContracts(unittest.TestCase):
         self.assertIn("seven durable secret", RUNBOOK)
         self.assertIn("encrypted restore snapshot", RUNBOOK)
 
+    def test_restore_has_a_guarded_operations_dns_refresh(self) -> None:
+        section = SCRIPT[SCRIPT.index("refresh_operations_dns()"):SCRIPT.index("usage()")]
+        self.assertIn("ingress-nginx-controller", section)
+        self.assertIn("operations_load_balancer_hostname", section)
+        self.assertIn("*.elb.*.amazonaws.com", section)
+        self.assertIn("aws_route53_record.operations[0]", section)
+        self.assertIn("refresh-dns", SCRIPT)
+        self.assertIn("refresh-dns", RUNBOOK)
+
 
 if __name__ == "__main__":
     unittest.main()
