@@ -168,10 +168,12 @@ executionClients:
   # Reth adapter. Genesis format is Geth-compatible (same digest-verified
   # genesis.json). State lives under /data/db/ (rethInitCommand asserts this
   # marker directory). No `--syncmode` — Reth's pipelined-staged sync is
-  # always full-derivation. Image pin is the ghcr.io/paradigmxyz/reth v1.6.0
-  # manifest digest resolved 2026-08-04.
+  # always full-derivation. Image pin is the ghcr.io/paradigmxyz/reth v1.10.0
+  # manifest digest resolved 2026-08-10. v1.10.0 is required for the
+  # BPO1/BPO2 timestamp forks present in the Ephemery-162 genesis; v1.6.0
+  # advertised a pre-BPO fork ID and was rejected by the network peers.
   reth:
-    image: ghcr.io/paradigmxyz/reth:v1.6.0@sha256:5b283f65853d32b240c8f639939bd6f9a8c6918b6dfc3148d0ba97e57d7f8da4
+    image: ghcr.io/paradigmxyz/reth:v1.10.0@sha256:dd628fc5fdce901c9625c4d9ccb3684c1f2863ffd1b710c62c6acbb8307e8610
     # Optional temporary diagnostic filter. Keep empty in the base chart so
     # normal workloads retain the image's default logging level.
     logFilter: ""
