@@ -69,9 +69,10 @@ report. Any failure stops the sequence with nothing to clean up, because
 nothing was mutated. Gate 8 requires a named operator and a named approver —
 distinct people where more than one human maintains the platform. In a
 solo-human repository the single human records the decision as an explicit
-override, and both AI agents' paired exact-head reviews of the enablement
-change stand in as the second set of eyes; the first execution of this gate
-(2026-08-10, PR #225) established that path. Either way, an issue comment
+override, and the ordinary paired-agent exact-head review of the enablement
+change stands in as the second set of eyes — the same control COLLABORATION.md
+rule 2 already enforces on every agent-authored merge; the first execution of
+this gate (2026-08-10, PR #225) established that path. Either way, an issue comment
 records the decision with the report digest. Gate 9 is a normal pull request flipping the approved
 assignments from `lifecycle: stopped` to active — the merge is the
 authorization (PRD §5.12), and Flux performs the reconciliation.
