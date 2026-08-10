@@ -27,7 +27,7 @@ namespace, different on-disk layout (state under `/data/db/` instead of
 
 Same shape as Geth+Lighthouse:
 
-- `execution`: Reth (`ghcr.io/paradigmxyz/reth:v1.6.0`) — pipelined staged
+- `execution`: Reth (`ghcr.io/paradigmxyz/reth:v1.10.0`) — pipelined staged
   sync; no `--syncmode` flag.
 - `consensus`: Lighthouse beacon node (same image as validator #1's pair).
 - `validator`: Lighthouse validator client (Deployment), separate encrypted
@@ -100,6 +100,10 @@ identity was generated and bound.
 ## Problems encountered and corrections
 
 - **Read-only-root vs Reth file logger** (#104): described above.
+- **Ephemery BPO fork compatibility** (#230): Reth v1.6.0 did not include
+  Ephemery-162's BPO1/BPO2 timestamp forks. It advertised the genesis-only
+  fork ID, so peers rejected the session after the RLPx handshake. The chart
+  now pins v1.10.0, which loads the BPO schedule from the same genesis bundle.
 - **Reth-vs-Geth metric semantics** (#96): initial adapter mapped both
   `headBlock` and `headHeader` to the same Reth series, publishing a
   confident-looking `sync_distance = 0`. Corrected to omit `headHeader` and
