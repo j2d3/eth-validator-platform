@@ -31,12 +31,20 @@ class SigningRestoreQualificationContracts(unittest.TestCase):
         self.assertIsNone(status["evidence_record"])
 
     def test_exactly_one_human_gate(self) -> None:
-        """Interaction is minimized to one gate, never to zero."""
+        """Interaction is minimized to one gate, never to zero.
+
+        The distinct-approver requirement is scoped to multi-human repos; the
+        solo-human path is an explicit recorded override plus the ordinary
+        paired-agent exact-head review, never a silent skip.
+        """
         gate = self.contract["human_gate"]
         self.assertEqual(gate["count"], 1)
         self.assertEqual(gate["id"], "human-go-no-go")
         requires = " ".join(gate["requires"])
         self.assertIn("must not be the same person", requires)
+        self.assertIn("where more than one human", requires)
+        self.assertIn("explicit override", requires)
+        self.assertIn("paired-agent exact-head review", requires)
 
     def test_qualification_is_read_only(self) -> None:
         qualification = self.contract["post_restore_qualification"]

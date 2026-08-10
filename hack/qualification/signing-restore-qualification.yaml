@@ -12,7 +12,7 @@ kind: SigningRestoreQualificationContract
 
 metadata:
   name: signing-restore-qualification
-  revision: 1
+  revision: 2
   environment: dev
   tracking_issue: 180
   runbook: docs/runbooks/signing-restore-after-cold-standby.md
@@ -114,11 +114,20 @@ human_gate:
   id: human-go-no-go
   count: 1
   requires:
-    - a named operator and a named approver, who must not be the same person
+    - a named operator and a named approver; they must not be the same person
+      where more than one human maintains the platform
+    - in a solo-human repository, the single human records the decision as an
+      explicit override, and the ordinary paired-agent exact-head review of
+      the enablement change (COLLABORATION.md rule 2) stands in as the second
+      set of eyes
     - the full post-restore qualification report, passing
     - an issue comment recording the decision and the report digest
   on_no_go: assignments remain stopped; no cleanup is required because
     qualification mutated nothing
+  # The solo-human path exists because its first execution (2026-08-10, PR
+  # #225) proved the original two-human wording unsatisfiable here. A gate
+  # that can only be passed by ignoring it trains operators to ignore gates;
+  # this text records what the repo actually requires and why that is enough.
 
 # Enablement is a Git change like any other deployment (PRD §5.12). The gate
 # above authorizes *opening* it; merge authorization is the normal paired
