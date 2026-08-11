@@ -131,10 +131,10 @@ class EksFluxEntrypointTests(unittest.TestCase):
         self.assertNotIn("suspend", self.layers["infrastructure-controllers"]["spec"])
         self.assertNotIn("suspend", self.layers["infrastructure-configs"]["spec"])
         self.assertNotIn("suspend", self.layers["portal-observability"]["spec"])
-        # node-apps is resumed only for the reviewed non-signing sync
-        # qualification. Catalog state still limits activation to one pair.
+        # Cold standby suspends the node layer after every assignment reaches
+        # the stopped, non-signing catalog state.
         self.assertIn("suspend", self.layers["node-apps"]["spec"])
-        self.assertFalse(self.layers["node-apps"]["spec"]["suspend"])
+        self.assertTrue(self.layers["node-apps"]["spec"]["suspend"])
         # The signer adapter, prerequisite layer, and empty-key workload have
         # been separately reviewed after the RDS credential bootstrap, TLS,
         # migration, and branch-ENI paths were qualified. Validator duties are
@@ -508,7 +508,7 @@ class EksApplicationSafetyTests(unittest.TestCase):
                 self.assertFalse(container["securityContext"]["allowPrivilegeEscalation"])
                 self.assertEqual(container["securityContext"]["capabilities"]["drop"], ["ALL"])
 
-    def test_restored_catalog_assignment_is_active_and_signing_in_local_overlay(self) -> None:
+    def test_cold_standby_catalog_has_no_active_or_signing_assignments_in_local_overlay(self) -> None:
         generated = load_one(
             ROOT
             / "platform"
@@ -517,8 +517,8 @@ class EksApplicationSafetyTests(unittest.TestCase):
             / "assignments"
             / "assignment-ephemery-162-synthetic.yaml"
         )
-        self.assertEqual(generated["spec"]["values"]["lifecycleState"], "active")
-        self.assertTrue(generated["spec"]["values"]["validator"]["enabled"])
+        self.assertEqual(generated["spec"]["values"]["lifecycleState"], "stopped")
+        self.assertFalse(generated["spec"]["values"]["validator"]["enabled"])
 
         local_documents = render_all(ROOT / "platform" / "apps" / "local")
         release = object_named(
@@ -540,35 +540,22 @@ class EksApplicationSafetyTests(unittest.TestCase):
             for path in catalog_assignments
             if load_one(path)["spec"]["lifecycle"] == "active"
         ]
-        self.assertEqual(
-            active_assignments,
-            [
-                "assignment-ephemery-162-synthetic-besu-teku.yaml",
-                "assignment-ephemery-162-synthetic-erigon.yaml",
-                "assignment-ephemery-162-synthetic-geth-nimbus.yaml",
-                "assignment-ephemery-162-synthetic-nethermind-lighthouse.yaml",
-                "assignment-ephemery-162-synthetic-nethermind-prysm.yaml",
-                "assignment-ephemery-162-synthetic-reth-teku.yaml",
-                "assignment-ephemery-162-synthetic-reth.yaml",
-                "assignment-ephemery-162-synthetic-teku.yaml",
-                "assignment-ephemery-162-synthetic.yaml",
-            ],
-        )
+        self.assertEqual(active_assignments, [])
 
         overlay = (NODE_APPS / "kustomization.yaml").read_text(encoding="utf-8")
         self.assertNotIn("lifecycleState", overlay)
         self.assertIn("values-eks-ephemery.yaml", overlay)
         self.assertIn("eth-validator-platform-dev", overlay)
 
-    def test_node_profile_records_the_restored_signing_state(self) -> None:
+    def test_node_profile_records_the_cold_standby_state(self) -> None:
         profile = load_one(NODE_APPS / "profile.yaml")
         self.assertEqual(profile["data"]["environment"], "dev")
-        self.assertEqual(profile["data"]["signingEnabled"], "true")
+        self.assertEqual(profile["data"]["signingEnabled"], "false")
         self.assertEqual(
             profile["metadata"]["labels"]["platform.galaxy-lab/signing-enabled"],
-            "true",
+            "false",
         )
-        self.assertEqual(profile["data"]["profile"], "ephemery-signing-recovery")
+        self.assertEqual(profile["data"]["profile"], "ephemery-cold-standby")
 
     def test_released_signer_projects_only_the_encrypted_key_secret(self) -> None:
         documents = render_all(APPS)

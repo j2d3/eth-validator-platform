@@ -167,35 +167,26 @@ class SigningRestoreQualificationContracts(unittest.TestCase):
             "digests have no ordering; a 'larger' hash is just a mismatch",
         )
 
-    def test_assignments_remain_non_signing_until_safety_is_confirmed(self) -> None:
-        """Only explicitly qualified assignments may sign."""
-        qualified = {
-            "assignment-ephemery-162-synthetic.yaml",
-            "assignment-ephemery-162-synthetic-besu-teku.yaml",
-            "assignment-ephemery-162-synthetic-nethermind-lighthouse.yaml",
-            "assignment-ephemery-162-synthetic-teku.yaml",
-        }
+    def test_cold_standby_assignments_are_stopped_and_non_signing(self) -> None:
+        """Cold standby pins the qualified-signing and active sets to empty."""
         assignment_files = sorted(ASSIGNMENTS_DIR.glob("*.yaml"))
         self.assertTrue(assignment_files)
+        qualified = set()
+        active = set()
         for path in assignment_files:
             manifest = yaml.safe_load(path.read_text(encoding="utf-8"))
             spec = manifest.get("spec", {})
             safety = spec.get("safety", {})
-            if path.name in qualified:
-                self.assertIs(spec.get("signingEnabled"), True)
-                self.assertEqual(spec.get("lifecycle"), "active")
-                self.assertTrue(safety.get("slashingProtectionConfirmed"))
-                self.assertTrue(safety.get("doppelgangerProtectionConfirmed"))
-                continue
+            if spec.get("signingEnabled"):
+                qualified.add(path.name)
+            if spec.get("lifecycle") == "active":
+                active.add(path.name)
             self.assertIs(spec.get("signingEnabled"), False, f"{path.name} has signing enabled")
-            if not (
-                safety.get("slashingProtectionConfirmed")
-                and safety.get("doppelgangerProtectionConfirmed")
-            ):
-                self.assertFalse(
-                    spec.get("signingEnabled"),
-                    f"{path.name} enables signing without both safety confirmations",
-                )
+            self.assertEqual(spec.get("lifecycle"), "stopped", f"{path.name} is not stopped")
+            self.assertFalse(safety.get("slashingProtectionConfirmed"))
+            self.assertFalse(safety.get("doppelgangerProtectionConfirmed"))
+        self.assertEqual(qualified, set())
+        self.assertEqual(active, set())
 
 
 if __name__ == "__main__":

@@ -492,16 +492,16 @@ class EksEphemeryRenderTests(unittest.TestCase):
 
 
 class EksEphemeryFluxAndTelemetryTests(unittest.TestCase):
-    def test_resumed_node_layer_retains_inputs_for_the_non_signing_pair(self) -> None:
+    def test_cold_standby_node_layer_retains_restore_inputs(self) -> None:
         layer = yaml.safe_load((CLUSTER / "node-apps.yaml").read_text(encoding="utf-8"))
         self.assertEqual(
             layer["spec"]["dependsOn"],
             [{"name": "infrastructure-controllers"}, {"name": "apps"}],
         )
-        # The reviewed non-signing resume remains ordered behind both the
-        # Ready AWS LBC and shared-signer application.
+        # Cold standby remains ordered behind both the Ready AWS LBC and
+        # shared-signer application, but admits no node workloads.
         self.assertIn("suspend", layer["spec"])
-        self.assertFalse(layer["spec"]["suspend"])
+        self.assertTrue(layer["spec"]["suspend"])
 
         rendered = subprocess.run(
             ["kubectl", "kustomize", str(NODE_APPS)],
@@ -546,16 +546,11 @@ class EksEphemeryFluxAndTelemetryTests(unittest.TestCase):
         # not an obviously-broken render.
         for release in releases:
             with self.subTest(release=release["metadata"]["name"]):
-                expected_lifecycle = "active"
+                expected_lifecycle = "stopped"
                 self.assertEqual(
                     release["spec"]["values"]["lifecycleState"], expected_lifecycle
                 )
-                expected_enabled = release["metadata"]["name"] in {
-                    "assignment-ephemery-162-synthetic",
-                    "assignment-ephemery-162-synthetic-besu-teku",
-                    "assignment-ephemery-162-synthetic-nethermind-lighthouse",
-                    "assignment-ephemery-162-synthetic-teku",
-                }
+                expected_enabled = False
                 self.assertEqual(
                     release["spec"]["values"]["validator"]["enabled"],
                     expected_enabled,
@@ -605,15 +600,7 @@ class EksEphemeryFluxAndTelemetryTests(unittest.TestCase):
             for release in releases
             if release["spec"]["values"]["validator"]["enabled"]
         ]
-        self.assertEqual(
-            enabled,
-            [
-                "assignment-ephemery-162-synthetic",
-                "assignment-ephemery-162-synthetic-besu-teku",
-                "assignment-ephemery-162-synthetic-nethermind-lighthouse",
-                "assignment-ephemery-162-synthetic-teku",
-            ],
-        )
+        self.assertEqual(enabled, [])
 
     def test_sync_dashboard_uses_only_declared_evidence_and_states_limits(self) -> None:
         config_map = yaml.safe_load(

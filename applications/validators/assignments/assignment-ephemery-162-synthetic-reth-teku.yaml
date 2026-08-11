@@ -5,7 +5,7 @@ metadata:
 spec:
   validatorRef: validator-ephemery-162-synthetic-reth-teku
   networkProfileRef: ephemery-162
-  lifecycle: active
+  lifecycle: stopped
   serviceProfileRef: dedicated-reth-teku
   nodePairRef: pair-ephemery-162-synthetic-reth-teku
   signerRef: shared-web3signer
@@ -15,4 +15,4 @@ spec:
     slashingProtectionConfirmed: false
     doppelgangerProtectionConfirmed: false
   maintenance:
-    reason: Keep the Reth-Teku pair active as a synthetic non-signing diagnostic while validator 04 is qualified on Besu-Teku.
+    reason: Cold-standby teardown after Reth BPO compatibility was qualified; synthetic non-signing pair is recreated from Git on restore.
