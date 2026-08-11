@@ -4,8 +4,12 @@
 
 The platform's first complete round trip through its recovery thesis:
 cold storage → guarded restore → qualified signing → full nine-pair client
-matrix → four live signing validators — every state change through paired
-exact-head review, every signing enablement behind its recorded human gate.
+matrix → four live signing validators. Every signing enablement passed
+paired exact-head review behind its recorded human gate; every other state
+change did likewise except the final shutdown (#239), which merged by direct
+human-privileged action with zero formal reviews — mitigated by its
+fail-closed direction and a full author-side audit at the merged head, and
+recorded as such on the issue #6 audit trail.
 This document is the drill's evidence record and its lessons register; the
 procedures it exercised live in `docs/runbooks/eks-cold-standby.md`,
 `docs/runbooks/eks-signing-recovery.md`, and
@@ -31,7 +35,7 @@ squash commit of its reviewed PR:
 | `8a778c5` | #235 | Validator 02 client-switch to Nethermind+Lighthouse |
 | `14fa6f7` | #236 | Validator 04 client-switch to Besu+Teku |
 | `1a2cdcd` | #237 | Reth v1.10.0 BPO-aware image fix |
-| `3ff5101` | #239 | Return to cold standby: all stopped, signing disabled |
+| `3ff5101` | #239 | Return to cold standby: all stopped, signing disabled (merged without formal review — human-privileged direct merge; audited author-side at the merged head; see issue #6) |
 
 ## Measured timeline (UTC)
 
