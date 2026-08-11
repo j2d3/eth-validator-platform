@@ -162,6 +162,48 @@ containers and the encrypted restore snapshot. AWS again left one available
 cleanup removed that exact detached ENI and the destroy then completed. The
 lab was left in this cold state for the next recovery measurement.
 
+## Second measured cold-standby drill
+
+On 2026-08-10/11, the environment was restored, qualified with four signing
+validators, and returned to cold standby. The durable recovery artifacts from
+this cycle are:
+
+- encrypted manual snapshot
+  `eth-validator-platform-dev-web3signer-cold-standby-20260811-030254`;
+- encrypted RDS final snapshot
+  `eth-validator-platform-dev-web3signer-cold-final-20260811-031333`; and
+- S3 manifest under `cold-standby/manifests/` in the Terraform state bucket,
+  recording Git revision `3ff5101b57d8e5b21d71215f9e8661574de38072`.
+
+The guarded cold-down took 882 seconds (14m42s). EKS, workers, the ingress
+load balancer, VPC/NAT resources, and the RDS instance were removed. The
+seven durable Secrets Manager containers, the Terraform backend, and the
+encrypted snapshots remained. No detached branch ENI remained after cleanup.
+
+The operational sequence matters:
+
+1. Merge the stopped/non-signing assignments and wait for the Flux source and
+   dependency chain to report the new revision.
+2. Because `node-apps` is suspended in the cold configuration, temporarily
+   patch that live Kustomization to `suspend: false` so it can apply the
+   stopped HelmRelease values and remove existing Pods. Wait for zero
+   Ethereum Pods, then patch it back to `suspend: true`.
+3. Capture and verify the encrypted manual snapshot and S3 manifest before
+   running `preflight`, `destroy-plan`, or `down`.
+4. If an interrupted Terraform operation leaves the S3 state lock behind,
+   confirm no Terraform process is running and force-unlock only the exact
+   recorded lock ID before retrying. Do not use `-lock=false` for the destroy.
+5. If Terraform stalls deleting a security group, inspect its exact network
+   interfaces. Delete only an unattached `aws-k8s-branch-eni` associated with
+   this cluster; the helper runs after the apply, but the ENI may need to be
+   removed before the dependent security group can finish.
+
+The next restore should start from the recorded Git revision, use the latest
+available encrypted snapshot, refresh the new ingress DNS target, and repeat
+the staged sync and signing gates documented above. A restored state is not
+live until `/api/status`, Flux readiness, pair sync evidence, and
+Web3Signer/slashing counters have all been checked.
+
 ## Cost expectation
 
 Cold standby removes the largest hourly charges: EKS control plane, system
