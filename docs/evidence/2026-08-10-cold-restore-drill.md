@@ -11,6 +11,28 @@ procedures it exercised live in `docs/runbooks/eks-cold-standby.md`,
 `docs/runbooks/eks-signing-recovery.md`, and
 `docs/runbooks/signing-restore-after-cold-standby.md`.
 
+## Commit anchors
+
+Every observation below ran against an exact `main` commit. The restore
+bootstrapped Flux from `main@06b0000` (the pre-drill head, carrying the
+portal lifecycle state machine of #221); each subsequent state change is the
+squash commit of its reviewed PR:
+
+| Commit | PR | State change observed against it |
+|---|---|---|
+| `06b0000` | #221 | Flux bootstrap revision for the restore; COLD → RUNNING observed |
+| `84e8894` / `e64f0e0` | #222 / #223 | Signing-restore qualification contract and gate runner in force |
+| `7ff503c` | #224 | Non-signing Geth+Lighthouse resume; sustained-sync window |
+| `6aa9062` | #225 | Validator 01 signing restore; doppelganger + slashing evidence |
+| `0137b8c` | #226 | Operations DNS refresh command (root cause of the 5h external COLD) |
+| `337a54e` | #229 | Nine-pair matrix start on scaled Spot capacity |
+| `d2a68d2` / `41c5ef2` / `9328b28` | #231 / #232 / #234 | Reth diagnostic sequence (trusted peers; gated `net=debug` filter) |
+| `d635610` | #233 | Validator 03 enabled (Geth+Teku) |
+| `8a778c5` | #235 | Validator 02 client-switch to Nethermind+Lighthouse |
+| `14fa6f7` | #236 | Validator 04 client-switch to Besu+Teku |
+| `1a2cdcd` | #237 | Reth v1.10.0 BPO-aware image fix |
+| `3ff5101` | #239 | Return to cold standby: all stopped, signing disabled |
+
 ## Measured timeline (UTC)
 
 Externally observed lifecycle transitions, captured by an independent
