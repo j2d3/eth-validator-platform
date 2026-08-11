@@ -198,6 +198,17 @@ The operational sequence matters:
    this cluster; the helper runs after the apply, but the ENI may need to be
    removed before the dependent security group can finish.
 
+**Fingerprint disposition for this cycle: not captured.** The S3 manifest
+(`…20260811-030254.json`) carries snapshot metadata and the Git revision
+only; no slashing-database fingerprint (schema version, per-validator
+maxima, record counts, content digest) was recorded before the instance was
+destroyed, and the automated capture defined by the signing-restore
+qualification contract remains unimplemented. Per that contract, the next
+signing restore therefore routes through the full manual RDS
+slashing-recovery drill rather than the one-gate fast path. Implementing
+teardown fingerprint capture is the top follow-up before the next cold
+cycle.
+
 The next restore should start from the recorded Git revision, use the latest
 available encrypted snapshot, refresh the new ingress DNS target, and repeat
 the staged sync and signing gates documented above. A restored state is not
