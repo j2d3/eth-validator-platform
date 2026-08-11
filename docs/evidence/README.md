@@ -16,6 +16,7 @@ values, raw environment dumps, kubeconfigs, or credentials.
 - [First Web3Signer-backed validator duty](2026-08-04-first-signing-validator.md)
 - [EKS Spot rebalance and validator fail-closed recovery](2026-08-05-eks-spot-rebalance.md)
 - [Two-agent build model — five-day operating retrospective](2026-08-05-two-agent-experiment-retrospective.md)
+- [Full cold-storage restore drill and lessons register](2026-08-10-cold-restore-drill.md)
 
 The first signing record covers the positive validator-client → Web3Signer →
 RDS → beacon-chain path. RDS recovery, conflicting-duty rejection, and

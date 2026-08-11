@@ -2,10 +2,12 @@
 
 ## Scope and evidence boundary
 
-This runbook is a **design and procedure**, not a record. As of this commit no
-signing restore has been performed through it. Nothing here enables signing;
-executing the enablement step requires the human gate below plus an ordinary
-reviewed Git change. The machine-readable form of this procedure is
+This runbook is a **design and procedure**, not a record. Its first execution
+was the 2026-08-09/10 drill — four deposited validators returned to duty
+through this gate sequence; the observations live in
+[`../evidence/2026-08-10-cold-restore-drill.md`](../evidence/2026-08-10-cold-restore-drill.md).
+Nothing here enables signing; executing the enablement step requires the
+human gate below plus an ordinary reviewed Git change. The machine-readable form of this procedure is
 [`hack/qualification/signing-restore-qualification.yaml`](../../hack/qualification/signing-restore-qualification.yaml).
 
 The cold-standby runbook proves the platform's compute and data foundation can
