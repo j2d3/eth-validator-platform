@@ -5,7 +5,7 @@ metadata:
 spec:
   validatorRef: validator-ephemery-162-synthetic-reth
   networkProfileRef: ephemery-162
-  lifecycle: active
+  lifecycle: stopped
   serviceProfileRef: dedicated-reth-lighthouse
   nodePairRef: pair-ephemery-162-synthetic-reth
   signerRef: shared-web3signer
@@ -15,4 +15,4 @@ spec:
     slashingProtectionConfirmed: false
     doppelgangerProtectionConfirmed: false
   maintenance:
-    reason: Keep the Reth-Lighthouse pair active as a synthetic non-signing diagnostic while validator 02 is qualified on Nethermind-Lighthouse.
+    reason: Cold-standby teardown after Reth BPO compatibility was qualified; synthetic non-signing pair is recreated from Git on restore.

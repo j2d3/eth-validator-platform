@@ -5,14 +5,14 @@ metadata:
 spec:
   validatorRef: validator-ephemery-162-04
   networkProfileRef: ephemery-162
-  lifecycle: active
+  lifecycle: stopped
   serviceProfileRef: dedicated-besu-teku
   nodePairRef: pair-ephemery-162-synthetic-besu-teku
   signerRef: shared-web3signer
-  signingEnabled: true
+  signingEnabled: false
   feeRecipient: "0x26c31E06d6D4CEd468704b62Cb6c2F897D997576"
   safety:
-    slashingProtectionConfirmed: true
-    doppelgangerProtectionConfirmed: true
+    slashingProtectionConfirmed: false
+    doppelgangerProtectionConfirmed: false
   maintenance:
-    reason: Enable validator 04 after current Besu+Teku sync, Web3Signer key inventory, slashing continuity, and Teku doppelganger qualification checks; solo-human GO recorded on issue 6 comment 5245349747.
+    reason: Cold-standby teardown after successful validator 04 signing qualification; preserve the deposited identity and durable key container for the next restore.

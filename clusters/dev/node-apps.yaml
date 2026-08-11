@@ -21,11 +21,10 @@ spec:
   path: ./platform/apps/nodes/dev
   prune: true
   wait: true
-  # Pause this layer only after every assignment has reconciled to stopped and
-  # non-signing. This retains the reviewed releases and their PVCs while
-  # preventing a capacity-resume exercise from launching clients before an
-  # explicit GitOps reactivation.
-  suspend: false
+  # Cold standby retains the reviewed releases and their PVCs while preventing
+  # a capacity-resume exercise from launching clients before an explicit
+  # GitOps reactivation.
+  suspend: true
   commonMetadata:
     labels:
       platform.galaxy-lab/environment: dev

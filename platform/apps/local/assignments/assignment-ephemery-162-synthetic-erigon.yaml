@@ -22,16 +22,16 @@ spec:
       interval: 10m
       reconcileStrategy: Revision
   install:
-    disableWait: false
+    disableWait: true
     remediation:
       retries: 3
   upgrade:
-    disableWait: false
+    disableWait: true
     remediation:
       retries: 3
   values:
     fullnameOverride: pair-ephemery-162-synthetic-erigon
-    lifecycleState: active
+    lifecycleState: stopped
     networkProfile:
       name: ephemery-162
       family: ephemery

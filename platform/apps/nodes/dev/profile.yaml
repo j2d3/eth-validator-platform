@@ -6,11 +6,11 @@ metadata:
   labels:
     app.kubernetes.io/part-of: ethereum-validator-platform
     platform.galaxy-lab/environment: dev
-    platform.galaxy-lab/profile: ephemery-signing-recovery
-    platform.galaxy-lab/signing-enabled: "true"
+    platform.galaxy-lab/profile: ephemery-cold-standby
+    platform.galaxy-lab/signing-enabled: "false"
 data:
   environment: dev
-  profile: ephemery-signing-recovery
+  profile: ephemery-cold-standby
   network: ephemery-162
-  signingEnabled: "true"
-  explanation: "One deposited Ephemery assignment is restored for signing qualification; all other assignments remain stopped."
+  signingEnabled: "false"
+  explanation: "Cold standby: all Ephemery assignments are stopped and signing is disabled until a reviewed restore qualification."
